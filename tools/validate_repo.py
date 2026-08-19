@@ -70,6 +70,8 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
+    UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
 for path in required_unity:
@@ -108,6 +110,29 @@ validate_runtime(
         "worker.Schedule(inputTensor)",
         "worker.PeekOutput() as Tensor<float>",
         "ReadbackAndClone()",
+    ),
+)
+
+validate_runtime(
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
+    "Unity PP-OCR crop rectifier",
+    (
+        "PaddleOcrCropRectification.CreatePlan",
+        "ProjectiveTransformFactory.UnitSquareToQuad",
+        "Resources.Load<Shader>(ShaderResourceName)",
+        "Graphics.Blit(source, target, material, 0)",
+        "RenderTextureFormat.ARGB32",
+    ),
+)
+
+validate_runtime(
+    UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
+    "Unity PP-OCR crop shader",
+    (
+        "_RotateCCW90",
+        "preRotationTop = float2(1.0 - outputTop.y, outputTop.x)",
+        "sourceUv = saturate(sourceUv)",
+        "tex2D(_MainTex, sourceUv)",
     ),
 )
 
@@ -155,5 +180,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/recognizer runtime markers validated"
+    "and PP-OCR detector/recognizer/crop runtime markers validated"
 )
