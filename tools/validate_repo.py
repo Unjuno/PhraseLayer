@@ -72,6 +72,7 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "PaddleDetectorRawOutputExtensions.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrEngine.cs",
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
@@ -138,6 +139,21 @@ validate_runtime(
 )
 
 validate_runtime(
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrEngine.cs",
+    "Unity PP-OCR end-to-end engine",
+    (
+        "IOcrEngine",
+        "detector.Execute(texture, frame.Width, frame.Height)",
+        "DecodeV6TinyQuads(dbSpec)",
+        "PaddleOcrReadingOrder.Sort",
+        "cropRectifier.Rectify(texture, detection.ImageBounds)",
+        "recognizer.ExecuteAndDecode",
+        "PaddleOcrObservationAssembler.Assemble",
+        "ValidateRecognizerConfidence",
+    ),
+)
+
+validate_runtime(
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     "Unity PP-OCR crop shader",
     (
@@ -192,5 +208,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/DB/recognizer/crop runtime markers validated"
+    "and PP-OCR detector/DB/crop/recognizer/end-to-end engine markers validated"
 )
