@@ -19,28 +19,50 @@ jobs:
       - run: python tools/validate_repo.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
-      - name: Inspect pinned PP-OCR recognizer export config
+      - name: Measure pinned PP-OCR recognizer YAML dictionary
         run: |
           python tools/stage_models.py --model pp-ocrv6-tiny-rec --include-support --allow-unverified-metadata
           python - <<'PY'
+          import hashlib
+          import json
           from pathlib import Path
 
           path = Path('artifacts/models/pp-ocrv6-tiny-rec/inference.yml')
-          text = path.read_text(encoding='utf-8')
-          lines = text.splitlines()
-          print('INFERENCE_YML_LINES', len(lines))
-          terms = ('postprocess', 'character_dict', 'use_space_char', 'ctclabeldecode')
-          emitted = set()
-          for index, line in enumerate(lines):
-              lowered = line.lower()
-              if any(term in lowered for term in terms):
-                  start = max(0, index - 3)
-                  end = min(len(lines), index + 25)
-                  for line_index in range(start, end):
-                      if line_index not in emitted:
-                          print(f'YML {line_index + 1}: {lines[line_index][:1000]}')
-                          emitted.add(line_index)
-                  print('---')
+          lines = path.read_text(encoding='utf-8').splitlines()
+
+          def decode_scalar(text):
+              value = text.strip()
+              if value.startswith("'") and value.endswith("'") and len(value) >= 2:
+                  return value[1:-1].replace("''", "'")
+              if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+                  return json.loads(value)
+              return value
+
+          postprocess_index = next(i for i, line in enumerate(lines) if line == 'PostProcess:')
+          name_line = next(
+              line for line in lines[postprocess_index + 1:]
+              if line.startswith('  name: ')
+          )
+          postprocess_name = decode_scalar(name_line.split(':', 1)[1])
+          dictionary_index = next(
+              i for i in range(postprocess_index + 1, len(lines))
+              if lines[i] == '  character_dict:'
+          )
+          tokens = []
+          for line in lines[dictionary_index + 1:]:
+              if not line.startswith('  - '):
+                  break
+              tokens.append(decode_scalar(line[4:]))
+
+          output = ''.join(token + '\n' for token in tokens).encode('utf-8')
+          print('POSTPROCESS_NAME', postprocess_name)
+          print('RAW_TOKEN_COUNT', len(tokens))
+          print('RAW_CONTAINS_LITERAL_SPACE', ' ' in tokens)
+          print('FIRST_TOKENS', repr(tokens[:12]))
+          print('LAST_TOKENS', repr(tokens[-12:]))
+          print('GENERATED_DICTIONARY_SIZE_BYTES', len(output))
+          print('GENERATED_DICTIONARY_SHA256', hashlib.sha256(output).hexdigest())
+          print('EFFECTIVE_TOKEN_COUNT_WITH_SPACE', len(tokens) + 1)
           PY
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
