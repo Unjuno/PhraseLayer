@@ -66,7 +66,7 @@ namespace PhraseLayer.Core.Tests
         public void NullTextIsRejected()
         {
             Assert.Throws<ArgumentNullException>(() =>
-                PaddleOcrCharacterDictionary.Parse(null, useSpaceCharacter: true));
+                PaddleOcrCharacterDictionary.Parse(null!, useSpaceCharacter: true));
         }
     }
 }
