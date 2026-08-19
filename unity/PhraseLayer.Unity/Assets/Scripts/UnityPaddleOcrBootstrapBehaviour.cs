@@ -30,6 +30,9 @@ namespace PhraseLayer.Unity
         public bool IsInitialized => engine != null;
         public IOcrEngine Engine => engine;
         public int DictionaryTokenCount { get; private set; }
+        public string RuntimeContractReport => engine == null
+            ? "PP-OCR engine not initialized; runtime model contract is unobserved."
+            : engine.RuntimeContractReport;
 
         private void Awake()
         {
@@ -91,6 +94,8 @@ namespace PhraseLayer.Unity
         public bool IsInitialized => false;
         public IOcrEngine Engine => null;
         public int DictionaryTokenCount => 0;
+        public string RuntimeContractReport =>
+            "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
 #endif
     }
 }
