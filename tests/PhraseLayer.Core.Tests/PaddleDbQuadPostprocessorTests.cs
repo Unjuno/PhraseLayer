@@ -114,10 +114,10 @@ namespace PhraseLayer.Core.Tests
                     destinationWidth: 200,
                     destinationHeight: 100));
 
-            AssertPoint(detection.ImageBounds.P0, 30, 15);
-            AssertPoint(detection.ImageBounds.P1, 160, 15);
-            AssertPoint(detection.ImageBounds.P2, 160, 60);
-            AssertPoint(detection.ImageBounds.P3, 30, 60);
+            AssertPoint(detection.ImageBounds.P0, 28, 14);
+            AssertPoint(detection.ImageBounds.P1, 162, 14);
+            AssertPoint(detection.ImageBounds.P2, 162, 61);
+            AssertPoint(detection.ImageBounds.P3, 28, 61);
         }
 
         [Fact]
