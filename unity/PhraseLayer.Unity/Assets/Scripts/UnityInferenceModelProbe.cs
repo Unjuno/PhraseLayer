@@ -43,7 +43,7 @@ namespace PhraseLayer.Unity
 
         public string ProbeModel()
         {
-            Debug.LogWarning(lastReport, this);
+            Debug.Log(lastReport, this);
             return lastReport;
         }
 #endif
