@@ -67,6 +67,7 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "PhraseLayerDemoBehaviour.cs",
     UNITY / "Assets" / "Scripts" / "UnityTextureFramePayload.cs",
     UNITY / "Assets" / "Scripts" / "MetaPassthroughCameraBridge.cs",
+    UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
 for path in required_unity:
@@ -80,6 +81,17 @@ if core_package.get("name") != "com.unjuno.phraselayer.core":
 core_asmdef=json.loads((CORE/"PhraseLayer.Core.asmdef").read_text(encoding="utf-8"))
 if core_asmdef.get("noEngineReferences") is not True:
     violations.append("PhraseLayer.Core.asmdef must set noEngineReferences=true")
+
+unity_asmdef=json.loads((UNITY/"Assets"/"PhraseLayer.Unity.asmdef").read_text(encoding="utf-8"))
+if "Unity.InferenceEngine" not in unity_asmdef.get("references", []):
+    violations.append("PhraseLayer.Unity.asmdef must reference Unity.InferenceEngine")
+expected_inference_define = {
+    "name": "com.unity.ai.inference",
+    "expression": "[2.2.1,2.3.0)",
+    "define": "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+}
+if expected_inference_define not in unity_asmdef.get("versionDefines", []):
+    violations.append("PhraseLayer.Unity.asmdef must gate the reviewed Unity Inference 2.2.x API surface")
 
 unity_manifest=json.loads((UNITY/"Packages"/"manifest.json").read_text(encoding="utf-8"))
 deps=unity_manifest.get("dependencies", {})
@@ -105,5 +117,5 @@ if violations:
 
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
-    "Unity shell, Meta baseline package pins, and camera adapter structure validated"
+    "Unity shell, Meta baseline package pins, camera adapter structure, and Inference 2.2 API gate validated"
 )
