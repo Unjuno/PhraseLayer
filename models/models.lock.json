@@ -29,10 +29,16 @@
       "artifact_sha256": "9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6",
       "support_artifacts": [
         {
-          "purpose": "recognition-export-metadata",
+          "purpose": "recognition-program-metadata",
           "artifact": "inference.json",
           "artifact_size_bytes": 108959,
           "artifact_sha256": "b5b14770c7dcf092781e92f4278a2ae5f95048f08b4b8a04140e88cb2745f147"
+        },
+        {
+          "purpose": "recognition-export-config",
+          "artifact": "inference.yml",
+          "artifact_size_bytes": null,
+          "artifact_sha256": null
         }
       ],
       "recognition_dictionary": {
