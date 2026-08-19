@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using PhraseLayer.Core.Assistance;
+using PhraseLayer.Core.Inputs;
 using PhraseLayer.Core.Learning;
 using PhraseLayer.Core.Pipeline;
 using PhraseLayer.Core.Semantics;
@@ -17,6 +18,13 @@ namespace PhraseLayer.Unity.Editor
 
         [MenuItem("PhraseLayer/Verify Core Pipeline")]
         public static void VerifyCorePipeline()
+        {
+            VerifyLanguagePipeline();
+            VerifyViewportGeometry();
+            Debug.Log("PhraseLayer Gate 3 PASS: language pipeline and OCR viewport geometry verified.");
+        }
+
+        private static void VerifyLanguagePipeline()
         {
             var learner = new InMemoryLearnerModel(0.95);
             learner.SetUnderstanding("I was tired", 0.95);
@@ -36,8 +44,26 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("Unexpected PhraseLayer output. Expected: " + Expected + " Actual: " + plan.DisplayText);
             if (plan.DisplayText.Contains("[") || plan.DisplayText.Contains("]"))
                 throw new InvalidOperationException("Core output must not contain gloss brackets.");
+        }
 
-            Debug.Log("PhraseLayer Gate 3 PASS: " + plan.DisplayText);
+        private static void VerifyViewportGeometry()
+        {
+            var viewport = ImageCoordinateMapper.ToViewport(ImageQuad.FromRect(100, 50, 200, 100), 1000, 500);
+            AssertNear(viewport.Centroid.U, 0.20, "viewport centroid U");
+            AssertNear(viewport.Centroid.V, 0.80, "viewport centroid V");
+
+            var canvas = new Rect(10, 20, 1000, 500);
+            var screen = ViewportGuiMapper.ToScreenRect(viewport, canvas);
+            AssertNear(screen.x, 110.0, "screen rect x");
+            AssertNear(screen.y, 70.0, "screen rect y");
+            AssertNear(screen.width, 200.0, "screen rect width");
+            AssertNear(screen.height, 100.0, "screen rect height");
+        }
+
+        private static void AssertNear(double actual, double expected, string label)
+        {
+            if (Math.Abs(actual - expected) > 0.0001)
+                throw new InvalidOperationException(label + " expected " + expected + " but was " + actual);
         }
 
         public static void VerifyCorePipelineBatch()
