@@ -56,6 +56,18 @@ for marker in (
     "UnityInferenceModelProbe.BuildReport(detector)",
     "UnityInferenceModelProbe.BuildReport(recognizer)",
     "VerifyLocalAssetsBatch",
+    "RunLocalInferenceProbe",
+    "RunLocalInferenceProbeBatch",
+    "SyntheticProbeSize = 256",
+    "new UnityPaddleOcrDetectorRuntime(",
+    "BackendType.GPUCompute",
+    "PaddleOcrRuntimeContract.ValidateDetector(",
+    "new UnityPaddleOcrRecognizerRuntime(",
+    "PaddleOcrRuntimeContract.ValidateRecognizer(",
+    "PaddleOcrDictionaryManifestContract.ExpectedEffectiveTokenCount",
+    "ValidateUnitInterval(",
+    "must be probabilistic in [0,1]",
+    "do not run this gate with -nographics",
     "EditorApplication.Exit(0)",
     "EditorApplication.Exit(1)",
     "AssignLocalAssetsToSceneBootstrap",
@@ -69,4 +81,4 @@ for marker in (
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: local PP-OCR assets are git-ignored, offline-verified, batch-probeable, and wired to idempotent Unity bootstrap assignment")
+print("PASS: local PP-OCR assets are git-ignored, offline-verified, batch-importable, synthetic-inference-probeable, and wired to idempotent Unity bootstrap assignment")
