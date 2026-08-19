@@ -6,8 +6,6 @@ namespace PhraseLayer.Core.Tests
 {
     public sealed class PaddleOcrDictionaryManifestTests
     {
-        private const string Digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
         [Fact]
         public void ValidManifestBuildsPinnedReport()
         {
@@ -15,14 +13,15 @@ namespace PhraseLayer.Core.Tests
 
             var report = PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
                 manifest,
-                actualRawTokenCount: 100,
+                actualRawTokenCount: PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
                 configuredUseSpaceCharacter: true,
-                actualDictionarySha256: Digest);
+                actualDictionarySha256: PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256);
 
             Assert.Contains(PaddleOcrDictionaryManifestContract.ExpectedModelId, report, StringComparison.Ordinal);
             Assert.Contains(PaddleOcrDictionaryManifestContract.ExpectedRevision, report, StringComparison.Ordinal);
-            Assert.Contains("raw=100", report, StringComparison.Ordinal);
-            Assert.Contains("effective=101", report, StringComparison.Ordinal);
+            Assert.Contains("source=inference.yml", report, StringComparison.Ordinal);
+            Assert.Contains("raw=6904", report, StringComparison.Ordinal);
+            Assert.Contains("effective=6905", report, StringComparison.Ordinal);
             Assert.Contains("use_space_char=true", report, StringComparison.Ordinal);
         }
 
@@ -33,21 +32,42 @@ namespace PhraseLayer.Core.Tests
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, true, Digest));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
             Assert.Contains("revision mismatch", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void RejectsRawTokenCountDrift()
+        public void RejectsPinnedRawTokenCountDriftEvenWhenAssignedDictionaryMatchesManifest()
+        {
+            var manifest = CreateManifest(rawTokenCount: 6903, effectiveTokenCount: 6904);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
+                    manifest,
+                    actualRawTokenCount: 6903,
+                    configuredUseSpaceCharacter: true,
+                    actualDictionarySha256: PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
+
+            Assert.Contains("raw_token_count mismatch", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void RejectsAssignedDictionaryTokenCountDrift()
         {
             var manifest = CreateManifest();
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 99, true, Digest));
+                    manifest,
+                    actualRawTokenCount: 6903,
+                    configuredUseSpaceCharacter: true,
+                    actualDictionarySha256: PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
-            Assert.Contains("raw_token_count", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("assigned dictionary", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -57,94 +77,138 @@ namespace PhraseLayer.Core.Tests
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, false, Digest));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    false,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
-            Assert.Contains("use_space_char", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("useSpaceCharacter", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void RejectsAmbiguousRawSpaceWhenPaddleWouldAppendSpace()
+        public void RejectsManifestUseSpaceCharDrift()
+        {
+            var manifest = CreateManifest(useSpaceChar: false);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
+
+            Assert.Contains("use_space_char mismatch", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void RejectsAmbiguousRawSpace()
         {
             var manifest = CreateManifest(rawContainsLiteralSpace: true);
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, true, Digest));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
             Assert.Contains("literal single-space", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void RejectsEffectiveTokenCountDrift()
+        public void RejectsPinnedEffectiveTokenCountDrift()
         {
-            var manifest = CreateManifest(effectiveTokenCount: 100);
+            var manifest = CreateManifest(effectiveTokenCount: 6904);
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, true, Digest));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
-            Assert.Contains("effective_token_count", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("effective_token_count mismatch", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void RejectsDictionaryDigestMismatch()
+        public void RejectsPinnedGeneratedDigestDrift()
+        {
+            var manifest = CreateManifest(generatedSha256: new string('f', 64));
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    new string('f', 64)));
+
+            Assert.Contains("generated_sha256 mismatch", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void RejectsAssignedDictionaryDigestMismatch()
         {
             var manifest = CreateManifest();
             var actual = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, true, actual));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    actual));
 
-            Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("Dictionary SHA-256", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
         public void RejectsUppercaseDigestEvenWhenCharactersAreHex()
         {
-            var uppercase = Digest.ToUpperInvariant();
+            var uppercase = PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256.ToUpperInvariant();
             var manifest = CreateManifest(generatedSha256: uppercase);
 
             var exception = Assert.Throws<InvalidOperationException>(() =>
                 PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                    manifest, 100, true, uppercase));
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    uppercase));
 
             Assert.Contains("lowercase hexadecimal", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void AllowsRawLiteralSpaceWhenUseSpaceCharIsFalse()
+        public void RejectsOldJsonSourceArtifact()
         {
-            var manifest = CreateManifest(
-                rawContainsLiteralSpace: true,
-                useSpaceChar: false,
-                effectiveTokenCount: 100);
+            var manifest = CreateManifest(sourceArtifact: "inference.json");
 
-            var report = PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
-                manifest,
-                actualRawTokenCount: 100,
-                configuredUseSpaceCharacter: false,
-                actualDictionarySha256: Digest);
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrDictionaryManifestContract.ValidateAndBuildReport(
+                    manifest,
+                    PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
+                    true,
+                    PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256));
 
-            Assert.Contains("effective=100", report, StringComparison.Ordinal);
-            Assert.Contains("use_space_char=false", report, StringComparison.Ordinal);
+            Assert.Contains("source_artifact mismatch", exception.Message, StringComparison.Ordinal);
         }
 
         private static PaddleOcrDictionaryManifest CreateManifest(
             string revision = PaddleOcrDictionaryManifestContract.ExpectedRevision,
+            string sourceArtifact = PaddleOcrDictionaryManifestContract.ExpectedSourceArtifact,
+            int rawTokenCount = PaddleOcrDictionaryManifestContract.ExpectedRawTokenCount,
             bool rawContainsLiteralSpace = false,
-            bool useSpaceChar = true,
-            int effectiveTokenCount = 101,
-            string generatedSha256 = Digest)
+            bool useSpaceChar = PaddleOcrDictionaryManifestContract.ExpectedUseSpaceChar,
+            int effectiveTokenCount = PaddleOcrDictionaryManifestContract.ExpectedEffectiveTokenCount,
+            string generatedSha256 = PaddleOcrDictionaryManifestContract.ExpectedGeneratedSha256)
         {
             return new PaddleOcrDictionaryManifest(
                 PaddleOcrDictionaryManifestContract.ExpectedSchemaVersion,
                 PaddleOcrDictionaryManifestContract.ExpectedModelId,
                 PaddleOcrDictionaryManifestContract.ExpectedUpstream,
                 revision,
-                PaddleOcrDictionaryManifestContract.ExpectedSourceArtifact,
+                sourceArtifact,
                 PaddleOcrDictionaryManifestContract.ExpectedPostprocessName,
-                rawTokenCount: 100,
+                rawTokenCount,
                 rawContainsLiteralSpace,
                 useSpaceChar,
                 effectiveTokenCount,
