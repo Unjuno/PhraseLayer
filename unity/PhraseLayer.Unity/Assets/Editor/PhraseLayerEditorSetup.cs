@@ -17,7 +17,7 @@ namespace PhraseLayer.Unity.Editor
             var root = new GameObject("PhraseLayer Demo");
             root.AddComponent<PhraseLayerDemoBehaviour>();
 
-            Directory.CreateDirectory("Assets/Scenes");
+            Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
                 throw new IOException("Failed to save PhraseLayer demo scene.");
 
