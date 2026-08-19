@@ -16,6 +16,7 @@ namespace PhraseLayer.Unity.Editor
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
             root.AddComponent<PhraseLayerDemoBehaviour>();
+            root.AddComponent<OcrViewportDebugBehaviour>();
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
