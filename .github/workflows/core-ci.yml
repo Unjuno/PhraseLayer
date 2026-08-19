@@ -18,8 +18,10 @@ jobs:
           python-version: "3.12"
       - run: python tools/validate_repo.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
+      - run: python tools/validate_local_ocr_asset_staging.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
       - run: python tools/test_extract_ppocr_dictionary.py
+      - run: python tools/test_prepare_unity_ocr_assets.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
       - run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --no-restore
