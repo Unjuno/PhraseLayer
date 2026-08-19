@@ -22,8 +22,9 @@ namespace PhraseLayer.Unity.Editor
             VerifyLanguagePipeline();
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
+            VerifyOcrRuntimeContract();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, and scene bootstrap verified.");
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, and scene bootstrap verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -80,6 +81,23 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("Processed OCR result was not presented.");
             if (!ReferenceEquals(sink.Observation, observation) || !ReferenceEquals(sink.Frame, frame))
                 throw new InvalidOperationException("OCR presentation did not preserve the observation/frame pairing.");
+        }
+
+        private static void VerifyOcrRuntimeContract()
+        {
+            var detector = PaddleOcrRuntimeContract.ValidateDetector(
+                new[] { 1, 1, 4, 5 },
+                new float[20]);
+            var recognizer = PaddleOcrRuntimeContract.ValidateRecognizer(
+                new[] { 1, 12, 97 },
+                new float[12 * 97],
+                dictionaryTokenCount: 96);
+            var report = PaddleOcrRuntimeContract.BuildReport(detector, recognizer, 96);
+
+            if (!report.Contains("detector shape=[1,1,4,5]"))
+                throw new InvalidOperationException("PP-OCR detector runtime contract report is missing the observed shape.");
+            if (!report.Contains("classes=97") || !report.Contains("dictionary=96"))
+                throw new InvalidOperationException("PP-OCR recognizer runtime contract report is missing class/dictionary parity.");
         }
 
         private static void VerifyInferenceApiGate()
