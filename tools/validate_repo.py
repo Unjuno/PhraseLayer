@@ -60,6 +60,13 @@ for model in manifest["candidates"]:
         if artifact_size is not None and (not isinstance(artifact_size, int) or artifact_size <= 0):
             violations.append(f"OCR artifact size must be null or a positive integer: {model.get('id')}")
 
+required_core = [
+    CORE / "PaddleOcrRuntimeContract.cs",
+]
+for path in required_core:
+    if not path.exists():
+        violations.append(f"missing Core contract file: {path.relative_to(ROOT)}")
+
 required_unity = [
     UNITY / "ProjectSettings" / "ProjectVersion.txt",
     UNITY / "Packages" / "manifest.json",
@@ -89,6 +96,17 @@ def validate_runtime(path, label, markers):
     for marker in markers:
         if marker not in text:
             violations.append(f"{label} missing reviewed marker: {marker}")
+
+validate_runtime(
+    CORE / "PaddleOcrRuntimeContract.cs",
+    "Core PP-OCR runtime contract",
+    (
+        "PaddleDbProbabilityMap.FromTensor(outputShape, outputValues)",
+        "Recognizer output must be [1,time,class]",
+        "dictionary token count + 1 CTC blank",
+        "BuildReport(",
+    ),
+)
 
 validate_runtime(
     UNITY / "Assets" / "Scripts" / "OcrDebugRuntimeBehaviour.cs",
@@ -156,10 +174,14 @@ validate_runtime(
     (
         "IOcrEngine",
         "detector.Execute(texture, frame.Width, frame.Height)",
+        "PaddleOcrRuntimeContract.ValidateDetector",
         "DecodeV6TinyQuads(dbSpec)",
         "PaddleOcrReadingOrder.Sort",
         "cropRectifier.Rectify(texture, detection.ImageBounds)",
-        "recognizer.ExecuteAndDecode",
+        "recognizer.Execute(",
+        "PaddleOcrRuntimeContract.ValidateRecognizer",
+        "recognizerOutput.Decode(characterDictionary)",
+        "RuntimeContractReport",
         "PaddleOcrObservationAssembler.Assemble",
         "ValidateRecognizerConfidence",
     ),
@@ -172,6 +194,7 @@ validate_runtime(
         "PaddleOcrCharacterDictionary.Parse(characterDictionary.text, useSpaceCharacter)",
         "new UnityPaddleOcrEngine(",
         "runtimeDriver.ConfigureEngine(created)",
+        "RuntimeContractReport",
         "created.Dispose()",
         "engine?.Dispose()",
     ),
@@ -232,5 +255,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/DB/crop/recognizer/end-to-end/bootstrap markers validated"
+    "and PP-OCR detector/DB/crop/recognizer/end-to-end/bootstrap/runtime-contract markers validated"
 )
