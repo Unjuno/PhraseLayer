@@ -57,16 +57,13 @@ for marker in (
     '"text_length="',
     '"dictionary_manifest=" + bootstrap.DictionaryManifestReport',
     '"runtime_contract=" + bootstrap.RuntimeContractReport',
+    'builder.AppendLine("recognized_text=" + presenter.LastText);',
     '"recognized_text=<redacted; enable includeRecognizedTextInReport explicitly>"',
+    "if (includeRecognizedTextInReport)",
     "runtimeDriver.AutoRun = previousAutoRun",
 ):
     if marker not in smoke:
         violations.append(f"Quest OCR smoke harness missing reviewed marker: {marker}")
-
-if "recognized_text=" + " + presenter.LastText" not in smoke:
-    violations.append("Quest OCR smoke harness must expose recognized text only through the explicit opt-in branch")
-if "if (includeRecognizedTextInReport)" not in smoke:
-    violations.append("Quest OCR smoke harness must guard recognized-text logging behind explicit opt-in")
 
 if violations:
     raise SystemExit("\n".join(violations))
