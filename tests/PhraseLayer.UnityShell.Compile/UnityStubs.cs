@@ -22,11 +22,27 @@ namespace UnityEngine
         Bold = 1
     }
 
-    public struct Vector2 { }
+    public struct Vector2
+    {
+        public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public float x;
+        public float y;
+    }
 
     public struct Rect
     {
-        public Rect(float x, float y, float width, float height) { }
+        public Rect(float x, float y, float width, float height)
+        {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+
+        public float x;
+        public float y;
+        public float width;
+        public float height;
     }
 
     public sealed class RectOffset
@@ -53,6 +69,7 @@ namespace UnityEngine
     public static class GUI
     {
         public static GUISkin skin { get; } = new GUISkin();
+        public static void Box(Rect position, string text) { }
     }
 
     public sealed class GUILayoutOption { }
