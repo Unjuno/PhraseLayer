@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "PhraseLayer.Core"
 UNITY = ROOT / "unity" / "PhraseLayer.Unity"
+TOOLS = ROOT / "tools"
 forbidden = ("using UnityEngine", "using Meta.", "using Oculus", "UnityEngine.", "OVR")
 violations=[]
 
@@ -60,6 +61,69 @@ for model in manifest["candidates"]:
         if artifact_size is not None and (not isinstance(artifact_size, int) or artifact_size <= 0):
             violations.append(f"OCR artifact size must be null or a positive integer: {model.get('id')}")
 
+        support_artifacts = model.get("support_artifacts", [])
+        if not isinstance(support_artifacts, list):
+            violations.append(f"OCR support_artifacts must be a list: {model.get('id')}")
+            support_artifacts = []
+        seen_support_paths = set()
+        for support in support_artifacts:
+            if not isinstance(support, dict):
+                violations.append(f"OCR support artifact must be an object: {model.get('id')}")
+                continue
+            for key in ("purpose", "artifact", "artifact_size_bytes", "artifact_sha256"):
+                if key not in support:
+                    violations.append(f"OCR support artifact missing {key}: {model.get('id')}")
+            support_path = support.get("artifact")
+            if not isinstance(support_path, str) or not support_path:
+                violations.append(f"OCR support artifact path missing: {model.get('id')}")
+            else:
+                parsed = Path(support_path)
+                if parsed.is_absolute() or ".." in parsed.parts:
+                    violations.append(f"OCR support artifact path escapes upstream repo: {model.get('id')}:{support_path}")
+                if support_path in seen_support_paths:
+                    violations.append(f"OCR duplicate support artifact path: {model.get('id')}:{support_path}")
+                seen_support_paths.add(support_path)
+            support_size = support.get("artifact_size_bytes")
+            if support_size is not None and (not isinstance(support_size, int) or support_size <= 0):
+                violations.append(f"OCR support artifact size must be null or positive: {model.get('id')}:{support_path}")
+            support_sha = support.get("artifact_sha256")
+            if support_sha is not None and (not isinstance(support_sha, str) or re.fullmatch(r"[0-9a-f]{64}", support_sha) is None):
+                violations.append(f"OCR support artifact SHA-256 must be null or lowercase hex: {model.get('id')}:{support_path}")
+
+        if model.get("purpose") == "ocr-recognition":
+            dictionary = model.get("recognition_dictionary")
+            if not isinstance(dictionary, dict):
+                violations.append(f"OCR recognition model missing recognition_dictionary: {model.get('id')}")
+            else:
+                expected_dictionary = {
+                    "postprocess_name": "CTCLabelDecode",
+                    "json_path": ["PostProcess", "character_dict"],
+                    "use_space_char": True,
+                }
+                for key, expected in expected_dictionary.items():
+                    if dictionary.get(key) != expected:
+                        violations.append(
+                            f"OCR recognition dictionary contract drift: {model.get('id')} {key} expected {expected!r} but found {dictionary.get(key)!r}"
+                        )
+                for key in ("source_artifact", "generated_artifact", "generated_manifest"):
+                    value = dictionary.get(key)
+                    if not isinstance(value, str) or not value:
+                        violations.append(f"OCR recognition dictionary missing {key}: {model.get('id')}")
+                source_artifact = dictionary.get("source_artifact")
+                if source_artifact not in seen_support_paths:
+                    violations.append(
+                        f"OCR recognition dictionary source_artifact must be locked as support artifact: {model.get('id')}:{source_artifact}"
+                    )
+
+required_tools = [
+    TOOLS / "stage_models.py",
+    TOOLS / "extract_ppocr_dictionary.py",
+    TOOLS / "test_extract_ppocr_dictionary.py",
+]
+for path in required_tools:
+    if not path.exists():
+        violations.append(f"missing tooling file: {path.relative_to(ROOT)}")
+
 required_core = [
     CORE / "PaddleOcrRuntimeContract.cs",
 ]
@@ -96,6 +160,29 @@ def validate_runtime(path, label, markers):
     for marker in markers:
         if marker not in text:
             violations.append(f"{label} missing reviewed marker: {marker}")
+
+validate_runtime(
+    TOOLS / "stage_models.py",
+    "model stager",
+    (
+        "support_artifacts",
+        "--include-support",
+        "artifact_kind",
+        "PhraseLayer-model-stager/2",
+    ),
+)
+
+validate_runtime(
+    TOOLS / "extract_ppocr_dictionary.py",
+    "PP-OCR dictionary extractor",
+    (
+        "PostProcess",
+        "character_dict",
+        "use_space_char",
+        "effective_token_count",
+        "another space token",
+    ),
+)
 
 validate_runtime(
     CORE / "PaddleOcrRuntimeContract.cs",
@@ -253,7 +340,7 @@ if violations:
     raise SystemExit("\n".join(violations))
 
 print(
-    f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
-    "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/DB/crop/recognizer/end-to-end/bootstrap/runtime-contract markers validated"
+    f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model/support-artifact manifest, "
+    "PP-OCR dictionary extraction contract, Unity shell, Meta baseline package pins, camera adapter structure, "
+    "Inference 2.2 API gate, and PP-OCR detector/DB/crop/recognizer/end-to-end/bootstrap/runtime-contract markers validated"
 )
