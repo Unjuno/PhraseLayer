@@ -22,7 +22,8 @@ namespace PhraseLayer.Unity.Editor
             VerifyLanguagePipeline();
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, and OCR presentation contract verified.");
+            VerifyInferenceApiGate();
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, and Unity Inference 2.2 API gate verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -79,6 +80,18 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("Processed OCR result was not presented.");
             if (!ReferenceEquals(sink.Observation, observation) || !ReferenceEquals(sink.Frame, frame))
                 throw new InvalidOperationException("OCR presentation did not preserve the observation/frame pairing.");
+        }
+
+        private static void VerifyInferenceApiGate()
+        {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            var probeType = typeof(UnityInferenceModelProbe);
+            if (probeType == null)
+                throw new InvalidOperationException("Unity Inference 2.2 model probe type was not compiled.");
+#else
+            throw new InvalidOperationException(
+                "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference in the reviewed [2.2.1,2.3.0) range before Gate 4 verification.");
+#endif
         }
 
         private static void AssertNear(double actual, double expected, string label)
