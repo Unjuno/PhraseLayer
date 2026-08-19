@@ -2,7 +2,8 @@
   "name": "PhraseLayer.Unity",
   "rootNamespace": "PhraseLayer.Unity",
   "references": [
-    "PhraseLayer.Core"
+    "PhraseLayer.Core",
+    "Unity.InferenceEngine"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
