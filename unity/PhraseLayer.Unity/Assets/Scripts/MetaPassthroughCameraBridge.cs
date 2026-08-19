@@ -151,14 +151,14 @@ namespace PhraseLayer.Unity
             return Task.CompletedTask;
         }
 
-        public Task<ImageFrame?> CaptureAsync(CancellationToken cancellationToken = default(CancellationToken))
+        public Task<ImageFrame> CaptureAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             EnsureApi();
-            if (!IsPlaying) return Task.FromResult<ImageFrame?>(null);
+            if (!IsPlaying) return Task.FromResult<ImageFrame>(null);
 
             var texture = getTextureMethod.Invoke(passthroughCameraAccess, null) as Texture;
-            if (texture == null) return Task.FromResult<ImageFrame?>(null);
+            if (texture == null) return Task.FromResult<ImageFrame>(null);
 
             // This is the local observation time, not yet the camera hardware timestamp.
             // Hardware timestamp alignment will be added only after the exact PCA timestamp contract is verified in a real Unity/Quest build.
@@ -169,7 +169,7 @@ namespace PhraseLayer.Unity
                 texture.height,
                 localTimestampMicroseconds,
                 ImagePixelFormat.Unknown);
-            return Task.FromResult<ImageFrame?>(frame);
+            return Task.FromResult(frame);
         }
 
         public bool TryCreateRay(ViewportPoint point, out SpatialRay ray)
