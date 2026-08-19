@@ -27,6 +27,22 @@
       "artifact": "inference.onnx",
       "artifact_size_bytes": null,
       "artifact_sha256": null,
+      "support_artifacts": [
+        {
+          "purpose": "recognition-export-metadata",
+          "artifact": "inference.json",
+          "artifact_size_bytes": null,
+          "artifact_sha256": null
+        }
+      ],
+      "recognition_dictionary": {
+        "source_artifact": "inference.json",
+        "postprocess_name": "CTCLabelDecode",
+        "json_path": ["PostProcess", "character_dict"],
+        "use_space_char": true,
+        "generated_artifact": "ppocr_keys.txt",
+        "generated_manifest": "ppocr_keys.manifest.json"
+      },
       "format": "onnx",
       "license": "Apache-2.0",
       "license_status": "upstream-metadata-verified; redistribution-review-pending",
