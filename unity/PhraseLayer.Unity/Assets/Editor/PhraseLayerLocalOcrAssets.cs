@@ -49,6 +49,24 @@ namespace PhraseLayer.Unity.Editor
 #endif
         }
 
+        /// <summary>
+        /// Batchmode entry point for a real Unity import/probe gate.
+        /// Example: Unity -batchmode -projectPath unity/PhraseLayer.Unity -executeMethod PhraseLayer.Unity.Editor.PhraseLayerLocalOcrAssets.VerifyLocalAssetsBatch -quit
+        /// </summary>
+        public static void VerifyLocalAssetsBatch()
+        {
+            try
+            {
+                VerifyLocalAssets();
+                EditorApplication.Exit(0);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                EditorApplication.Exit(1);
+            }
+        }
+
         [MenuItem("PhraseLayer/PP-OCR/Assign Local Assets To Scene Bootstrap")]
         public static void AssignLocalAssetsToSceneBootstrap()
         {
@@ -75,12 +93,18 @@ namespace PhraseLayer.Unity.Editor
             RequireProperty(serialized, "characterDictionary").objectReferenceValue = dictionary;
             RequireProperty(serialized, "characterDictionaryManifest").objectReferenceValue = manifest;
             RequireProperty(serialized, "useSpaceCharacter").boolValue = true;
-            if (!serialized.ApplyModifiedProperties())
-                throw new InvalidOperationException("No PP-OCR bootstrap properties changed; verify the active scene bootstrap state.");
+            var changed = serialized.ApplyModifiedProperties();
 
-            EditorUtility.SetDirty(bootstrap);
-            AssetDatabase.SaveAssets();
-            Debug.Log("Assigned verified local PP-OCR assets to scene bootstrap: " + bootstrap.name, bootstrap);
+            if (changed)
+            {
+                EditorUtility.SetDirty(bootstrap);
+                AssetDatabase.SaveAssets();
+                Debug.Log("Assigned verified local PP-OCR assets to scene bootstrap: " + bootstrap.name, bootstrap);
+            }
+            else
+            {
+                Debug.Log("Verified local PP-OCR assets were already assigned to scene bootstrap: " + bootstrap.name, bootstrap);
+            }
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve the reviewed com.unity.ai.inference 2.2.x package before assigning local OCR assets.");
