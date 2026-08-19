@@ -61,8 +61,16 @@ namespace PhraseLayer.Core.Inputs
         {
             Text = text ?? throw new ArgumentNullException(nameof(text));
             if (confidence < 0.0 || confidence > 1.0) throw new ArgumentOutOfRangeException(nameof(confidence));
+            if (regions == null) throw new ArgumentNullException(nameof(regions));
+
+            var snapshot = new OcrRegion[regions.Count];
+            for (var index = 0; index < regions.Count; index++)
+            {
+                snapshot[index] = regions[index] ?? throw new ArgumentException("OCR regions cannot contain null entries.", nameof(regions));
+            }
+
             Confidence = confidence;
-            Regions = regions ?? throw new ArgumentNullException(nameof(regions));
+            Regions = snapshot;
         }
 
         public string Text { get; }
