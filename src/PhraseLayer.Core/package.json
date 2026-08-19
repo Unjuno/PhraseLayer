@@ -1,0 +1,11 @@
+{
+  "name": "com.unjuno.phraselayer.core",
+  "version": "0.1.0",
+  "displayName": "PhraseLayer Core",
+  "description": "Hardware-independent adaptive language assistance core for PhraseLayer.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Unjuno"
+  },
+  "license": "Apache-2.0"
+}
