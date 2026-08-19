@@ -55,9 +55,13 @@ for marker in (
     "UnityPaddleOcrDictionaryManifest.Validate(",
     "UnityInferenceModelProbe.BuildReport(detector)",
     "UnityInferenceModelProbe.BuildReport(recognizer)",
+    "VerifyLocalAssetsBatch",
+    "EditorApplication.Exit(0)",
+    "EditorApplication.Exit(1)",
     "AssignLocalAssetsToSceneBootstrap",
     'RequireProperty(serialized, "characterDictionaryManifest")',
     'RequireProperty(serialized, "useSpaceCharacter").boolValue = true',
+    "Verified local PP-OCR assets were already assigned",
 ):
     if marker not in editor:
         violations.append(f"Unity local PP-OCR Editor bridge missing reviewed marker: {marker}")
@@ -65,4 +69,4 @@ for marker in (
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: local PP-OCR assets are git-ignored, offline-verified, and wired to Unity Editor import/bootstrap checks")
+print("PASS: local PP-OCR assets are git-ignored, offline-verified, batch-probeable, and wired to idempotent Unity bootstrap assignment")
