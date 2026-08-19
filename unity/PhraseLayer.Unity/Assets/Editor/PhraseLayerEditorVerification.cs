@@ -24,7 +24,7 @@ namespace PhraseLayer.Unity.Editor
             VerifyOcrPresentationContract();
             VerifyOcrRuntimeContract();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, and scene bootstrap verified.");
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, scene bootstrap, and local OCR asset Editor bridge verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -126,6 +126,10 @@ namespace PhraseLayer.Unity.Editor
             var bootstrapType = typeof(UnityPaddleOcrBootstrapBehaviour);
             if (bootstrapType == null)
                 throw new InvalidOperationException("UnityPaddleOcrBootstrapBehaviour must compile for Inspector scene wiring.");
+
+            var localAssetEditorType = typeof(PhraseLayerLocalOcrAssets);
+            if (localAssetEditorType == null)
+                throw new InvalidOperationException("PhraseLayerLocalOcrAssets must compile for local OCR asset import/probe and bootstrap assignment.");
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference in the reviewed [2.2.1,2.3.0) range before Gate 4 verification.");
