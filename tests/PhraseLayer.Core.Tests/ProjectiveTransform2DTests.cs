@@ -56,7 +56,7 @@ namespace PhraseLayer.Core.Tests
                 new ImagePoint(0, 0),
                 new ImagePoint(10, 0),
                 new ImagePoint(20, 0),
-                new ImagePoint(5, 5));
+                new ImagePoint(30, 0));
 
             Assert.Throws<ArgumentException>(() => ProjectiveTransformFactory.UnitSquareToQuad(quad));
         }
