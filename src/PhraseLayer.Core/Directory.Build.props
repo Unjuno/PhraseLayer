@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../artifacts/bin/PhraseLayer.Core/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../artifacts/obj/PhraseLayer.Core/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>
