@@ -69,26 +69,47 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "MetaPassthroughCameraBridge.cs",
     UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
 for path in required_unity:
     if not path.exists():
         violations.append(f"missing Unity shell file: {path.relative_to(ROOT)}")
 
-runtime_path = UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs"
-if runtime_path.exists():
-    runtime_text = runtime_path.read_text(encoding="utf-8")
-    runtime_markers = (
+def validate_runtime(path, label, markers):
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    for marker in markers:
+        if marker not in text:
+            violations.append(f"{label} missing reviewed marker: {marker}")
+
+validate_runtime(
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
+    "Unity PP-OCR detector runtime",
+    (
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
         "PaddleOcrV6TinyDetectionPreprocess.CreateResizeTransform",
         "new Tensor<float>",
         "worker.Schedule(inputTensor)",
         "worker.PeekOutput() as Tensor<float>",
         "ReadbackAndClone()",
-    )
-    for marker in runtime_markers:
-        if marker not in runtime_text:
-            violations.append(f"Unity PP-OCR detector runtime missing reviewed marker: {marker}")
+    ),
+)
+
+validate_runtime(
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
+    "Unity PP-OCR recognizer runtime",
+    (
+        "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        "PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform",
+        "PaddleCtcGreedyDecoder.DecodeFromPredictions",
+        "new Tensor<float>",
+        "worker.Schedule(inputTensor)",
+        "worker.PeekOutput() as Tensor<float>",
+        "ReadbackAndClone()",
+    ),
+)
 
 core_package=json.loads((CORE/"package.json").read_text(encoding="utf-8"))
 if core_package.get("name") != "com.unjuno.phraselayer.core":
@@ -134,5 +155,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector runtime markers validated"
+    "and PP-OCR detector/recognizer runtime markers validated"
 )
