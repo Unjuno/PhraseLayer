@@ -33,7 +33,7 @@ namespace PhraseLayer.Core.Tests
         [Fact]
         public async Task CameraUnavailableDoesNotInvokeOcrOrPresenter()
         {
-            var stream = new QueueCameraStream(null);
+            var stream = new QueueCameraStream((ImageFrame?)null);
             var engine = new RecordingOcrEngine(new OcrObservation("unused", 1.0));
             var sink = new RecordingSink();
             var pump = CreatePump(stream, engine, sink, maxInferencesPerSecond: 5.0);
