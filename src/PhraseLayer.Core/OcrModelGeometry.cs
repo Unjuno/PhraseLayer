@@ -34,11 +34,19 @@ namespace PhraseLayer.Core.Inputs
         public OcrModelPoint P3 { get; }
     }
 
+    public interface IOcrModelCoordinateTransform
+    {
+        OcrModelPoint SourceToModel(ImagePoint sourcePoint);
+        ImagePoint ModelToSource(OcrModelPoint modelPoint);
+        OcrModelQuad SourceToModel(ImageQuad sourceQuad);
+        ImageQuad ModelToSource(OcrModelQuad modelQuad);
+    }
+
     /// <summary>
     /// Geometry for aspect-preserving resize plus centered letterbox padding.
-    /// Detector output can be mapped back into the exact source-image pixel coordinate system used by AR placement.
+    /// This remains available for OCR models that actually use letterboxing; PP-OCR uses a separate transform.
     /// </summary>
-    public sealed class OcrLetterboxTransform
+    public sealed class OcrLetterboxTransform : IOcrModelCoordinateTransform
     {
         private OcrLetterboxTransform(
             int sourceWidth,
@@ -180,7 +188,7 @@ namespace PhraseLayer.Core.Inputs
         public static OcrRegion ToSourceRegion(
             OcrDetectionCandidate detection,
             OcrRecognitionCandidate recognition,
-            OcrLetterboxTransform transform)
+            IOcrModelCoordinateTransform transform)
         {
             if (detection == null) throw new ArgumentNullException(nameof(detection));
             if (recognition == null) throw new ArgumentNullException(nameof(recognition));
