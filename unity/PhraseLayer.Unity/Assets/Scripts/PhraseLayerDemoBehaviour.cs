@@ -17,15 +17,15 @@ namespace PhraseLayer.Unity
         [SerializeField, TextArea(2, 5)] private string sourceText = DefaultSource;
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
 
-        private InMemoryLearnerModel learner = null!;
-        private LanguagePipeline pipeline = null!;
-        private MixedLanguagePlan? currentPlan;
+        private InMemoryLearnerModel learner;
+        private LanguagePipeline pipeline;
+        private MixedLanguagePlan currentPlan;
         private string status = "Preparing PhraseLayer...";
         private Vector2 scroll;
 
         public string SourceText => sourceText;
-        public string DisplayText => currentPlan?.DisplayText ?? sourceText;
-        public MixedLanguagePlan? CurrentPlan => currentPlan;
+        public string DisplayText => currentPlan != null ? currentPlan.DisplayText : sourceText;
+        public MixedLanguagePlan CurrentPlan => currentPlan;
 
         private async void Start()
         {
