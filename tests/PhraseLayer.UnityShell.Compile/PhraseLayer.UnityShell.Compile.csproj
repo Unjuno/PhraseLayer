@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs" LinkBase="UnityRuntime" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs" LinkBase="UnityEditor" />
+  </ItemGroup>
+</Project>

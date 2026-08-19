@@ -1,0 +1,16 @@
+name: Unity CLI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Unity editor shell
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify.sh
+          ./tools/unity/verify.sh

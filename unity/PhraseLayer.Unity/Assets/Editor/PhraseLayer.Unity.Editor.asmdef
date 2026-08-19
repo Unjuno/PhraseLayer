@@ -1,0 +1,19 @@
+{
+  "name": "PhraseLayer.Unity.Editor",
+  "rootNamespace": "PhraseLayer.Unity.Editor",
+  "references": [
+    "PhraseLayer.Core",
+    "PhraseLayer.Unity"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
