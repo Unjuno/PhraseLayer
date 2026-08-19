@@ -6,21 +6,12 @@ namespace PhraseLayer.Core.Tests
 {
     public sealed class PaddleOcrRuntimeContractTests
     {
-        [Theory]
-        [InlineData(new[] { 1, 1, 4, 5 }, 5, 4)]
-        [InlineData(new[] { 1, 4, 5 }, 5, 4)]
-        [InlineData(new[] { 4, 5 }, 5, 4)]
-        public void DetectorContractAcceptsSupportedDbLayouts(int[] shape, int expectedWidth, int expectedHeight)
+        [Fact]
+        public void DetectorContractAcceptsSupportedDbLayouts()
         {
-            var values = new float[expectedWidth * expectedHeight];
-
-            var contract = PaddleOcrRuntimeContract.ValidateDetector(shape, values);
-
-            Assert.Equal(expectedWidth, contract.MapWidth);
-            Assert.Equal(expectedHeight, contract.MapHeight);
-            Assert.Equal(values.Length, contract.ValueCount);
-            Assert.Equal(shape, contract.OutputShape);
-            Assert.NotSame(shape, contract.OutputShape);
+            AssertDetectorLayout(new[] { 1, 1, 4, 5 }, expectedWidth: 5, expectedHeight: 4);
+            AssertDetectorLayout(new[] { 1, 4, 5 }, expectedWidth: 5, expectedHeight: 4);
+            AssertDetectorLayout(new[] { 4, 5 }, expectedWidth: 5, expectedHeight: 4);
         }
 
         [Fact]
@@ -89,6 +80,19 @@ namespace PhraseLayer.Core.Tests
             Assert.Contains("detector shape=[1,1,4,5]", report, StringComparison.Ordinal);
             Assert.Contains("recognizer=unobserved", report, StringComparison.Ordinal);
             Assert.Contains("configured_dictionary=96", report, StringComparison.Ordinal);
+        }
+
+        private static void AssertDetectorLayout(int[] shape, int expectedWidth, int expectedHeight)
+        {
+            var values = new float[expectedWidth * expectedHeight];
+
+            var contract = PaddleOcrRuntimeContract.ValidateDetector(shape, values);
+
+            Assert.Equal(expectedWidth, contract.MapWidth);
+            Assert.Equal(expectedHeight, contract.MapHeight);
+            Assert.Equal(values.Length, contract.ValueCount);
+            Assert.Equal(shape, contract.OutputShape);
+            Assert.NotSame(shape, contract.OutputShape);
         }
     }
 }
