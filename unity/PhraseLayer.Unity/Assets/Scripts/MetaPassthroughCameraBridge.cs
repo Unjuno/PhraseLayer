@@ -54,12 +54,9 @@ namespace PhraseLayer.Unity
             var callbacks = new PermissionCallbacks();
             callbacks.PermissionGranted += _ => CompleteIfFinished(completion);
             callbacks.PermissionDenied += _ => Complete(completion, CameraPermissionState.Denied);
-            callbacks.PermissionDeniedAndDontAskAgain += _ => Complete(completion, CameraPermissionState.Denied);
 
             if (cancellationToken.CanBeCanceled)
-            {
-                cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
-            }
+                cancellationToken.Register(() => completion.TrySetCanceled());
 
             Permission.RequestUserPermissions(RequiredPermissions, callbacks);
             return inFlightRequest;
