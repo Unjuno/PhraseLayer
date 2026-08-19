@@ -44,7 +44,9 @@ for marker in (
     "presenter.Clear()",
     "var previousAutoRun = runtimeDriver.AutoRun",
     "runtimeDriver.AutoRun = false",
-    "runtimeDriver.RunOnceAsync(cancellationToken)",
+    "CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)",
+    "timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds))",
+    "runtimeDriver.RunOnceAsync(runToken)",
     "lastResult.CameraState == CameraCaptureState.Failed",
     "presenter.Regions.Count >= minimumRecognizedRegions",
     '"recognizer=unobserved"',
@@ -68,4 +70,4 @@ for marker in (
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: Quest OCR smoke harness isolates synthetic fixtures, serializes pump ownership, requires real OCR regions, and redacts recognized text by default")
+print("PASS: Quest OCR smoke harness isolates synthetic fixtures, owns the pump, enforces a hard timeout, requires real OCR regions, and redacts recognized text by default")
