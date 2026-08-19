@@ -127,8 +127,8 @@ namespace PhraseLayer.Core.Inputs
         }
 
         public static string BuildReport(
-            PaddleDetectorRuntimeContract detector,
-            PaddleRecognizerRuntimeContract recognizer,
+            PaddleDetectorRuntimeContract? detector,
+            PaddleRecognizerRuntimeContract? recognizer,
             int dictionaryTokenCount)
         {
             if (dictionaryTokenCount < 0) throw new ArgumentOutOfRangeException(nameof(dictionaryTokenCount));
