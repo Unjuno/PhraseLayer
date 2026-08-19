@@ -69,6 +69,7 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "MetaPassthroughCameraBridge.cs",
     UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
+    UNITY / "Assets" / "Scripts" / "PaddleDetectorRawOutputExtensions.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
@@ -96,6 +97,17 @@ validate_runtime(
         "worker.Schedule(inputTensor)",
         "worker.PeekOutput() as Tensor<float>",
         "ReadbackAndClone()",
+    ),
+)
+
+validate_runtime(
+    UNITY / "Assets" / "Scripts" / "PaddleDetectorRawOutputExtensions.cs",
+    "Unity PP-OCR detector DB decoder",
+    (
+        "PaddleDbProbabilityMap.FromTensor",
+        "PaddleDbQuadPostprocessor",
+        "output.ResizeTransform.SourceWidth",
+        "output.ResizeTransform.SourceHeight",
     ),
 )
 
@@ -180,5 +192,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/recognizer/crop runtime markers validated"
+    "and PP-OCR detector/DB/recognizer/crop runtime markers validated"
 )
