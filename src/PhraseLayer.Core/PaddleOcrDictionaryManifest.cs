@@ -49,9 +49,9 @@ namespace PhraseLayer.Core.Inputs
     }
 
     /// <summary>
-    /// Validates the generated recognition dictionary manifest against the exact PP-OCRv6 tiny recognizer
-    /// revision currently reviewed by PhraseLayer. JSON parsing and file hashing stay platform-specific;
-    /// identity, token-count, space-token and digest equality rules remain testable in Core.
+    /// Validates the generated recognition dictionary manifest against the exact measured PP-OCRv6 tiny
+    /// recognizer revision and dictionary bytes reviewed by PhraseLayer. JSON parsing and hashing remain
+    /// platform-specific; identity, token-count, space-token and digest rules remain testable in Core.
     /// </summary>
     public static class PaddleOcrDictionaryManifestContract
     {
@@ -59,9 +59,13 @@ namespace PhraseLayer.Core.Inputs
         public const string ExpectedModelId = "pp-ocrv6-tiny-rec";
         public const string ExpectedUpstream = "PaddlePaddle/PP-OCRv6_tiny_rec_onnx";
         public const string ExpectedRevision = "2612ab37152ae0a677521bae4e1e3d4fb4cf7c30";
-        public const string ExpectedSourceArtifact = "inference.json";
+        public const string ExpectedSourceArtifact = "inference.yml";
         public const string ExpectedPostprocessName = "CTCLabelDecode";
+        public const int ExpectedRawTokenCount = 6904;
+        public const bool ExpectedUseSpaceChar = true;
+        public const int ExpectedEffectiveTokenCount = 6905;
         public const string ExpectedGeneratedArtifact = "ppocr_keys.txt";
+        public const string ExpectedGeneratedSha256 = "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc";
 
         public static string ValidateAndBuildReport(
             PaddleOcrDictionaryManifest manifest,
@@ -80,39 +84,36 @@ namespace PhraseLayer.Core.Inputs
             RequireEqual(manifest.SourceArtifact, ExpectedSourceArtifact, "source_artifact");
             RequireEqual(manifest.PostprocessName, ExpectedPostprocessName, "postprocess_name");
             RequireEqual(manifest.GeneratedArtifact, ExpectedGeneratedArtifact, "generated_artifact");
+            RequireEqual(manifest.RawTokenCount, ExpectedRawTokenCount, "raw_token_count");
+            RequireEqual(manifest.EffectiveTokenCount, ExpectedEffectiveTokenCount, "effective_token_count");
 
-            if (manifest.RawTokenCount <= 0)
-                throw new InvalidOperationException("Dictionary manifest raw_token_count must be greater than zero.");
+            if (manifest.UseSpaceChar != ExpectedUseSpaceChar)
+            {
+                throw new InvalidOperationException(
+                    "use_space_char mismatch. Expected=" + ExpectedUseSpaceChar +
+                    ", actual=" + manifest.UseSpaceChar + ".");
+            }
+            if (manifest.RawContainsLiteralSpace)
+            {
+                throw new InvalidOperationException(
+                    "Dictionary manifest is ambiguous: raw dictionary already contains a literal single-space token while use_space_char=true.");
+            }
             if (manifest.RawTokenCount != actualRawTokenCount)
             {
                 throw new InvalidOperationException(
                     "Dictionary manifest raw_token_count does not match the assigned dictionary. " +
                     "Manifest=" + manifest.RawTokenCount + ", actual=" + actualRawTokenCount + ".");
             }
-
-            if (manifest.UseSpaceChar != configuredUseSpaceCharacter)
+            if (configuredUseSpaceCharacter != ExpectedUseSpaceChar)
             {
                 throw new InvalidOperationException(
-                    "Dictionary manifest use_space_char does not match the Unity bootstrap setting. " +
-                    "Manifest=" + manifest.UseSpaceChar + ", configured=" + configuredUseSpaceCharacter + ".");
-            }
-
-            if (manifest.UseSpaceChar && manifest.RawContainsLiteralSpace)
-            {
-                throw new InvalidOperationException(
-                    "Dictionary manifest is ambiguous: raw dictionary already contains a literal single-space token while use_space_char=true.");
-            }
-
-            var expectedEffectiveCount = checked(manifest.RawTokenCount + (manifest.UseSpaceChar ? 1 : 0));
-            if (manifest.EffectiveTokenCount != expectedEffectiveCount)
-            {
-                throw new InvalidOperationException(
-                    "Dictionary manifest effective_token_count is inconsistent with raw_token_count/use_space_char. " +
-                    "Manifest=" + manifest.EffectiveTokenCount + ", expected=" + expectedEffectiveCount + ".");
+                    "Unity bootstrap useSpaceCharacter does not match the pinned PP-OCR dictionary contract. " +
+                    "Expected=" + ExpectedUseSpaceChar + ", configured=" + configuredUseSpaceCharacter + ".");
             }
 
             ValidateSha256(manifest.GeneratedSha256, "generated_sha256");
             ValidateSha256(actualDictionarySha256, nameof(actualDictionarySha256));
+            RequireEqual(manifest.GeneratedSha256, ExpectedGeneratedSha256, "generated_sha256");
             if (!string.Equals(manifest.GeneratedSha256, actualDictionarySha256, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -122,6 +123,7 @@ namespace PhraseLayer.Core.Inputs
 
             return "dictionary manifest model=" + manifest.ModelId +
                    " revision=" + manifest.Revision +
+                   " source=" + manifest.SourceArtifact +
                    " raw=" + manifest.RawTokenCount +
                    " effective=" + manifest.EffectiveTokenCount +
                    " use_space_char=" + manifest.UseSpaceChar.ToString().ToLowerInvariant() +

@@ -9,8 +9,12 @@ checks = {
     CORE / "PaddleOcrDictionaryManifest.cs": (
         "ExpectedModelId = \"pp-ocrv6-tiny-rec\"",
         "ExpectedRevision = \"2612ab37152ae0a677521bae4e1e3d4fb4cf7c30\"",
+        "ExpectedSourceArtifact = \"inference.yml\"",
+        "ExpectedRawTokenCount = 6904",
+        "ExpectedEffectiveTokenCount = 6905",
+        "ExpectedGeneratedSha256 = \"46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc\"",
         "raw_token_count does not match the assigned dictionary",
-        "use_space_char does not match the Unity bootstrap setting",
+        "Unity bootstrap useSpaceCharacter does not match the pinned PP-OCR dictionary contract",
         "Dictionary SHA-256 does not match the generated manifest",
     ),
     UNITY / "UnityPaddleOcrDictionaryManifest.cs": (
@@ -41,4 +45,4 @@ for path, markers in checks.items():
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: PP-OCR dictionary manifest identity/token/space/hash validation is wired into Unity bootstrap")
+print("PASS: measured PP-OCR dictionary manifest identity/token/space/hash validation is wired into Unity bootstrap")

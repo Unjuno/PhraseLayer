@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Extract a PaddleOCR CTC character dictionary from revision-matched export metadata.
+"""Extract the PP-OCR CTC dictionary from revision-matched Paddle inference YAML.
 
-This script intentionally writes the raw PostProcess.character_dict list exactly
-as PaddleOCR's inference path does. The separate use_space_char flag remains a
-separate postprocess contract and is recorded in the generated manifest.
+The pinned PP-OCRv6 tiny recognizer stores `PostProcess.character_dict` in
+`inference.yml`. This script parses only the reviewed YAML subset instead of
+introducing a general YAML dependency. It writes raw dictionary tokens exactly
+one per UTF-8 line; Paddle's separate `use_space_char` contract remains separate
+and is recorded in the generated manifest.
 """
 
 from __future__ import annotations
@@ -11,11 +13,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOCK = ROOT / "models" / "models.lock.json"
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+EXPECTED_SOURCE_FORMAT = "paddle-inference-yaml"
+EXPECTED_YAML_PATH = ["PostProcess", "character_dict"]
 
 
 class DictionaryExportError(RuntimeError):
@@ -40,6 +46,22 @@ def load_model(lock_path: Path, model_id: str) -> dict:
     return matches[0]
 
 
+def _require_positive_int(contract: dict, key: str, model_id: str) -> int:
+    value = contract.get(key)
+    if not isinstance(value, int) or value <= 0:
+        raise DictionaryExportError(f"{model_id}: {key} must be a positive integer")
+    return value
+
+
+def _require_sha256(contract: dict, key: str, model_id: str) -> str:
+    value = contract.get(key)
+    if not isinstance(value, str) or SHA256_RE.fullmatch(value) is None:
+        raise DictionaryExportError(
+            f"{model_id}: {key} must be 64 lowercase hexadecimal characters"
+        )
+    return value
+
+
 def validate_dictionary_contract(model: dict) -> dict:
     model_id = model.get("id", "<unknown>")
     contract = model.get("recognition_dictionary")
@@ -52,25 +74,33 @@ def validate_dictionary_contract(model: dict) -> dict:
     generated_artifact = contract.get("generated_artifact")
     generated_manifest = contract.get("generated_manifest")
     postprocess_name = contract.get("postprocess_name")
-    json_path = contract.get("json_path")
+    source_format = contract.get("source_format")
+    yaml_path = contract.get("yaml_path")
     use_space_char = contract.get("use_space_char")
 
     if not isinstance(source_artifact, str) or not source_artifact:
         raise DictionaryExportError(f"{model_id}: source_artifact is missing")
+    if source_format != EXPECTED_SOURCE_FORMAT:
+        raise DictionaryExportError(
+            f"{model_id}: source_format must be {EXPECTED_SOURCE_FORMAT!r}"
+        )
+    if yaml_path != EXPECTED_YAML_PATH:
+        raise DictionaryExportError(
+            f"{model_id}: yaml_path must remain {EXPECTED_YAML_PATH!r}"
+        )
     if not isinstance(generated_artifact, str) or not generated_artifact:
         raise DictionaryExportError(f"{model_id}: generated_artifact is missing")
     if not isinstance(generated_manifest, str) or not generated_manifest:
         raise DictionaryExportError(f"{model_id}: generated_manifest is missing")
     if not isinstance(postprocess_name, str) or not postprocess_name:
         raise DictionaryExportError(f"{model_id}: postprocess_name is missing")
-    if not isinstance(json_path, list) or not json_path or not all(
-        isinstance(segment, str) and segment for segment in json_path
-    ):
-        raise DictionaryExportError(
-            f"{model_id}: json_path must be a non-empty list of property names"
-        )
     if not isinstance(use_space_char, bool):
         raise DictionaryExportError(f"{model_id}: use_space_char must be boolean")
+
+    _require_positive_int(contract, "raw_token_count", model_id)
+    _require_positive_int(contract, "effective_token_count", model_id)
+    _require_positive_int(contract, "generated_artifact_size_bytes", model_id)
+    _require_sha256(contract, "generated_artifact_sha256", model_id)
 
     support_artifacts = model.get("support_artifacts", [])
     if not isinstance(support_artifacts, list):
@@ -84,48 +114,94 @@ def validate_dictionary_contract(model: dict) -> dict:
         raise DictionaryExportError(
             f"{model_id}: source_artifact {source_artifact!r} must appear exactly once in support_artifacts"
         )
+    source = matches[0]
+    if source.get("artifact_size_bytes") is None or source.get("artifact_sha256") is None:
+        raise DictionaryExportError(
+            f"{model_id}: dictionary source artifact must have pinned size and SHA-256"
+        )
 
     return contract
 
 
-def value_at_path(payload: object, path: list[str]) -> object:
-    current = payload
-    for segment in path:
-        if not isinstance(current, dict) or segment not in current:
+def decode_yaml_scalar(raw: str) -> str:
+    if raw.startswith("'"):
+        if len(raw) < 2 or not raw.endswith("'"):
+            raise DictionaryExportError(f"unterminated single-quoted YAML scalar: {raw!r}")
+        return raw[1:-1].replace("''", "'")
+
+    if raw.startswith('"'):
+        if len(raw) < 2 or not raw.endswith('"'):
+            raise DictionaryExportError(f"unterminated double-quoted YAML scalar: {raw!r}")
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as error:
             raise DictionaryExportError(
-                "export metadata is missing JSON path: " + ".".join(path)
-            )
-        current = current[segment]
-    return current
+                f"unsupported double-quoted YAML scalar: {raw!r}"
+            ) from error
+        if not isinstance(value, str):
+            raise DictionaryExportError(f"YAML scalar is not a string: {raw!r}")
+        return value
+
+    return raw
 
 
-def extract_tokens(metadata: dict, contract: dict) -> list[str]:
-    postprocess = metadata.get("PostProcess")
-    if not isinstance(postprocess, dict):
-        raise DictionaryExportError("export metadata PostProcess object is missing")
+def _postprocess_block(lines: list[str]) -> list[str]:
+    indices = [index for index, line in enumerate(lines) if line == "PostProcess:"]
+    if len(indices) != 1:
+        raise DictionaryExportError(
+            f"expected exactly one top-level PostProcess block; found {len(indices)}"
+        )
 
+    start = indices[0] + 1
+    end = len(lines)
+    for index in range(start, len(lines)):
+        line = lines[index]
+        if line and not line[0].isspace() and not line.lstrip().startswith("#"):
+            end = index
+            break
+    return lines[start:end]
+
+
+def extract_tokens(metadata_text: str, contract: dict) -> list[str]:
+    if not isinstance(metadata_text, str):
+        raise DictionaryExportError("export metadata text must be a string")
+
+    block = _postprocess_block(metadata_text.splitlines())
+
+    name_lines = [line for line in block if line.startswith("  name:")]
+    if len(name_lines) != 1:
+        raise DictionaryExportError(
+            f"expected exactly one PostProcess.name entry; found {len(name_lines)}"
+        )
+    actual_postprocess = decode_yaml_scalar(name_lines[0].split(":", 1)[1].lstrip())
     expected_postprocess = contract["postprocess_name"]
-    actual_postprocess = postprocess.get("name")
     if actual_postprocess != expected_postprocess:
         raise DictionaryExportError(
             f"postprocess mismatch: expected {expected_postprocess!r}, got {actual_postprocess!r}"
         )
 
-    raw_tokens = value_at_path(metadata, contract["json_path"])
-    if not isinstance(raw_tokens, list) or not raw_tokens:
-        raise DictionaryExportError("character_dict must be a non-empty list")
+    dictionary_indices = [
+        index for index, line in enumerate(block) if line == "  character_dict:"
+    ]
+    if len(dictionary_indices) != 1:
+        raise DictionaryExportError(
+            f"expected exactly one PostProcess.character_dict entry; found {len(dictionary_indices)}"
+        )
 
     tokens: list[str] = []
-    for index, token in enumerate(raw_tokens):
-        if not isinstance(token, str):
-            raise DictionaryExportError(
-                f"character_dict[{index}] must be a string, got {type(token).__name__}"
-            )
+    start = dictionary_indices[0] + 1
+    for line in block[start:]:
+        if not line.startswith("  - "):
+            break
+        token = decode_yaml_scalar(line[4:])
         if "\n" in token or "\r" in token:
             raise DictionaryExportError(
-                f"character_dict[{index}] contains a newline and cannot be represented in Paddle's line dictionary format"
+                f"character_dict[{len(tokens)}] contains a newline and cannot be represented in Paddle's line dictionary format"
             )
         tokens.append(token)
+
+    if not tokens:
+        raise DictionaryExportError("character_dict must be a non-empty YAML list")
 
     if contract["use_space_char"] and " " in tokens:
         raise DictionaryExportError(
@@ -140,7 +216,40 @@ def dictionary_bytes(tokens: list[str]) -> bytes:
     return ("".join(token + "\n" for token in tokens)).encode("utf-8")
 
 
-def build_manifest(model: dict, contract: dict, tokens: list[str], output_bytes: bytes) -> dict:
+def verify_generated_contract(contract: dict, tokens: list[str], output_bytes: bytes) -> str:
+    raw_count = len(tokens)
+    effective_count = raw_count + (1 if contract["use_space_char"] else 0)
+    digest = hashlib.sha256(output_bytes).hexdigest()
+
+    if raw_count != contract["raw_token_count"]:
+        raise DictionaryExportError(
+            f"raw token count mismatch: expected {contract['raw_token_count']}, got {raw_count}"
+        )
+    if effective_count != contract["effective_token_count"]:
+        raise DictionaryExportError(
+            "effective token count mismatch: expected "
+            f"{contract['effective_token_count']}, got {effective_count}"
+        )
+    if len(output_bytes) != contract["generated_artifact_size_bytes"]:
+        raise DictionaryExportError(
+            "generated dictionary size mismatch: expected "
+            f"{contract['generated_artifact_size_bytes']}, got {len(output_bytes)}"
+        )
+    if digest != contract["generated_artifact_sha256"]:
+        raise DictionaryExportError(
+            "generated dictionary SHA-256 mismatch: expected "
+            f"{contract['generated_artifact_sha256']}, got {digest}"
+        )
+    return digest
+
+
+def build_manifest(
+    model: dict,
+    contract: dict,
+    tokens: list[str],
+    output_bytes: bytes,
+    digest: str,
+) -> dict:
     use_space_char = contract["use_space_char"]
     return {
         "schema_version": 1,
@@ -148,13 +257,15 @@ def build_manifest(model: dict, contract: dict, tokens: list[str], output_bytes:
         "upstream": model["upstream"],
         "revision": model["revision"],
         "source_artifact": contract["source_artifact"],
+        "source_format": contract["source_format"],
         "postprocess_name": contract["postprocess_name"],
         "raw_token_count": len(tokens),
         "raw_contains_literal_space": " " in tokens,
         "use_space_char": use_space_char,
         "effective_token_count": len(tokens) + (1 if use_space_char else 0),
         "generated_artifact": contract["generated_artifact"],
-        "generated_sha256": hashlib.sha256(output_bytes).hexdigest(),
+        "generated_size_bytes": len(output_bytes),
+        "generated_sha256": digest,
     }
 
 
@@ -166,13 +277,12 @@ def export_dictionary(
 ) -> tuple[Path, Path, dict]:
     model = load_model(lock_path, model_id)
     contract = validate_dictionary_contract(model)
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if not isinstance(metadata, dict):
-        raise DictionaryExportError("export metadata root must be a JSON object")
+    metadata_text = metadata_path.read_text(encoding="utf-8")
 
-    tokens = extract_tokens(metadata, contract)
+    tokens = extract_tokens(metadata_text, contract)
     output_bytes = dictionary_bytes(tokens)
-    manifest = build_manifest(model, contract, tokens, output_bytes)
+    digest = verify_generated_contract(contract, tokens, output_bytes)
+    manifest = build_manifest(model, contract, tokens, output_bytes, digest)
 
     dictionary_path = output_dir / contract["generated_artifact"]
     manifest_path = output_dir / contract["generated_manifest"]
