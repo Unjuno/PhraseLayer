@@ -21,7 +21,8 @@ namespace PhraseLayer.Unity.Editor
         {
             VerifyLanguagePipeline();
             VerifyViewportGeometry();
-            Debug.Log("PhraseLayer Gate 3 PASS: language pipeline and OCR viewport geometry verified.");
+            VerifyOcrPresentationContract();
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, and OCR presentation contract verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -60,10 +61,42 @@ namespace PhraseLayer.Unity.Editor
             AssertNear(screen.height, 100.0, "screen rect height");
         }
 
+        private static void VerifyOcrPresentationContract()
+        {
+            if (!typeof(IOcrObservationSink).IsAssignableFrom(typeof(OcrViewportDebugBehaviour)))
+                throw new InvalidOperationException("OcrViewportDebugBehaviour must remain an IOcrObservationSink.");
+
+            var observation = new OcrObservation(
+                "Emergency exit",
+                0.94,
+                new[] { new OcrRegion("Emergency exit", 0.94, ImageQuad.FromRect(10, 20, 100, 40)) });
+            var frame = new ImageFrame(new byte[4], 200, 100, 777);
+            var sink = new RecordingOcrSink();
+            var coordinator = new OcrPresentationCoordinator(sink);
+            var result = new OcrScheduleResult(OcrScheduleStatus.Processed, 777, observation);
+
+            if (!coordinator.PresentIfProcessed(result, frame))
+                throw new InvalidOperationException("Processed OCR result was not presented.");
+            if (!ReferenceEquals(sink.Observation, observation) || !ReferenceEquals(sink.Frame, frame))
+                throw new InvalidOperationException("OCR presentation did not preserve the observation/frame pairing.");
+        }
+
         private static void AssertNear(double actual, double expected, string label)
         {
             if (Math.Abs(actual - expected) > 0.0001)
                 throw new InvalidOperationException(label + " expected " + expected + " but was " + actual);
+        }
+
+        private sealed class RecordingOcrSink : IOcrObservationSink
+        {
+            public OcrObservation Observation { get; private set; }
+            public ImageFrame Frame { get; private set; }
+
+            public void Present(OcrObservation observation, ImageFrame frame)
+            {
+                Observation = observation;
+                Frame = frame;
+            }
         }
 
         public static void VerifyCorePipelineBatch()
