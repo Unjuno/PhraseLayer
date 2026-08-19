@@ -19,42 +19,28 @@ jobs:
       - run: python tools/validate_repo.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
-      - name: Inspect pinned PP-OCR recognizer export metadata
+      - name: Inspect pinned PP-OCR recognizer export config
         run: |
-          python tools/stage_models.py --model pp-ocrv6-tiny-rec --include-support
+          python tools/stage_models.py --model pp-ocrv6-tiny-rec --include-support --allow-unverified-metadata
           python - <<'PY'
-          import json
           from pathlib import Path
 
-          path = Path('artifacts/models/pp-ocrv6-tiny-rec/inference.json')
-          payload = json.loads(path.read_text(encoding='utf-8'))
-          print('TOP_LEVEL', list(payload) if isinstance(payload, dict) else type(payload).__name__)
-
-          matches = []
-          def walk(value, path_parts):
-              if isinstance(value, dict):
-                  for key, child in value.items():
-                      child_path = path_parts + [str(key)]
-                      lowered = str(key).lower()
-                      if 'character' in lowered or 'postprocess' in lowered or lowered in {'name', 'decoder'}:
-                          if isinstance(child, list):
-                              summary = f'list(len={len(child)}, sample={child[:5]!r})'
-                          elif isinstance(child, dict):
-                              summary = f'dict(keys={list(child)[:12]!r})'
-                          else:
-                              summary = repr(child)
-                          matches.append(('.'.join(child_path), summary))
-                      walk(child, child_path)
-              elif isinstance(value, list):
-                  if len(value) >= 100 and all(isinstance(item, str) for item in value[:min(20, len(value))]):
-                      matches.append(('.'.join(path_parts), f'string_list(len={len(value)}, sample={value[:8]!r})'))
-                  for index, child in enumerate(value[:50]):
-                      if isinstance(child, (dict, list)):
-                          walk(child, path_parts + [f'[{index}]'])
-
-          walk(payload, [])
-          for path_text, summary in matches[:100]:
-              print('MATCH', path_text, summary)
+          path = Path('artifacts/models/pp-ocrv6-tiny-rec/inference.yml')
+          text = path.read_text(encoding='utf-8')
+          lines = text.splitlines()
+          print('INFERENCE_YML_LINES', len(lines))
+          terms = ('postprocess', 'character_dict', 'use_space_char', 'ctclabeldecode')
+          emitted = set()
+          for index, line in enumerate(lines):
+              lowered = line.lower()
+              if any(term in lowered for term in terms):
+                  start = max(0, index - 3)
+                  end = min(len(lines), index + 25)
+                  for line_index in range(start, end):
+                      if line_index not in emitted:
+                          print(f'YML {line_index + 1}: {lines[line_index][:1000]}')
+                          emitted.add(line_index)
+                  print('---')
           PY
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
