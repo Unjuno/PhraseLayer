@@ -10,7 +10,8 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Scene-facing bootstrap that owns the end-to-end PP-OCR engine and injects it into OcrDebugRuntimeBehaviour.
-    /// Model assets and the recognition dictionary remain Inspector-assigned so unreviewed artifacts are not bundled by code.
+    /// Model assets, the generated recognition dictionary, and its revision manifest remain Inspector-assigned so
+    /// unreviewed artifacts are not bundled by code and dictionary/model contract drift fails before inference.
     /// </summary>
     public sealed class UnityPaddleOcrBootstrapBehaviour : MonoBehaviour
     {
@@ -19,6 +20,7 @@ namespace PhraseLayer.Unity
         [SerializeField] private ModelAsset detectorModel = default(ModelAsset);
         [SerializeField] private ModelAsset recognizerModel = default(ModelAsset);
         [SerializeField] private TextAsset characterDictionary = default(TextAsset);
+        [SerializeField] private TextAsset characterDictionaryManifest = default(TextAsset);
         [SerializeField] private bool useSpaceCharacter = true;
         [SerializeField] private float recognitionDropScore = 0.5f;
         [SerializeField] private int recognizerModelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth;
@@ -30,6 +32,8 @@ namespace PhraseLayer.Unity
         public bool IsInitialized => engine != null;
         public IOcrEngine Engine => engine;
         public int DictionaryTokenCount { get; private set; }
+        public string DictionaryManifestReport { get; private set; } =
+            "PP-OCR dictionary manifest not validated.";
         public string RuntimeContractReport => engine == null
             ? "PP-OCR engine not initialized; runtime model contract is unobserved."
             : engine.RuntimeContractReport;
@@ -49,18 +53,25 @@ namespace PhraseLayer.Unity
             if (recognizerModel == null)
                 throw new InvalidOperationException("Assign the pinned PP-OCR recognizer ModelAsset to the PP-OCR bootstrap.");
             if (characterDictionary == null)
-                throw new InvalidOperationException("Assign the revision-reviewed PP-OCR character dictionary TextAsset to the PP-OCR bootstrap.");
+                throw new InvalidOperationException("Assign the generated PP-OCR character dictionary TextAsset to the PP-OCR bootstrap.");
+            if (characterDictionaryManifest == null)
+                throw new InvalidOperationException("Assign the generated PP-OCR dictionary manifest TextAsset to the PP-OCR bootstrap.");
             if (recognitionDropScore < 0f || recognitionDropScore > 1f || float.IsNaN(recognitionDropScore) || float.IsInfinity(recognitionDropScore))
                 throw new InvalidOperationException("Recognition drop score must be finite and within [0,1].");
             if (recognizerModelWidth <= 0)
                 throw new InvalidOperationException("Recognizer model width must be greater than zero.");
+
+            DictionaryManifestReport = UnityPaddleOcrDictionaryManifest.Validate(
+                characterDictionary,
+                characterDictionaryManifest,
+                useSpaceCharacter);
 
             var dictionary = PaddleOcrCharacterDictionary.Parse(characterDictionary.text, useSpaceCharacter);
             DictionaryTokenCount = dictionary.Count;
             if (DictionaryTokenCount == 0)
             {
                 throw new InvalidOperationException(
-                    "The configured PP-OCR character dictionary contains no tokens. Confirm the reviewed dictionary asset and useSpaceCharacter setting.");
+                    "The configured PP-OCR character dictionary contains no tokens. Confirm the generated dictionary/manifest assets.");
             }
 
             var created = new UnityPaddleOcrEngine(
@@ -94,6 +105,7 @@ namespace PhraseLayer.Unity
         public bool IsInitialized => false;
         public IOcrEngine Engine => null;
         public int DictionaryTokenCount => 0;
+        public string DictionaryManifestReport => UnityPaddleOcrDictionaryManifest.UnsupportedReport;
         public string RuntimeContractReport =>
             "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
 #endif
