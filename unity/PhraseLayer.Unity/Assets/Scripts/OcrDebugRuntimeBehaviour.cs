@@ -29,6 +29,15 @@ namespace PhraseLayer.Unity
         public Exception LastError => lastError;
         public OcrPumpResult LastResult => lastResult;
         public float TargetOcrHz => targetOcrHz;
+        public bool AutoRun
+        {
+            get => autoRun;
+            set
+            {
+                autoRun = value;
+                if (!autoRun) nextAttemptTime = 0.0;
+            }
+        }
 
         public void ConfigureBackend(IUnityTextureOcrBackend backend)
         {
