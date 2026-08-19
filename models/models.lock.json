@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "policy": "Candidate metadata only; no model weights are bundled before revision-level license and runtime review.",
+  "candidates": [
+    {"id":"pp-ocrv6-tiny-det","purpose":"ocr-detection","upstream":"PaddlePaddle/PP-OCRv6_tiny_det_onnx","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
+    {"id":"pp-ocrv6-tiny-rec","purpose":"ocr-recognition","upstream":"PaddlePaddle/PP-OCRv6_tiny_rec_onnx","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
+    {"id":"opus-mt-en-jap","purpose":"translation-en-ja","upstream":"Helsinki-NLP/opus-mt-en-jap","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
+    {"id":"moonshine-streaming-tiny","purpose":"asr-en-streaming","upstream":"UsefulSensors/moonshine-streaming-tiny","license":"MIT","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
+    {"id":"whisper-tiny-en","purpose":"asr-en-fallback","upstream":"openai/whisper-tiny.en","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false}
+  ]
+}
