@@ -3,5 +3,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <RootNamespace>PhraseLayer.Core</RootNamespace>
     <AssemblyName>PhraseLayer.Core</AssemblyName>
+    <BaseOutputPath>../../artifacts/bin/PhraseLayer.Core/</BaseOutputPath>
+    <BaseIntermediateOutputPath>../../artifacts/obj/PhraseLayer.Core/</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>
