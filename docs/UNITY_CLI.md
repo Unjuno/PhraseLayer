@@ -15,6 +15,8 @@ unity/PhraseLayer.Unity
 
 `PhraseLayer.Core` remains the single source of truth; it is not copied into `Assets`. .NET build intermediates are redirected to the repository-level `artifacts/` directory so `obj/` generated C# files do not appear inside the local Unity package.
 
+The current Unity pin is `6000.0.66f2`, matching the editor revision currently committed by Meta's `oculus-samples/Unity-PassthroughCameraApiSamples` reference project. See `docs/META_BASELINE.md`.
+
 ## Verification layers
 
 The normal `Core CI` performs two hardware-independent checks:
@@ -35,7 +37,7 @@ Set `UNITY_EDITOR` to an installed Unity Editor executable, then run:
 On PowerShell:
 
 ```powershell
-$env:UNITY_EDITOR = "C:\\Program Files\\Unity\\Hub\\Editor\\6000.0.51f1\\Editor\\Unity.exe"
+$env:UNITY_EDITOR = "C:\\Program Files\\Unity\\Hub\\Editor\\6000.0.66f2\\Editor\\Unity.exe"
 ./tools/unity/verify.ps1
 ```
 
@@ -56,7 +58,7 @@ Then open `Assets/Scenes/PhraseLayerDemo.unity` and enter Play Mode. The demo ex
 ```text
 self-hosted
 unity
-unity-6000-0-51f1
+unity-6000-0-66f2
 ```
 
 The runner may be a VM, physical machine, or container. It must expose a valid Unity Editor installation through `UNITY_EDITOR` and satisfy the Editor's activation/license requirements before the workflow starts. The workflow intentionally does not embed credentials or activation material.
@@ -65,7 +67,7 @@ The runner may be a VM, physical machine, or container. It must expose a valid U
 
 A container can run the same verification command if it provides:
 
-1. a compatible Unity Editor binary;
+1. Unity Editor `6000.0.66f2` (or an explicitly reviewed replacement);
 2. whatever activation/license state that Editor requires;
 3. the repository mounted read/write;
 4. `UNITY_EDITOR` pointing to the Editor executable inside the container.
