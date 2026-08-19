@@ -14,5 +14,6 @@ TestResults/
 .DS_Store
 models/cache/
 models/weights/
+unity/PhraseLayer.Unity/Assets/LocalOcrAssets/
 *.onnx
 *.gguf
