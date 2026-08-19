@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unjuno.github.io/PhraseLayer/schemas/quest-ocr-result.schema.json",
+  "title": "PhraseLayer Quest OCR benchmark result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "recorded_at_utc",
+    "device",
+    "software",
+    "models",
+    "conditions",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "recorded_at_utc": { "type": "string", "format": "date-time" },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "horizon_os_version"],
+      "properties": {
+        "model": { "const": "Meta Quest 3" },
+        "horizon_os_version": { "type": "string", "minLength": 1 },
+        "thermal_state_note": { "type": "string" }
+      }
+    },
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app_commit", "unity_version", "mruk_version", "unity_ai_inference_version"],
+      "properties": {
+        "app_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "unity_version": { "const": "6000.0.66f2" },
+        "mruk_version": { "const": "85.0.0" },
+        "unity_ai_inference_version": { "const": "2.2.1" }
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detector", "recognizer"],
+      "properties": {
+        "detector": { "$ref": "#/$defs/model" },
+        "recognizer": { "$ref": "#/$defs/model" }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["distance_m", "text_height_mm", "illuminance_lux", "head_motion", "source_description"],
+        "properties": {
+          "distance_m": { "type": "number", "exclusiveMinimum": 0 },
+          "text_height_mm": { "type": "number", "exclusiveMinimum": 0 },
+          "illuminance_lux": { "type": "number", "minimum": 0 },
+          "head_motion": { "enum": ["stationary", "slow", "natural", "fast"] },
+          "head_angular_speed_deg_s": { "type": ["number", "null"], "minimum": 0 },
+          "source_description": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cold_start_ms", "ocr_latency_ms", "pss_mb", "xr_frame_time_ms"],
+      "properties": {
+        "cold_start_ms": { "type": "number", "minimum": 0 },
+        "ocr_latency_ms": { "$ref": "#/$defs/distribution" },
+        "pss_mb": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["steady", "peak"],
+          "properties": {
+            "steady": { "type": "number", "minimum": 0 },
+            "peak": { "type": "number", "minimum": 0 }
+          }
+        },
+        "xr_frame_time_ms": { "$ref": "#/$defs/distribution" }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "artifact", "quantization"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "artifact": { "type": "string", "minLength": 1 },
+        "artifact_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "quantization": { "type": "string", "minLength": 1 }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_count", "p50", "p95"],
+      "properties": {
+        "sample_count": { "type": "integer", "minimum": 1 },
+        "p50": { "type": "number", "minimum": 0 },
+        "p95": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

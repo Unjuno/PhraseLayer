@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,12 +16,49 @@ for path in CORE.rglob("*.cs"):
             violations.append(f"{path.relative_to(ROOT)}: {marker}")
 
 manifest=json.loads((ROOT/"models"/"models.lock.json").read_text(encoding="utf-8"))
+if manifest.get("schema_version") != 2:
+    violations.append("models.lock.json schema_version must be 2")
+
 for model in manifest["candidates"]:
     if model.get("bundled") is not False:
         violations.append(f"model bundled too early: {model.get('id')}")
     for key in ("id","purpose","upstream","license","license_status","bundled"):
         if key not in model:
             violations.append(f"model missing {key}: {model}")
+
+    if str(model.get("purpose", "")).startswith("ocr-"):
+        for key in (
+            "revision",
+            "artifact",
+            "artifact_size_bytes",
+            "artifact_sha256",
+            "format",
+            "runtime_target",
+            "runtime_compatibility",
+            "quantization",
+            "source_precision",
+        ):
+            if key not in model:
+                violations.append(f"OCR model missing {key}: {model.get('id')}")
+
+        revision = model.get("revision")
+        if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+            violations.append(f"OCR model revision must be a full 40-character Git SHA: {model.get('id')}")
+        if model.get("format") != "onnx":
+            violations.append(f"OCR model format must remain explicit ONNX: {model.get('id')}")
+        if model.get("runtime_target") != "com.unity.ai.inference@2.2.1":
+            violations.append(f"OCR runtime target drift: {model.get('id')}")
+        if model.get("runtime_compatibility") != "unverified-real-unity-import-required":
+            violations.append(f"OCR compatibility must remain unverified until real Unity import succeeds: {model.get('id')}")
+        if model.get("quantization") != "unverified":
+            violations.append(f"OCR quantization must remain unverified until the ONNX graph is inspected: {model.get('id')}")
+
+        artifact_sha = model.get("artifact_sha256")
+        if artifact_sha is not None and (not isinstance(artifact_sha, str) or re.fullmatch(r"[0-9a-f]{64}", artifact_sha) is None):
+            violations.append(f"OCR artifact SHA-256 must be null or 64 lowercase hex characters: {model.get('id')}")
+        artifact_size = model.get("artifact_size_bytes")
+        if artifact_size is not None and (not isinstance(artifact_size, int) or artifact_size <= 0):
+            violations.append(f"OCR artifact size must be null or a positive integer: {model.get('id')}")
 
 required_unity = [
     UNITY / "ProjectSettings" / "ProjectVersion.txt",
