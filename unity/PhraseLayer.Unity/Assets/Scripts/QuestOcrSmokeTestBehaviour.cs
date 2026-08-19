@@ -106,107 +106,116 @@ namespace PhraseLayer.Unity
             var lastAttemptMilliseconds = 0.0;
             OcrPumpResult lastResult = null;
 
-            try
+            using (var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                while (true)
+                timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                var runToken = timeoutCancellation.Token;
+
+                try
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var elapsedSeconds = Time.realtimeSinceStartupAsDouble - startedAt;
-                    if (elapsedSeconds >= timeoutSeconds)
+                    while (true)
                     {
-                        lastReport = BuildReport(
-                            "FAIL_TIMEOUT",
-                            attempts,
-                            elapsedSeconds * 1000.0,
-                            lastAttemptMilliseconds,
-                            lastResult);
-                        var timeout = new TimeoutException(lastReport);
-                        lastError = timeout;
-                        throw timeout;
-                    }
+                        runToken.ThrowIfCancellationRequested();
+                        var elapsedSeconds = Time.realtimeSinceStartupAsDouble - startedAt;
+                        if (elapsedSeconds >= timeoutSeconds)
+                            throw new OperationCanceledException(runToken);
 
-                    while (runtimeDriver.IsRunning)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        await Task.Yield();
-                    }
+                        while (runtimeDriver.IsRunning)
+                        {
+                            runToken.ThrowIfCancellationRequested();
+                            await Task.Yield();
+                        }
 
-                    attempts++;
-                    var attemptStartedAt = Time.realtimeSinceStartupAsDouble;
-                    try
-                    {
-                        lastResult = await runtimeDriver.RunOnceAsync(cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception exception)
-                    {
-                        var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
-                        lastAttemptMilliseconds = (Time.realtimeSinceStartupAsDouble - attemptStartedAt) * 1000.0;
-                        lastReport = BuildReport(
-                            "FAIL_EXCEPTION",
-                            attempts,
-                            totalMilliseconds,
-                            lastAttemptMilliseconds,
-                            lastResult) + "\nexception=" + exception.GetType().Name + ": " + exception.Message;
-                        lastError = exception;
-                        throw;
-                    }
+                        attempts++;
+                        var attemptStartedAt = Time.realtimeSinceStartupAsDouble;
+                        try
+                        {
+                            lastResult = await runtimeDriver.RunOnceAsync(runToken);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception exception)
+                        {
+                            var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
+                            lastAttemptMilliseconds = (Time.realtimeSinceStartupAsDouble - attemptStartedAt) * 1000.0;
+                            lastReport = BuildReport(
+                                "FAIL_EXCEPTION",
+                                attempts,
+                                totalMilliseconds,
+                                lastAttemptMilliseconds,
+                                lastResult) + "\nexception=" + exception.GetType().Name + ": " + exception.Message;
+                            lastError = exception;
+                            throw;
+                        }
 
-                    lastAttemptMilliseconds =
-                        (Time.realtimeSinceStartupAsDouble - attemptStartedAt) * 1000.0;
+                        lastAttemptMilliseconds =
+                            (Time.realtimeSinceStartupAsDouble - attemptStartedAt) * 1000.0;
 
-                    if (lastResult.CameraState == CameraCaptureState.Failed)
-                    {
-                        var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
-                        lastReport = BuildReport(
-                            "FAIL_CAMERA",
-                            attempts,
-                            totalMilliseconds,
-                            lastAttemptMilliseconds,
-                            lastResult);
-                        var cameraFailure = new InvalidOperationException(lastReport);
-                        lastError = cameraFailure;
-                        throw cameraFailure;
-                    }
+                        if (lastResult.CameraState == CameraCaptureState.Failed)
+                        {
+                            var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
+                            lastReport = BuildReport(
+                                "FAIL_CAMERA",
+                                attempts,
+                                totalMilliseconds,
+                                lastAttemptMilliseconds,
+                                lastResult);
+                            var cameraFailure = new InvalidOperationException(lastReport);
+                            lastError = cameraFailure;
+                            throw cameraFailure;
+                        }
 
-                    var enoughRegions =
-                        lastResult.Presented &&
-                        presenter.HasObservation &&
-                        presenter.Regions.Count >= minimumRecognizedRegions;
-                    var recognizerObserved =
-                        bootstrap.RuntimeContractReport.IndexOf(
-                            "recognizer=unobserved",
-                            StringComparison.Ordinal) < 0;
+                        var enoughRegions =
+                            lastResult.Presented &&
+                            presenter.HasObservation &&
+                            presenter.Regions.Count >= minimumRecognizedRegions;
+                        var recognizerObserved =
+                            bootstrap.RuntimeContractReport.IndexOf(
+                                "recognizer=unobserved",
+                                StringComparison.Ordinal) < 0;
 
-                    if (enoughRegions && recognizerObserved)
-                    {
-                        var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
-                        lastPassed = true;
-                        lastReport = BuildReport(
-                            "PASS",
-                            attempts,
-                            totalMilliseconds,
-                            lastAttemptMilliseconds,
-                            lastResult);
-                        Debug.Log(lastReport, this);
-                        return lastReport;
-                    }
+                        if (enoughRegions && recognizerObserved)
+                        {
+                            var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
+                            lastPassed = true;
+                            lastReport = BuildReport(
+                                "PASS",
+                                attempts,
+                                totalMilliseconds,
+                                lastAttemptMilliseconds,
+                                lastResult);
+                            Debug.Log(lastReport, this);
+                            return lastReport;
+                        }
 
-                    var retryAt = Time.realtimeSinceStartupAsDouble + retryIntervalSeconds;
-                    while (Time.realtimeSinceStartupAsDouble < retryAt)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        await Task.Yield();
+                        var retryAt = Time.realtimeSinceStartupAsDouble + retryIntervalSeconds;
+                        while (Time.realtimeSinceStartupAsDouble < retryAt)
+                        {
+                            runToken.ThrowIfCancellationRequested();
+                            await Task.Yield();
+                        }
                     }
                 }
-            }
-            finally
-            {
-                runtimeDriver.AutoRun = previousAutoRun;
-                isRunning = false;
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
+                    lastReport = BuildReport(
+                        "FAIL_TIMEOUT",
+                        attempts,
+                        totalMilliseconds,
+                        lastAttemptMilliseconds,
+                        lastResult);
+                    var timeout = new TimeoutException(lastReport);
+                    lastError = timeout;
+                    throw timeout;
+                }
+                finally
+                {
+                    runtimeDriver.AutoRun = previousAutoRun;
+                    isRunning = false;
+                }
             }
         }
 
