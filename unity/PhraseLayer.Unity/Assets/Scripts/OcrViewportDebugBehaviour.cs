@@ -5,15 +5,76 @@ using UnityEngine;
 
 namespace PhraseLayer.Unity
 {
-    public sealed class OcrViewportDebugBehaviour : MonoBehaviour
+    /// <summary>
+    /// Runtime/debug presenter for OCR observations. The observation is always mapped against the exact
+    /// ImageFrame whose pixel coordinate system produced its regions.
+    /// </summary>
+    public sealed class OcrViewportDebugBehaviour : MonoBehaviour, IOcrObservationSink
     {
         private readonly List<OcrViewportRegion> regions = new List<OcrViewportRegion>();
+        private OcrObservation lastObservation;
+        private int frameWidth;
+        private int frameHeight;
+        private long frameTimestampMicroseconds;
+        private OcrScheduleStatus lastScheduleStatus = OcrScheduleStatus.Processed;
+        private bool hasObservation;
 
         public IReadOnlyList<OcrViewportRegion> Regions => regions;
+        public bool HasObservation => hasObservation;
+        public string LastText => hasObservation ? lastObservation.Text : string.Empty;
+        public double LastConfidence => hasObservation ? lastObservation.Confidence : 0.0;
+        public long? LastFrameTimestampMicroseconds => hasObservation ? frameTimestampMicroseconds : (long?)null;
+        public OcrScheduleStatus LastScheduleStatus => lastScheduleStatus;
 
         private void Start()
         {
             LoadSyntheticFixture();
+        }
+
+        public void Present(OcrObservation observation, ImageFrame frame)
+        {
+            if (observation == null) throw new ArgumentNullException(nameof(observation));
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+
+            regions.Clear();
+            regions.AddRange(OcrViewportMapper.Map(observation, frame));
+            lastObservation = observation;
+            frameWidth = frame.Width;
+            frameHeight = frame.Height;
+            frameTimestampMicroseconds = frame.TimestampMicroseconds;
+            lastScheduleStatus = OcrScheduleStatus.Processed;
+            hasObservation = true;
+        }
+
+        /// <summary>
+        /// Updates scheduler state without erasing the last successful OCR overlay.
+        /// This makes dropped/busy/rate-limited frames visible while keeping the most recent usable text on screen.
+        /// </summary>
+        public void SetScheduleStatus(OcrScheduleStatus status, long frameTimestamp)
+        {
+            lastScheduleStatus = status;
+            if (!hasObservation) frameTimestampMicroseconds = frameTimestamp;
+        }
+
+        public bool PresentScheduleResult(OcrScheduleResult result, ImageFrame frame)
+        {
+            if (result == null) throw new ArgumentNullException(nameof(result));
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+
+            lastScheduleStatus = result.Status;
+            var coordinator = new OcrPresentationCoordinator(this);
+            return coordinator.PresentIfProcessed(result, frame);
+        }
+
+        public void Clear()
+        {
+            regions.Clear();
+            lastObservation = null;
+            frameWidth = 0;
+            frameHeight = 0;
+            frameTimestampMicroseconds = 0;
+            lastScheduleStatus = OcrScheduleStatus.Processed;
+            hasObservation = false;
         }
 
         public void LoadSyntheticFixture()
@@ -37,28 +98,53 @@ namespace PhraseLayer.Unity
                         ImageQuad.FromRect(610, 330, 250, 100))
                 });
             var frame = new ImageFrame(new byte[4], 1000, 600, 0);
-
-            regions.Clear();
-            regions.AddRange(OcrViewportMapper.Map(observation, frame));
+            Present(observation, frame);
         }
 
         private void OnGUI()
         {
-            if (regions.Count == 0) return;
+            var panelWidth = Math.Max(320, Math.Min(900, Screen.width - 48));
+            var panelHeight = Math.Max(220, Math.Min(560, Screen.height / 2));
+            var panel = new Rect(24, Screen.height - panelHeight - 24, panelWidth, panelHeight);
+            var header = new Rect(panel.x, panel.y, panel.width, 62);
+            var viewportCanvas = new Rect(panel.x, panel.y + 66, panel.width, panel.height - 66);
 
-            var canvasWidth = Math.Max(320, Math.Min(900, Screen.width - 48));
-            var canvasHeight = Math.Max(180, Math.Min(500, Screen.height / 2));
-            var canvas = new Rect(24, Screen.height - canvasHeight - 24, canvasWidth, canvasHeight);
-            GUI.Box(canvas, "Synthetic OCR viewport — top-left pixel input → bottom-left normalized viewport");
+            GUI.Box(header, BuildHeaderText());
+            GUI.Box(viewportCanvas, string.Empty);
 
             foreach (var region in regions)
             {
-                var box = ViewportGuiMapper.ToScreenRect(region.ViewportBounds, canvas);
-                GUI.Box(box, string.Format("{0}  {1:P0}", region.Source.Text, region.Source.Confidence));
+                var box = ViewportGuiMapper.ToScreenRect(region.ViewportBounds, viewportCanvas);
+                GUI.Box(box, string.Format("{0}\n{1:P1}", region.Source.Text, region.Source.Confidence));
 
-                var anchor = ViewportGuiMapper.ToScreenPoint(region.Anchor, canvas);
-                GUI.Box(new Rect(anchor.x - 3, anchor.y - 3, 6, 6), string.Empty);
+                DrawPoint(region.ViewportBounds.P0, viewportCanvas, 5);
+                DrawPoint(region.ViewportBounds.P1, viewportCanvas, 5);
+                DrawPoint(region.ViewportBounds.P2, viewportCanvas, 5);
+                DrawPoint(region.ViewportBounds.P3, viewportCanvas, 5);
+                DrawPoint(region.Anchor, viewportCanvas, 7);
             }
+        }
+
+        private string BuildHeaderText()
+        {
+            if (!hasObservation)
+                return "OCR debug | status=" + lastScheduleStatus + " | no successful observation";
+
+            return string.Format(
+                "OCR debug | status={0} | frame={1}x{2} @ {3} us | regions={4} | overall={5:P1}\n{6}",
+                lastScheduleStatus,
+                frameWidth,
+                frameHeight,
+                frameTimestampMicroseconds,
+                regions.Count,
+                lastObservation.Confidence,
+                lastObservation.Text);
+        }
+
+        private static void DrawPoint(ViewportPoint point, Rect canvas, float size)
+        {
+            var screen = ViewportGuiMapper.ToScreenPoint(point, canvas);
+            GUI.Box(new Rect(screen.x - size / 2f, screen.y - size / 2f, size, size), string.Empty);
         }
     }
 
