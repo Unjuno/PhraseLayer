@@ -4,7 +4,7 @@ namespace UnityEngine
 {
     public class Object { }
     public class Component : Object { }
-    public class Behaviour : Component { }
+    public class Behaviour : Component { public bool enabled { get; set; } }
     public class MonoBehaviour : Behaviour { }
 
     [AttributeUsage(AttributeTargets.Field)]
@@ -27,6 +27,27 @@ namespace UnityEngine
         public Vector2(float x, float y) { this.x = x; this.y = y; }
         public float x;
         public float y;
+    }
+
+    public struct Vector3
+    {
+        public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
+        public float x;
+        public float y;
+        public float z;
+    }
+
+    public struct Ray
+    {
+        public Ray(Vector3 origin, Vector3 direction) { this.origin = origin; this.direction = direction; }
+        public Vector3 origin;
+        public Vector3 direction;
+    }
+
+    public class Texture : Object
+    {
+        public int width { get; set; }
+        public int height { get; set; }
     }
 
     public struct Rect
@@ -98,6 +119,11 @@ namespace UnityEngine
     {
         public static int width => 1920;
         public static int height => 1080;
+    }
+
+    public static class Time
+    {
+        public static double realtimeSinceStartupAsDouble => 0.0;
     }
 
     public sealed class GameObject : Object
