@@ -14,6 +14,12 @@ namespace PhraseLayer.Core.Inputs
         Bgra32 = 4
     }
 
+    /// <summary>
+    /// Marker interface for platform-native image resources such as a Unity Texture.
+    /// Core never inspects the payload; an OCR adapter that understands the concrete payload type may consume it without a mandatory CPU readback.
+    /// </summary>
+    public interface IImageFramePayload { }
+
     public sealed class ImageFrame
     {
         public ImageFrame(byte[] pixels, int width, int height, long timestampMicroseconds)
@@ -28,9 +34,28 @@ namespace PhraseLayer.Core.Inputs
             Height = height;
             TimestampMicroseconds = timestampMicroseconds;
             PixelFormat = pixelFormat;
+            NativePayload = null;
+        }
+
+        public ImageFrame(IImageFramePayload nativePayload, int width, int height, long timestampMicroseconds)
+            : this(nativePayload, width, height, timestampMicroseconds, ImagePixelFormat.Unknown) { }
+
+        public ImageFrame(IImageFramePayload nativePayload, int width, int height, long timestampMicroseconds, ImagePixelFormat pixelFormat)
+        {
+            NativePayload = nativePayload ?? throw new ArgumentNullException(nameof(nativePayload));
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
+            Pixels = Array.Empty<byte>();
+            Width = width;
+            Height = height;
+            TimestampMicroseconds = timestampMicroseconds;
+            PixelFormat = pixelFormat;
         }
 
         public byte[] Pixels { get; }
+        public bool HasCpuPixels => Pixels.Length > 0;
+        public IImageFramePayload? NativePayload { get; }
+        public bool HasNativePayload => NativePayload != null;
         public int Width { get; }
         public int Height { get; }
         public long TimestampMicroseconds { get; }

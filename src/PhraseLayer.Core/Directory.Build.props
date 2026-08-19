@@ -1,5 +1,9 @@
 <Project>
   <PropertyGroup>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
     <BaseOutputPath>$(MSBuildThisFileDirectory)../../artifacts/bin/PhraseLayer.Core/</BaseOutputPath>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../artifacts/obj/PhraseLayer.Core/</BaseIntermediateOutputPath>
   </PropertyGroup>
