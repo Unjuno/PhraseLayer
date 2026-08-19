@@ -1,9 +1,35 @@
 {
-  "schema_version": 1,
-  "policy": "Candidate metadata only; no model weights are bundled before revision-level license and runtime review.",
+  "schema_version": 2,
+  "policy": "Model weights are never committed. Production candidates must use immutable upstream revisions; downloads are materialized under models/cache and verified when a SHA256 is known.",
+  "artifacts": [
+    {
+      "id": "pp-ocrv6-tiny-det-onnx",
+      "purpose": "ocr-detection",
+      "provider": "huggingface",
+      "repository": "PaddlePaddle/PP-OCRv6_tiny_det_onnx",
+      "revision": "2ba1506",
+      "file": "inference.onnx",
+      "destination": "models/cache/pp-ocrv6-tiny-det/inference.onnx",
+      "license": "Apache-2.0",
+      "bundled": false,
+      "sha256": "193b1438f5846828dc12d82178fd839c54951617958e3871967a32a3fa20f7ef",
+      "integrity_status": "verified-upstream-lfs-pointer"
+    },
+    {
+      "id": "pp-ocrv6-tiny-rec-onnx",
+      "purpose": "ocr-recognition",
+      "provider": "huggingface",
+      "repository": "PaddlePaddle/PP-OCRv6_tiny_rec_onnx",
+      "revision": "2612ab3",
+      "file": "inference.onnx",
+      "destination": "models/cache/pp-ocrv6-tiny-rec/inference.onnx",
+      "license": "Apache-2.0",
+      "bundled": false,
+      "sha256": null,
+      "integrity_status": "revision-pinned-hash-pending-local-download"
+    }
+  ],
   "candidates": [
-    {"id":"pp-ocrv6-tiny-det","purpose":"ocr-detection","upstream":"PaddlePaddle/PP-OCRv6_tiny_det_onnx","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
-    {"id":"pp-ocrv6-tiny-rec","purpose":"ocr-recognition","upstream":"PaddlePaddle/PP-OCRv6_tiny_rec_onnx","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
     {"id":"opus-mt-en-jap","purpose":"translation-en-ja","upstream":"Helsinki-NLP/opus-mt-en-jap","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
     {"id":"moonshine-streaming-tiny","purpose":"asr-en-streaming","upstream":"UsefulSensors/moonshine-streaming-tiny","license":"MIT","license_status":"candidate-unverified-at-pinned-revision","bundled":false},
     {"id":"whisper-tiny-en","purpose":"asr-en-fallback","upstream":"openai/whisper-tiny.en","license":"Apache-2.0","license_status":"candidate-unverified-at-pinned-revision","bundled":false}
