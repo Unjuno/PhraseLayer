@@ -19,6 +19,14 @@ jobs:
       - run: python tools/validate_repo.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
+      - name: Measure pinned PP-OCR recognizer artifacts
+        run: |
+          python tools/stage_models.py --model pp-ocrv6-tiny-rec --include-support --allow-unverified-metadata
+          python tools/extract_ppocr_dictionary.py \
+            --model pp-ocrv6-tiny-rec \
+            --metadata artifacts/models/pp-ocrv6-tiny-rec/inference.json \
+            --output-dir artifacts/generated/pp-ocrv6-tiny-rec
+          cat artifacts/generated/pp-ocrv6-tiny-rec/ppocr_keys.manifest.json
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
