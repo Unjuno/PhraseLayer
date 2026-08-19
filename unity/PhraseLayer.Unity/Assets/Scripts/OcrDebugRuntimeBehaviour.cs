@@ -12,8 +12,8 @@ namespace PhraseLayer.Unity
     /// </summary>
     public sealed class OcrDebugRuntimeBehaviour : MonoBehaviour
     {
-        [SerializeField] private MetaPassthroughCameraBridge cameraBridge;
-        [SerializeField] private OcrViewportDebugBehaviour presenter;
+        [SerializeField] private MetaPassthroughCameraBridge cameraBridge = default(MetaPassthroughCameraBridge);
+        [SerializeField] private OcrViewportDebugBehaviour presenter = default(OcrViewportDebugBehaviour);
         [SerializeField] private bool autoRun = true;
         [SerializeField] private float targetOcrHz = 5f;
 
