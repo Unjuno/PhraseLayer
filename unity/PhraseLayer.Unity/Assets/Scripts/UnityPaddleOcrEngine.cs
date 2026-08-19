@@ -33,6 +33,8 @@ namespace PhraseLayer.Unity
         private readonly double recognitionDropScore;
         private readonly int recognizerModelWidth;
         private readonly int ownerThreadId;
+        private PaddleDetectorRuntimeContract latestDetectorContract;
+        private PaddleRecognizerRuntimeContract latestRecognizerContract;
         private bool disposed;
 
         public UnityPaddleOcrEngine(
@@ -80,6 +82,12 @@ namespace PhraseLayer.Unity
         public bool IsSupported => true;
         public double RecognitionDropScore => recognitionDropScore;
         public int RecognizerModelWidth => recognizerModelWidth;
+        public PaddleDetectorRuntimeContract LatestDetectorContract => latestDetectorContract;
+        public PaddleRecognizerRuntimeContract LatestRecognizerContract => latestRecognizerContract;
+        public string RuntimeContractReport => PaddleOcrRuntimeContract.BuildReport(
+            latestDetectorContract,
+            latestRecognizerContract,
+            characterDictionary.Length);
 
         /// <summary>
         /// Executes synchronously and returns an already-completed Task to satisfy the platform-neutral IOcrEngine contract.
@@ -111,6 +119,10 @@ namespace PhraseLayer.Unity
             }
 
             var detectorOutput = detector.Execute(texture, frame.Width, frame.Height);
+            latestDetectorContract = PaddleOcrRuntimeContract.ValidateDetector(
+                detectorOutput.OutputShape,
+                detectorOutput.OutputValues);
+
             var detections = PaddleOcrReadingOrder.Sort(detectorOutput.DecodeV6TinyQuads(dbSpec));
             if (detections.Count == 0)
             {
@@ -126,10 +138,14 @@ namespace PhraseLayer.Unity
                 var detection = detections[index];
                 using (var crop = cropRectifier.Rectify(texture, detection.ImageBounds))
                 {
-                    var decoded = recognizer.ExecuteAndDecode(
+                    var recognizerOutput = recognizer.Execute(
                         crop.Texture,
-                        characterDictionary,
                         recognizerModelWidth);
+                    latestRecognizerContract = PaddleOcrRuntimeContract.ValidateRecognizer(
+                        recognizerOutput.OutputShape,
+                        recognizerOutput.OutputValues,
+                        characterDictionary.Length);
+                    var decoded = recognizerOutput.Decode(characterDictionary);
 
                     // OcrObservation/OcrRegion confidence is explicitly constrained to [0,1]. Do not clamp
                     // unverified logits into that domain; fail until the imported recognizer output proves a
@@ -208,6 +224,8 @@ namespace PhraseLayer.Unity
     public sealed class UnityPaddleOcrEngine : IOcrEngine, IDisposable
     {
         public bool IsSupported => false;
+        public string RuntimeContractReport =>
+            "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
 
         public Task<OcrObservation> RecognizeAsync(
             ImageFrame frame,
