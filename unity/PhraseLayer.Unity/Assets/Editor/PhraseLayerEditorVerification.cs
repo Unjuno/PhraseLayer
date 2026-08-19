@@ -23,7 +23,7 @@ namespace PhraseLayer.Unity.Editor
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, and Unity Inference 2.2 API gate verified.");
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, Unity Inference 2.2 API gate, and PP-OCR detector runtime gate verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -88,6 +88,10 @@ namespace PhraseLayer.Unity.Editor
             var probeType = typeof(UnityInferenceModelProbe);
             if (probeType == null)
                 throw new InvalidOperationException("Unity Inference 2.2 model probe type was not compiled.");
+
+            var detectorRuntimeType = typeof(UnityPaddleOcrDetectorRuntime);
+            if (detectorRuntimeType == null)
+                throw new InvalidOperationException("Unity PP-OCR detector runtime type was not compiled.");
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference in the reviewed [2.2.1,2.3.0) range before Gate 4 verification.");

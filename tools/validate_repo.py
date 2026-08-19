@@ -68,11 +68,27 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "UnityTextureFramePayload.cs",
     UNITY / "Assets" / "Scripts" / "MetaPassthroughCameraBridge.cs",
     UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
 for path in required_unity:
     if not path.exists():
         violations.append(f"missing Unity shell file: {path.relative_to(ROOT)}")
+
+runtime_path = UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs"
+if runtime_path.exists():
+    runtime_text = runtime_path.read_text(encoding="utf-8")
+    runtime_markers = (
+        "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        "PaddleOcrV6TinyDetectionPreprocess.CreateResizeTransform",
+        "new Tensor<float>",
+        "worker.Schedule(inputTensor)",
+        "worker.PeekOutput() as Tensor<float>",
+        "ReadbackAndClone()",
+    )
+    for marker in runtime_markers:
+        if marker not in runtime_text:
+            violations.append(f"Unity PP-OCR detector runtime missing reviewed marker: {marker}")
 
 core_package=json.loads((CORE/"package.json").read_text(encoding="utf-8"))
 if core_package.get("name") != "com.unjuno.phraselayer.core":
@@ -117,5 +133,6 @@ if violations:
 
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
-    "Unity shell, Meta baseline package pins, camera adapter structure, and Inference 2.2 API gate validated"
+    "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
+    "and PP-OCR detector runtime markers validated"
 )
