@@ -37,16 +37,21 @@
         {
           "purpose": "recognition-export-config",
           "artifact": "inference.yml",
-          "artifact_size_bytes": null,
-          "artifact_sha256": null
+          "artifact_size_bytes": 55571,
+          "artifact_sha256": "66170210bad538e83fff3c4a3867e547d6bf20b50d64b20347c4b913f3034ea1"
         }
       ],
       "recognition_dictionary": {
-        "source_artifact": "inference.json",
+        "source_artifact": "inference.yml",
+        "source_format": "paddle-inference-yaml",
         "postprocess_name": "CTCLabelDecode",
-        "json_path": ["PostProcess", "character_dict"],
+        "yaml_path": ["PostProcess", "character_dict"],
         "use_space_char": true,
+        "raw_token_count": 6904,
+        "effective_token_count": 6905,
         "generated_artifact": "ppocr_keys.txt",
+        "generated_artifact_size_bytes": 27153,
+        "generated_artifact_sha256": "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc",
         "generated_manifest": "ppocr_keys.manifest.json"
       },
       "format": "onnx",
