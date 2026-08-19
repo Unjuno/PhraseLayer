@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace PhraseLayer.Unity
 {
+#if UNITY_5_3_OR_NEWER
     public sealed class PaddleOcrRectifiedCrop : IDisposable
     {
         private bool disposed;
@@ -57,6 +58,8 @@ namespace PhraseLayer.Unity
                 hideFlags = HideFlags.HideAndDontSave
             };
         }
+
+        public bool IsSupported => true;
 
         public PaddleOcrRectifiedCrop Rectify(Texture source, ImageQuad sourceQuad)
         {
@@ -124,4 +127,21 @@ namespace PhraseLayer.Unity
             UnityEngine.Object.Destroy(material);
         }
     }
+#else
+    public sealed class PaddleOcrRectifiedCrop : IDisposable
+    {
+        public void Dispose()
+        {
+        }
+    }
+
+    public sealed class UnityPaddleOcrCropRectifier : IDisposable
+    {
+        public bool IsSupported => false;
+
+        public void Dispose()
+        {
+        }
+    }
+#endif
 }
