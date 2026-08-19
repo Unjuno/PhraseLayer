@@ -79,14 +79,61 @@ namespace PhraseLayer.Core.Pipeline
         public void Clear() => _plans.Clear();
     }
 
+    public sealed class ReadModeSpatialResult
+    {
+        public ReadModeSpatialResult(
+            ImageFrame frame,
+            OcrObservation observation,
+            IReadOnlyList<OcrViewportRegion> viewportRegions,
+            MixedLanguagePlan languagePlan)
+        {
+            Frame = frame ?? throw new ArgumentNullException(nameof(frame));
+            Observation = observation ?? throw new ArgumentNullException(nameof(observation));
+            ViewportRegions = viewportRegions ?? throw new ArgumentNullException(nameof(viewportRegions));
+            LanguagePlan = languagePlan ?? throw new ArgumentNullException(nameof(languagePlan));
+        }
+
+        public ImageFrame Frame { get; }
+        public OcrObservation Observation { get; }
+        public IReadOnlyList<OcrViewportRegion> ViewportRegions { get; }
+        public MixedLanguagePlan LanguagePlan { get; }
+    }
+
     public sealed class ReadModePipeline
     {
-        private readonly IOcrEngine _ocr; private readonly LanguagePipeline _language;
-        public ReadModePipeline(IOcrEngine ocr, LanguagePipeline language) { _ocr = ocr; _language = language; }
-        public async Task<MixedLanguagePlan> ProcessAsync(ImageFrame frame, AssistancePolicy policy, CancellationToken cancellationToken = default(CancellationToken))
+        private readonly IOcrEngine _ocr;
+        private readonly LanguagePipeline _language;
+
+        public ReadModePipeline(IOcrEngine ocr, LanguagePipeline language)
         {
+            _ocr = ocr ?? throw new ArgumentNullException(nameof(ocr));
+            _language = language ?? throw new ArgumentNullException(nameof(language));
+        }
+
+        public async Task<MixedLanguagePlan> ProcessAsync(
+            ImageFrame frame,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var result = await ProcessSpatialAsync(frame, policy, cancellationToken).ConfigureAwait(false);
+            return result.LanguagePlan;
+        }
+
+        public async Task<ReadModeSpatialResult> ProcessSpatialAsync(
+            ImageFrame frame,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+
             var observation = await _ocr.RecognizeAsync(frame, cancellationToken).ConfigureAwait(false);
-            return await _language.PlanAsync(observation.Text, policy, observation.Text, cancellationToken).ConfigureAwait(false);
+            var languagePlan = await _language
+                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken)
+                .ConfigureAwait(false);
+            var viewportRegions = OcrViewportMapper.Map(observation, frame);
+
+            return new ReadModeSpatialResult(frame, observation, viewportRegions, languagePlan);
         }
     }
 
