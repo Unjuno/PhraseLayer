@@ -8,7 +8,7 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Thin Unity driver for the platform-neutral OCR runtime pump.
-    /// A concrete texture OCR backend is injected by bootstrap code; this class does not guess or hard-code Unity AI Inference APIs.
+    /// A concrete IOcrEngine is injected by bootstrap code; the legacy Unity texture backend path remains as a compatibility adapter.
     /// </summary>
     public sealed class OcrDebugRuntimeBehaviour : MonoBehaviour
     {
@@ -33,15 +33,19 @@ namespace PhraseLayer.Unity
         public void ConfigureBackend(IUnityTextureOcrBackend backend)
         {
             if (backend == null) throw new ArgumentNullException(nameof(backend));
+            ConfigureEngine(new UnityTextureOcrEngine(backend));
+        }
+
+        public void ConfigureEngine(IOcrEngine engine)
+        {
+            if (engine == null) throw new ArgumentNullException(nameof(engine));
             EnsureReferences();
             if (targetOcrHz <= 0f) throw new InvalidOperationException("Target OCR Hz must be greater than zero.");
 
             var camera = new CameraCaptureCoordinator(
                 new MetaPassthroughCameraPermissionService(),
                 cameraBridge);
-            var scheduler = new OcrFrameScheduler(
-                new UnityTextureOcrEngine(backend),
-                targetOcrHz);
+            var scheduler = new OcrFrameScheduler(engine, targetOcrHz);
             var presentation = new OcrPresentationCoordinator(presenter);
 
             pump = new OcrRuntimePump(camera, scheduler, presentation);
@@ -54,7 +58,7 @@ namespace PhraseLayer.Unity
             CancellationToken cancellationToken = default(CancellationToken))
         {
             if (pump == null)
-                throw new InvalidOperationException("Configure an OCR backend before running the OCR runtime driver.");
+                throw new InvalidOperationException("Configure an OCR engine before running the OCR runtime driver.");
 
             var result = await pump.TryRunOnceAsync(cancellationToken);
             lastResult = result;

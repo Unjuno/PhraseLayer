@@ -23,7 +23,7 @@ namespace PhraseLayer.Unity.Editor
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, and end-to-end PP-OCR engine type verified.");
+            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation contract, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, and scene bootstrap verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -104,6 +104,10 @@ namespace PhraseLayer.Unity.Editor
             var engineType = typeof(UnityPaddleOcrEngine);
             if (engineType == null || !typeof(IOcrEngine).IsAssignableFrom(engineType))
                 throw new InvalidOperationException("UnityPaddleOcrEngine must compile and implement IOcrEngine.");
+
+            var bootstrapType = typeof(UnityPaddleOcrBootstrapBehaviour);
+            if (bootstrapType == null)
+                throw new InvalidOperationException("UnityPaddleOcrBootstrapBehaviour must compile for Inspector scene wiring.");
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference in the reviewed [2.2.1,2.3.0) range before Gate 4 verification.");

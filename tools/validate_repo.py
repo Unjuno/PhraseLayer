@@ -67,12 +67,14 @@ required_unity = [
     UNITY / "Assets" / "Scripts" / "PhraseLayerDemoBehaviour.cs",
     UNITY / "Assets" / "Scripts" / "UnityTextureFramePayload.cs",
     UNITY / "Assets" / "Scripts" / "MetaPassthroughCameraBridge.cs",
+    UNITY / "Assets" / "Scripts" / "OcrDebugRuntimeBehaviour.cs",
     UNITY / "Assets" / "Scripts" / "UnityInferenceModelProbe.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
     UNITY / "Assets" / "Scripts" / "PaddleDetectorRawOutputExtensions.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrEngine.cs",
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrBootstrapBehaviour.cs",
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
@@ -87,6 +89,16 @@ def validate_runtime(path, label, markers):
     for marker in markers:
         if marker not in text:
             violations.append(f"{label} missing reviewed marker: {marker}")
+
+validate_runtime(
+    UNITY / "Assets" / "Scripts" / "OcrDebugRuntimeBehaviour.cs",
+    "Unity OCR runtime driver",
+    (
+        "ConfigureEngine(IOcrEngine engine)",
+        "ConfigureEngine(new UnityTextureOcrEngine(backend))",
+        "new OcrFrameScheduler(engine, targetOcrHz)",
+    ),
+)
 
 validate_runtime(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
@@ -154,6 +166,18 @@ validate_runtime(
 )
 
 validate_runtime(
+    UNITY / "Assets" / "Scripts" / "UnityPaddleOcrBootstrapBehaviour.cs",
+    "Unity PP-OCR scene bootstrap",
+    (
+        "PaddleOcrCharacterDictionary.Parse(characterDictionary.text, useSpaceCharacter)",
+        "new UnityPaddleOcrEngine(",
+        "runtimeDriver.ConfigureEngine(created)",
+        "created.Dispose()",
+        "engine?.Dispose()",
+    ),
+)
+
+validate_runtime(
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     "Unity PP-OCR crop shader",
     (
@@ -208,5 +232,5 @@ if violations:
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; boundaries, model manifest, "
     "Unity shell, Meta baseline package pins, camera adapter structure, Inference 2.2 API gate, "
-    "and PP-OCR detector/DB/crop/recognizer/end-to-end engine markers validated"
+    "and PP-OCR detector/DB/crop/recognizer/end-to-end/bootstrap markers validated"
 )
