@@ -22,7 +22,7 @@ namespace PhraseLayer.Unity
         private MixedLanguagePlan currentPlan;
         private LearningEncounterSession currentEncounter;
         private string status = "Preparing PhraseLayer...";
-        private string learningStatus = "No learning evidence recorded yet.";
+        private string learningStatus = "No learner observation recorded yet.";
         private Vector2 scroll;
 
         public string SourceText => sourceText;
@@ -85,17 +85,18 @@ namespace PhraseLayer.Unity
             var summary = currentEncounter.Finish();
             var update = FindUpdate(summary, unit.Id);
             learningStatus = update == null
-                ? string.Format("Recorded {0} for {1}.", evidence, unit.Text)
+                ? string.Format("Recorded {0} for {1}; no learner-state update was warranted.", evidence, unit.Text)
                 : string.Format(
-                    "{0}: {1}  {2:P0} → {3:P0}",
+                    "{0}: {1}  {2:P0} → {3:P0}  ({4})",
                     evidence,
                     unit.Text,
                     update.PreviousUnderstanding,
-                    update.UpdatedUnderstanding);
+                    update.UpdatedUnderstanding,
+                    update.Origin);
             await ReplanAsync();
         }
 
-        public async Task CompleteEncounterAsync(bool successfulUnassistedCompletion)
+        public async Task CompleteEncounterAsync(bool reportedSuccessfulUnassistedCompletion)
         {
             if (currentEncounter == null)
             {
@@ -103,11 +104,10 @@ namespace PhraseLayer.Unity
                 return;
             }
 
-            var summary = currentEncounter.Finish(successfulUnassistedCompletion);
-            learningStatus = string.Format(
-                "Encounter finished. {0} learner update(s); unassisted success: {1}.",
-                summary.Updates.Count,
-                successfulUnassistedCompletion ? "yes" : "no");
+            var summary = currentEncounter.Finish(reportedSuccessfulUnassistedCompletion);
+            learningStatus = summary.Updates.Count == 0
+                ? "Encounter closed. No mastery was inferred from passive continuation or silence."
+                : string.Format("Encounter closed with {0} explicit learner update(s).", summary.Updates.Count);
             await ReplanAsync();
         }
 
@@ -203,20 +203,21 @@ namespace PhraseLayer.Unity
             GUILayout.Label(learningStatus, body);
             GUILayout.Space(16);
 
-            GUILayout.Label("Encounter evidence (applies to the next view)", body);
+            GUILayout.Label("Explicit evidence simulation (applies to the next view)", body);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Remembered assisted phrase", GUILayout.Height(36)))
+            if (GUILayout.Button("Simulate recall success", GUILayout.Height(36)))
                 _ = RecordFirstAssistedAsync(LearningEvidenceKind.RecallSucceeded);
             if (GUILayout.Button("Need more help", GUILayout.Height(36)))
                 _ = RecordFirstAssistedAsync(LearningEvidenceKind.AssistanceRequested);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Read without extra help", GUILayout.Height(36)))
-                _ = CompleteEncounterAsync(true);
-            if (GUILayout.Button("Continue", GUILayout.Height(36)))
+            if (GUILayout.Button("Continue (no evidence)", GUILayout.Height(36)))
                 _ = CompleteEncounterAsync(false);
+            if (GUILayout.Button("Close encounter (reported success only)", GUILayout.Height(36)))
+                _ = CompleteEncounterAsync(true);
             GUILayout.EndHorizontal();
+            GUILayout.Label("Reported/silent completion is intentionally not converted into mastery evidence.", body);
 
             GUILayout.Space(16);
             GUILayout.Label("Reset demo learner", body);

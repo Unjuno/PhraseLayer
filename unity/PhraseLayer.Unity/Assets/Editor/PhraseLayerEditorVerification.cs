@@ -20,11 +20,13 @@ namespace PhraseLayer.Unity.Editor
         public static void VerifyCorePipeline()
         {
             VerifyLanguagePipeline();
+            VerifyLearnerObservationContract();
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
             VerifyOcrRuntimeContract();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, scene bootstrap, and local OCR asset Editor bridge verified.");
+            VerifyLocalOnlyGuardCompiled();
+            Debug.Log("PhraseLayer shell PASS: language pipeline, action-aware learner observation contract, OCR geometry/presentation/runtime, Unity Inference 2.2 API gate, local OCR bootstrap, and local-only build guard compiled.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -47,6 +49,30 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("Unexpected PhraseLayer output. Expected: " + Expected + " Actual: " + plan.DisplayText);
             if (plan.DisplayText.Contains("[") || plan.DisplayText.Contains("]"))
                 throw new InvalidOperationException("Core output must not contain gloss brackets.");
+        }
+
+        private static void VerifyLearnerObservationContract()
+        {
+            var document = new RuleBasedSemanticSegmenter(new[] { "keep off" })
+                .Segment("Please keep off the grass.");
+            SemanticUnit keepOff = null;
+            foreach (var unit in document.OfKind(SemanticUnitKind.MultiwordExpression))
+            {
+                keepOff = unit;
+                break;
+            }
+            if (keepOff == null)
+                throw new InvalidOperationException("Learner observation verification could not resolve keep off MWE.");
+
+            var learner = new InMemoryLearnerModel(0.10);
+            var adaptation = new LearnerAdaptationEngine(learner);
+            var passive = adaptation.Apply(keepOff, LearningEvidenceKind.AssistedExposure);
+            if (passive.Applied || learner.Estimate(keepOff).IsExplicit)
+                throw new InvalidOperationException("Passive assisted exposure must not mutate or create explicit learner state.");
+
+            var recall = adaptation.Apply(keepOff, LearningEvidenceKind.RecallSucceeded);
+            if (!recall.Applied || recall.Origin != LearningObservationOrigin.RecallProbe || !recall.EngagementVerified)
+                throw new InvalidOperationException("Recall evidence must remain an explicit, action-aware learner observation.");
         }
 
         private static void VerifyViewportGeometry()
@@ -134,6 +160,13 @@ namespace PhraseLayer.Unity.Editor
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference in the reviewed [2.2.1,2.3.0) range before Gate 4 verification.");
 #endif
+        }
+
+        private static void VerifyLocalOnlyGuardCompiled()
+        {
+            var guardType = typeof(PhraseLayerLocalOnlyBuildGuard);
+            if (guardType == null)
+                throw new InvalidOperationException("PhraseLayerLocalOnlyBuildGuard must compile in the official Unity project.");
         }
 
         private static void AssertNear(double actual, double expected, string label)
