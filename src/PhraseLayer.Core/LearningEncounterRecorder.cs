@@ -8,7 +8,7 @@ namespace PhraseLayer.Core.Learning
     /// <summary>
     /// Conservative encounter-level evidence collector.
     /// Repeated camera/ASR frames only refresh an observation; they do not immediately increase knowledge.
-    /// Weak unaided evidence is emitted only when the encounter ends and the unit did not require assistance,
+    /// Weak unassisted evidence is emitted only when the encounter ends and the unit did not require assistance,
     /// fail comprehension, or receive an explicit judgement during that encounter.
     /// </summary>
     public sealed class LearningEncounterRecorder
@@ -35,11 +35,11 @@ namespace PhraseLayer.Core.Learning
 
             var state = GetOrCreateEncounter(encounterId);
             var unitState = state.GetOrCreate(unit);
-            if (reliability > unitState.UnaidedReliability)
-                unitState.UnaidedReliability = reliability;
+            if (reliability > unitState.UnassistedReliability)
+                unitState.UnassistedReliability = reliability;
         }
 
-        public LearningUpdateResult? AssistanceRequested(
+        public LearnerUpdate? AssistanceRequested(
             string encounterId,
             SemanticUnit unit,
             double reliability = 1.0)
@@ -51,7 +51,7 @@ namespace PhraseLayer.Core.Learning
                 reliability);
         }
 
-        public LearningUpdateResult? AssistedSuccess(
+        public LearnerUpdate? AssistedSuccess(
             string encounterId,
             SemanticUnit unit,
             double reliability = 1.0)
@@ -59,11 +59,11 @@ namespace PhraseLayer.Core.Learning
             return RecordBlockingEvidence(
                 encounterId,
                 unit,
-                LearningEvidenceKind.AssistedSuccess,
+                LearningEvidenceKind.AssistedExposure,
                 reliability);
         }
 
-        public LearningUpdateResult? IncorrectComprehension(
+        public LearnerUpdate? IncorrectComprehension(
             string encounterId,
             SemanticUnit unit,
             double reliability = 1.0)
@@ -71,11 +71,11 @@ namespace PhraseLayer.Core.Learning
             return RecordBlockingEvidence(
                 encounterId,
                 unit,
-                LearningEvidenceKind.IncorrectComprehension,
+                LearningEvidenceKind.ComprehensionFailed,
                 reliability);
         }
 
-        public LearningUpdateResult? ExplicitKnown(
+        public LearnerUpdate? ExplicitKnown(
             string encounterId,
             SemanticUnit unit,
             double reliability = 1.0)
@@ -83,11 +83,11 @@ namespace PhraseLayer.Core.Learning
             return RecordBlockingEvidence(
                 encounterId,
                 unit,
-                LearningEvidenceKind.ExplicitKnown,
+                LearningEvidenceKind.MarkedKnown,
                 reliability);
         }
 
-        public LearningUpdateResult? ExplicitUnknown(
+        public LearnerUpdate? ExplicitUnknown(
             string encounterId,
             SemanticUnit unit,
             double reliability = 1.0)
@@ -95,40 +95,35 @@ namespace PhraseLayer.Core.Learning
             return RecordBlockingEvidence(
                 encounterId,
                 unit,
-                LearningEvidenceKind.ExplicitUnknown,
+                LearningEvidenceKind.MarkedUnknown,
                 reliability);
         }
 
-        /// <summary>
-        /// Emits weak unaided evidence for observed units that had no blocking signal, then clears encounter state.
-        /// The returned list contains only updates emitted at encounter end; immediate negative/explicit events are
-        /// returned by their respective methods when they occur.
-        /// </summary>
-        public IReadOnlyList<LearningUpdateResult> EndEncounter(string encounterId)
+        public IReadOnlyList<LearnerUpdate> EndEncounter(string encounterId)
         {
             ValidateEncounterId(encounterId);
             EncounterState state;
             if (!encounters.TryGetValue(encounterId, out state))
             {
                 tracker.EndEncounter(encounterId);
-                return Array.Empty<LearningUpdateResult>();
+                return Array.Empty<LearnerUpdate>();
             }
 
-            var results = new List<LearningUpdateResult>();
+            var results = new List<LearnerUpdate>();
             foreach (var unitState in state.Units.Values
                          .OrderBy(item => item.Unit.Start)
                          .ThenByDescending(item => item.Unit.Length)
                          .ThenBy(item => item.Unit.Id, StringComparer.Ordinal))
             {
-                if (unitState.BlocksUnaided || unitState.UnaidedReliability <= 0.0)
+                if (unitState.BlocksUnassisted || unitState.UnassistedReliability <= 0.0)
                     continue;
 
                 var result = tracker.RecordOnce(
                     encounterId,
                     new LearningEvidence(
                         unitState.Unit,
-                        LearningEvidenceKind.UnaidedExposure,
-                        unitState.UnaidedReliability));
+                        LearningEvidenceKind.CompletedWithoutAssistance,
+                        unitState.UnassistedReliability));
                 if (result != null)
                     results.Add(result);
             }
@@ -151,7 +146,7 @@ namespace PhraseLayer.Core.Learning
             tracker.Clear();
         }
 
-        private LearningUpdateResult? RecordBlockingEvidence(
+        private LearnerUpdate? RecordBlockingEvidence(
             string encounterId,
             SemanticUnit unit,
             LearningEvidenceKind kind,
@@ -163,7 +158,7 @@ namespace PhraseLayer.Core.Learning
 
             var state = GetOrCreateEncounter(encounterId);
             var unitState = state.GetOrCreate(unit);
-            unitState.BlocksUnaided = true;
+            unitState.BlocksUnassisted = true;
 
             return tracker.RecordOnce(
                 encounterId,
@@ -227,8 +222,8 @@ namespace PhraseLayer.Core.Learning
             }
 
             public SemanticUnit Unit { get; }
-            public double UnaidedReliability { get; set; }
-            public bool BlocksUnaided { get; set; }
+            public double UnassistedReliability { get; set; }
+            public bool BlocksUnassisted { get; set; }
         }
     }
 }
