@@ -15,14 +15,19 @@ namespace PhraseLayer.Unity
 
         private readonly List<OcrViewportRegion> regions = new List<OcrViewportRegion>();
         private OcrObservation lastObservation;
+        private ImageFrame lastFrame;
         private int frameWidth;
         private int frameHeight;
         private long frameTimestampMicroseconds;
         private OcrScheduleStatus lastScheduleStatus = OcrScheduleStatus.Processed;
         private bool hasObservation;
 
+        public event Action<OcrObservation, ImageFrame> ObservationPresented;
+
         public IReadOnlyList<OcrViewportRegion> Regions => regions;
         public bool HasObservation => hasObservation;
+        public OcrObservation LastObservation => hasObservation ? lastObservation : null;
+        public ImageFrame LastFrame => hasObservation ? lastFrame : null;
         public string LastText => hasObservation ? lastObservation.Text : string.Empty;
         public double LastConfidence => hasObservation ? lastObservation.Confidence : 0.0;
         public long? LastFrameTimestampMicroseconds => hasObservation ? frameTimestampMicroseconds : (long?)null;
@@ -47,11 +52,26 @@ namespace PhraseLayer.Unity
             regions.Clear();
             regions.AddRange(OcrViewportMapper.Map(observation, frame));
             lastObservation = observation;
+            lastFrame = frame;
             frameWidth = frame.Width;
             frameHeight = frame.Height;
             frameTimestampMicroseconds = frame.TimestampMicroseconds;
             lastScheduleStatus = OcrScheduleStatus.Processed;
             hasObservation = true;
+
+            var presented = ObservationPresented;
+            if (presented != null)
+            {
+                try
+                {
+                    presented(observation, frame);
+                }
+                catch (Exception exception)
+                {
+                    // Raw OCR presentation must remain usable even if an optional downstream debug consumer fails.
+                    Debug.LogException(exception, this);
+                }
+            }
         }
 
         /// <summary>
@@ -78,6 +98,7 @@ namespace PhraseLayer.Unity
         {
             regions.Clear();
             lastObservation = null;
+            lastFrame = null;
             frameWidth = 0;
             frameHeight = 0;
             frameTimestampMicroseconds = 0;
