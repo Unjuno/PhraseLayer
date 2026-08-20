@@ -76,12 +76,15 @@ namespace PhraseLayer.Core.Semantics
         {
             if (sourceText == null) throw new ArgumentNullException(nameof(sourceText));
             var units = new List<SemanticUnit>();
-            var sentence = TrimSpan(sourceText, 0, sourceText.Length);
-            if (sentence.Length == 0) return new SemanticDocument(sourceText, units);
+            var documentSpan = TrimSpan(sourceText, 0, sourceText.Length);
+            if (documentSpan.Length == 0) return new SemanticDocument(sourceText, units);
 
-            units.Add(CreateUnit(SemanticUnitKind.Sentence, sentence.Start, sentence.Length, sourceText));
-            foreach (var clause in SplitClauses(sourceText, sentence.Start, sentence.Length))
-                units.Add(CreateUnit(SemanticUnitKind.Clause, clause.Start, clause.Length, sourceText));
+            foreach (var sentence in SplitSentences(sourceText, documentSpan.Start, documentSpan.Length))
+            {
+                units.Add(CreateUnit(SemanticUnitKind.Sentence, sentence.Start, sentence.Length, sourceText));
+                foreach (var clause in SplitClauses(sourceText, sentence.Start, sentence.Length))
+                    units.Add(CreateUnit(SemanticUnitKind.Clause, clause.Start, clause.Length, sourceText));
+            }
 
             var expressions = FindMultiwordExpressions(sourceText).ToArray();
             units.AddRange(expressions);
@@ -114,6 +117,36 @@ namespace PhraseLayer.Core.Semantics
             return accepted;
         }
 
+        private static IEnumerable<TextSpan> SplitSentences(string sourceText, int start, int length)
+        {
+            var end = start + length;
+            var sentenceStart = start;
+            var index = start;
+
+            while (index < end)
+            {
+                if (!IsSentenceTerminator(sourceText[index]) || IsDecimalPoint(sourceText, index, start, end))
+                {
+                    index++;
+                    continue;
+                }
+
+                var boundaryEnd = index + 1;
+                while (boundaryEnd < end && IsSentenceTerminator(sourceText[boundaryEnd])) boundaryEnd++;
+                while (boundaryEnd < end && IsSentenceClosingMark(sourceText[boundaryEnd])) boundaryEnd++;
+
+                var span = TrimSpan(sourceText, sentenceStart, boundaryEnd - sentenceStart);
+                if (span.Length > 0) yield return span;
+
+                sentenceStart = boundaryEnd;
+                while (sentenceStart < end && char.IsWhiteSpace(sourceText[sentenceStart])) sentenceStart++;
+                index = sentenceStart;
+            }
+
+            var last = TrimSpan(sourceText, sentenceStart, end - sentenceStart);
+            if (last.Length > 0) yield return last;
+        }
+
         private static IEnumerable<TextSpan> SplitClauses(string sourceText, int start, int length)
         {
             var end = start + length;
@@ -144,7 +177,8 @@ namespace PhraseLayer.Core.Semantics
         private static TextSpan TrimTerminalPunctuation(string sourceText, int start, int length)
         {
             var right = start + length;
-            while (right > start && (sourceText[right - 1] == '.' || sourceText[right - 1] == '!' || sourceText[right - 1] == '?')) right--;
+            while (right > start && IsSentenceClosingMark(sourceText[right - 1])) right--;
+            while (right > start && IsSentenceTerminator(sourceText[right - 1])) right--;
             return TrimSpan(sourceText, start, right - start);
         }
 
@@ -155,6 +189,11 @@ namespace PhraseLayer.Core.Semantics
         }
 
         private static bool IsBoundary(string text, int index) => index < 0 || index >= text.Length || !char.IsLetterOrDigit(text[index]);
+        private static bool IsSentenceTerminator(char value) => value == '.' || value == '!' || value == '?';
+        private static bool IsSentenceClosingMark(char value) =>
+            value == '"' || value == '\'' || value == '’' || value == '”' || value == ')' || value == ']' || value == '}';
+        private static bool IsDecimalPoint(string text, int index, int start, int end) =>
+            text[index] == '.' && index > start && index + 1 < end && char.IsDigit(text[index - 1]) && char.IsDigit(text[index + 1]);
         private static int TokenCount(string text) => WordRegex.Matches(text).Count;
         private static string MakeId(SemanticUnitKind kind, int start, int length) => kind + ":" + start + ":" + length;
 
