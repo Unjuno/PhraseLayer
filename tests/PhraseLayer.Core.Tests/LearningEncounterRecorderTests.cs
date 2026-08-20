@@ -163,11 +163,11 @@ namespace PhraseLayer.Core.Tests
 
         private sealed class RecordingStore : ILearnerProfileStore
         {
-            public LearnerProfileSnapshot Loaded { get; set; }
-            public LearnerProfileSnapshot Saved { get; private set; }
+            public LearnerProfileSnapshot? Loaded { get; set; }
+            public LearnerProfileSnapshot? Saved { get; private set; }
             public int SaveCount { get; private set; }
 
-            public LearnerProfileSnapshot Load() => Loaded;
+            public LearnerProfileSnapshot? Load() => Loaded;
 
             public void Save(LearnerProfileSnapshot snapshot)
             {
