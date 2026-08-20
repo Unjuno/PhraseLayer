@@ -60,16 +60,22 @@ namespace PhraseLayer.Core.Semantics
         SemanticDocument Segment(string sourceText);
     }
 
+    /// <summary>
+    /// Deterministic bootstrap segmenter. Configured phrase patterns are an explicit lexicon, not a claim of
+    /// general syntactic parsing; a later parser can replace this implementation through ISemanticSegmenter.
+    /// </summary>
     public sealed class RuleBasedSemanticSegmenter : ISemanticSegmenter
     {
         private static readonly Regex WordRegex = new Regex(@"[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*", RegexOptions.Compiled);
         private readonly string[] _multiwordExpressions;
+        private readonly string[] _phrasePatterns;
 
-        public RuleBasedSemanticSegmenter(IEnumerable<string>? multiwordExpressions = null)
+        public RuleBasedSemanticSegmenter(
+            IEnumerable<string>? multiwordExpressions = null,
+            IEnumerable<string>? phrasePatterns = null)
         {
-            _multiwordExpressions = (multiwordExpressions ?? Array.Empty<string>())
-                .Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(TokenCount).ThenByDescending(value => value.Length).ToArray();
+            _multiwordExpressions = NormalizePatterns(multiwordExpressions);
+            _phrasePatterns = NormalizePatterns(phrasePatterns);
         }
 
         public SemanticDocument Segment(string sourceText)
@@ -86,32 +92,51 @@ namespace PhraseLayer.Core.Semantics
                     units.Add(CreateUnit(SemanticUnitKind.Clause, clause.Start, clause.Length, sourceText));
             }
 
-            var expressions = FindMultiwordExpressions(sourceText).ToArray();
-            units.AddRange(expressions);
+            units.AddRange(FindConfiguredSpans(sourceText, _phrasePatterns, SemanticUnitKind.Phrase));
+            units.AddRange(FindConfiguredSpans(sourceText, _multiwordExpressions, SemanticUnitKind.MultiwordExpression));
             foreach (Match match in WordRegex.Matches(sourceText))
                 units.Add(new SemanticUnit(MakeId(SemanticUnitKind.Word, match.Index, match.Length), SemanticUnitKind.Word, match.Index, match.Length, match.Value, 1));
 
             return new SemanticDocument(sourceText, units);
         }
 
-        private IEnumerable<SemanticUnit> FindMultiwordExpressions(string sourceText)
+        private static string[] NormalizePatterns(IEnumerable<string>? patterns)
+        {
+            return (patterns ?? Array.Empty<string>())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(TokenCount)
+                .ThenByDescending(value => value.Length)
+                .ToArray();
+        }
+
+        private static IEnumerable<SemanticUnit> FindConfiguredSpans(
+            string sourceText,
+            IReadOnlyList<string> patterns,
+            SemanticUnitKind kind)
         {
             var accepted = new List<SemanticUnit>();
-            foreach (var expression in _multiwordExpressions)
+            foreach (var pattern in patterns)
             {
                 var searchStart = 0;
                 while (searchStart < sourceText.Length)
                 {
-                    var index = sourceText.IndexOf(expression, searchStart, StringComparison.OrdinalIgnoreCase);
+                    var index = sourceText.IndexOf(pattern, searchStart, StringComparison.OrdinalIgnoreCase);
                     if (index < 0) break;
-                    var end = index + expression.Length;
+                    var end = index + pattern.Length;
                     if (IsBoundary(sourceText, index - 1) && IsBoundary(sourceText, end))
                     {
-                        var candidate = new SemanticUnit(MakeId(SemanticUnitKind.MultiwordExpression, index, expression.Length),
-                            SemanticUnitKind.MultiwordExpression, index, expression.Length, sourceText.Substring(index, expression.Length), TokenCount(expression));
+                        var candidate = new SemanticUnit(
+                            MakeId(kind, index, pattern.Length),
+                            kind,
+                            index,
+                            pattern.Length,
+                            sourceText.Substring(index, pattern.Length),
+                            TokenCount(pattern));
                         if (!accepted.Any(existing => existing.Overlaps(candidate))) accepted.Add(candidate);
                     }
-                    searchStart = index + Math.Max(1, expression.Length);
+                    searchStart = index + Math.Max(1, pattern.Length);
                 }
             }
             return accepted;
