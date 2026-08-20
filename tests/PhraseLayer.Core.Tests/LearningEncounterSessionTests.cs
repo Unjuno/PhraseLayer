@@ -26,26 +26,7 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public async Task FinishAppliesPassiveEvidenceOnlyToAssistedUnitsByDefault()
-        {
-            var learner = CreateLearner();
-            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
-            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
-            var please = GetUnit(plan, "Please", SemanticUnitKind.Word);
-            var beforePlease = learner.Estimate(please).Understanding;
-            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
-
-            var summary = session.Finish();
-
-            var update = Assert.Single(summary.Updates);
-            Assert.Equal(LearningEvidenceKind.AssistedExposure, update.Evidence);
-            Assert.Equal(keepOff.Id, update.Unit.Id);
-            Assert.True(learner.Estimate(keepOff).Understanding > 0.10);
-            Assert.Equal(beforePlease, learner.Estimate(please).Understanding, 12);
-        }
-
-        [Fact]
-        public async Task SuccessfulCompletionRewardsOnlyUnassistedAtomicUnits()
+        public async Task FinishWithoutExplicitEvidenceDoesNotMutateLearnerState()
         {
             var learner = CreateLearner();
             var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
@@ -55,19 +36,52 @@ namespace PhraseLayer.Core.Tests
             var beforePlease = learner.Estimate(please).Understanding;
             var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
 
+            var summary = session.Finish();
+
+            Assert.Empty(summary.Updates);
+            Assert.Equal(beforeKeepOff, learner.Estimate(keepOff).Understanding, 12);
+            Assert.Equal(beforePlease, learner.Estimate(please).Understanding, 12);
+        }
+
+        [Fact]
+        public async Task SuccessfulCompletionFlagDoesNotInventEvidence()
+        {
+            var learner = CreateLearner();
+            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
+            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
+            var beforeKeepOff = learner.Estimate(keepOff).Understanding;
+            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
+
             var summary = session.Finish(successfulUnassistedCompletion: true);
 
             Assert.True(summary.SuccessfulUnassistedCompletion);
-            Assert.Contains(summary.Updates, update =>
-                update.Unit.Id == keepOff.Id && update.Evidence == LearningEvidenceKind.AssistedExposure);
-            Assert.Contains(summary.Updates, update =>
-                update.Unit.Id == please.Id && update.Evidence == LearningEvidenceKind.CompletedWithoutAssistance);
-            Assert.True(learner.Estimate(keepOff).Understanding > beforeKeepOff);
+            Assert.Empty(summary.Updates);
+            Assert.Equal(beforeKeepOff, learner.Estimate(keepOff).Understanding, 12);
+        }
+
+        [Fact]
+        public async Task VerifiedUnaidedSuccessMustBeSpecificAndUnassisted()
+        {
+            var learner = CreateLearner();
+            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
+            var please = GetUnit(plan, "Please", SemanticUnitKind.Word);
+            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
+            var beforePlease = learner.Estimate(please).Understanding;
+            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
+
+            session.RecordVerifiedUnaidedSuccess(please);
+            Assert.Throws<InvalidOperationException>(() => session.RecordVerifiedUnaidedSuccess(keepOff));
+            var summary = session.Finish();
+
+            var update = Assert.Single(summary.Updates);
+            Assert.Equal(LearningEvidenceKind.VerifiedUnaidedSuccess, update.Evidence);
+            Assert.Equal(LearningObservationOrigin.SourceDisplay, update.Origin);
+            Assert.True(update.EngagementVerified);
             Assert.True(learner.Estimate(please).Understanding > beforePlease);
         }
 
         [Fact]
-        public async Task AssistanceRequestOverridesPassiveExposureForSameUnit()
+        public async Task AssistanceRequestRecordsActionThatGeneratedObservation()
         {
             var learner = CreateLearner();
             var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
@@ -81,11 +95,48 @@ namespace PhraseLayer.Core.Tests
 
             var update = Assert.Single(summary.Updates);
             Assert.Equal(LearningEvidenceKind.AssistanceRequested, update.Evidence);
+            Assert.Equal(LearningObservationOrigin.AssistedDisplay, update.Origin);
             Assert.True(update.UpdatedUnderstanding < update.PreviousUnderstanding);
         }
 
         [Fact]
-        public async Task CurrentDisplayStaysFrozenWhileNextEncounterUsesUpdatedKnowledge()
+        public async Task ExplicitObservationOriginCannotContradictEncounterDisplayAction()
+        {
+            var learner = CreateLearner();
+            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
+            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
+            var please = GetUnit(plan, "Please", SemanticUnitKind.Word);
+            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
+
+            Assert.Throws<InvalidOperationException>(() =>
+                session.Record(
+                    keepOff,
+                    LearningEvidenceKind.AssistanceRequested,
+                    LearningObservationOrigin.SourceDisplay,
+                    engagementVerified: true));
+
+            Assert.Throws<InvalidOperationException>(() =>
+                session.Record(
+                    please,
+                    LearningEvidenceKind.VerifiedUnaidedSuccess,
+                    LearningObservationOrigin.AssistedDisplay,
+                    engagementVerified: true));
+        }
+
+        [Fact]
+        public async Task GenericVerifiedUnaidedEvidenceCannotBypassInterventionCensoring()
+        {
+            var learner = CreateLearner();
+            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
+            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
+            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
+
+            Assert.Throws<InvalidOperationException>(() =>
+                session.Record(keepOff, LearningEvidenceKind.VerifiedUnaidedSuccess));
+        }
+
+        [Fact]
+        public async Task CurrentDisplayStaysFrozenWhileNextEncounterUsesExplicitEvidence()
         {
             var learner = CreateLearner();
             var pipeline = BuildPipeline(learner);

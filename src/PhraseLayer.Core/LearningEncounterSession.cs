@@ -17,21 +17,31 @@ namespace PhraseLayer.Core.Learning
         }
 
         public IReadOnlyList<LearnerUpdate> Updates { get; }
+
+        /// <summary>
+        /// Encounter/UI metadata only. This flag is deliberately not converted into learner evidence.
+        /// Callers that have a genuinely verified unaided success must record VerifiedUnaidedSuccess
+        /// for the specific semantic unit(s) that were actually verified.
+        /// </summary>
         public bool SuccessfulUnassistedCompletion { get; }
     }
 
     /// <summary>
-    /// Collects learner evidence while a single mixed-language plan remains visually frozen.
-    /// Scores are applied only when Finish is called, so the currently visible encounter never changes
-    /// underneath the learner. A future encounter can then be replanned from the updated learner model.
+    /// Collects explicit/action-aware learner observations while a single mixed-language plan remains
+    /// visually frozen. Observations are applied only when Finish is called, so the currently visible
+    /// encounter never changes underneath the learner.
+    ///
+    /// The session deliberately does NOT synthesize learning evidence from passive assisted exposure,
+    /// lack of a help request, or a generic "completed" flag. Those events are observationally censored
+    /// unless engagement/success was independently verified.
     /// </summary>
     public sealed class LearningEncounterSession
     {
         private readonly MixedLanguagePlan plan;
         private readonly SemanticDocument document;
         private readonly LearnerAdaptationEngine adaptation;
-        private readonly Dictionary<string, PendingEvidence> pending =
-            new Dictionary<string, PendingEvidence>(StringComparer.Ordinal);
+        private readonly Dictionary<string, LearningObservation> pending =
+            new Dictionary<string, LearningObservation>(StringComparer.Ordinal);
         private LearningEncounterSummary? finishedSummary;
 
         public LearningEncounterSession(MixedLanguagePlan plan, LearnerAdaptationEngine adaptation)
@@ -78,44 +88,76 @@ namespace PhraseLayer.Core.Learning
             EnsureOpen();
             if (unit == null) throw new ArgumentNullException(nameof(unit));
             var canonical = FindCanonical(unit);
-            pending[canonical.Id] = new PendingEvidence(canonical, evidence);
+            var observation = LearningObservation.ForEvidence(
+                canonical,
+                evidence,
+                assistedDisplay: IsAssisted(canonical));
+            ValidateObservationAgainstEncounter(observation);
+            pending[canonical.Id] = observation;
+        }
+
+        public void Record(
+            SemanticUnit unit,
+            LearningEvidenceKind evidence,
+            LearningObservationOrigin origin,
+            bool engagementVerified)
+        {
+            EnsureOpen();
+            if (unit == null) throw new ArgumentNullException(nameof(unit));
+            var canonical = FindCanonical(unit);
+            var observation = new LearningObservation(
+                canonical,
+                evidence,
+                origin,
+                engagementVerified);
+            ValidateObservationAgainstEncounter(observation);
+            pending[canonical.Id] = observation;
         }
 
         /// <summary>
-        /// Finalizes the encounter and applies its learning evidence exactly once.
-        /// If successfulUnassistedCompletion is true, atomic source units that were not translated in this
-        /// encounter receive positive unassisted evidence. Translated units receive only passive exposure
-        /// unless stronger explicit evidence was recorded for them.
+        /// Records a positive source-only observation only when some external interaction/probe has
+        /// genuinely verified that the learner processed this specific unassisted semantic unit.
+        /// </summary>
+        public void RecordVerifiedUnaidedSuccess(SemanticUnit unit)
+        {
+            EnsureOpen();
+            if (unit == null) throw new ArgumentNullException(nameof(unit));
+            var canonical = FindCanonical(unit);
+            if (IsAssisted(canonical))
+            {
+                throw new InvalidOperationException(
+                    "Cannot record verified unaided success for a semantic unit that was assisted in this encounter.");
+            }
+
+            pending[canonical.Id] = new LearningObservation(
+                canonical,
+                LearningEvidenceKind.VerifiedUnaidedSuccess,
+                LearningObservationOrigin.SourceDisplay,
+                engagementVerified: true);
+        }
+
+        public void RecordVerifiedUnaidedSuccessAt(int sourceIndex)
+        {
+            RecordVerifiedUnaidedSuccess(ResolveUnitAt(sourceIndex));
+        }
+
+        /// <summary>
+        /// Finalizes the encounter and applies only explicitly recorded observations exactly once.
+        /// successfulUnassistedCompletion is retained as encounter metadata for compatibility, but it
+        /// does not manufacture evidence for every untranslated token.
         /// </summary>
         public LearningEncounterSummary Finish(bool successfulUnassistedCompletion = false)
         {
             if (finishedSummary != null) return finishedSummary;
 
-            var evidence = new Dictionary<string, PendingEvidence>(pending, StringComparer.Ordinal);
-            foreach (var decision in plan.Assistance.Decisions)
-            {
-                if (!evidence.ContainsKey(decision.Unit.Id))
-                    evidence.Add(decision.Unit.Id, new PendingEvidence(decision.Unit, LearningEvidenceKind.AssistedExposure));
-            }
-
-            if (successfulUnassistedCompletion)
-            {
-                var assistedUnits = plan.Assistance.Decisions.Select(item => item.Unit).ToArray();
-                foreach (var atom in BuildAtomicUnits(document))
-                {
-                    if (assistedUnits.Any(unit => unit.Overlaps(atom))) continue;
-                    if (evidence.ContainsKey(atom.Id)) continue;
-                    evidence.Add(atom.Id, new PendingEvidence(atom, LearningEvidenceKind.CompletedWithoutAssistance));
-                }
-            }
-
-            var updates = new List<LearnerUpdate>(evidence.Count);
-            foreach (var item in evidence.Values
+            var updates = new List<LearnerUpdate>(pending.Count);
+            foreach (var observation in pending.Values
                          .OrderBy(item => item.Unit.Start)
                          .ThenBy(item => ResolutionPriority(item.Unit.Kind))
                          .ThenBy(item => item.Unit.Length))
             {
-                updates.Add(adaptation.Apply(item.Unit, item.Evidence));
+                var update = adaptation.Apply(observation);
+                if (update.Applied) updates.Add(update);
             }
 
             finishedSummary = new LearningEncounterSummary(updates, successfulUnassistedCompletion);
@@ -135,20 +177,60 @@ namespace PhraseLayer.Core.Learning
             return unit;
         }
 
+        private bool IsAssisted(SemanticUnit unit) =>
+            plan.Assistance.Decisions.Any(item => item.Unit.Overlaps(unit));
+
+        private void ValidateObservationAgainstEncounter(LearningObservation observation)
+        {
+            var assisted = IsAssisted(observation.Unit);
+            switch (observation.Evidence)
+            {
+                case LearningEvidenceKind.AssistedExposure:
+                    if (!assisted || observation.Origin != LearningObservationOrigin.AssistedDisplay)
+                    {
+                        throw new InvalidOperationException(
+                            "Assisted exposure must originate from a semantic unit actually assisted in this encounter.");
+                    }
+                    break;
+
+                case LearningEvidenceKind.CompletedWithoutAssistance:
+                case LearningEvidenceKind.VerifiedUnaidedSuccess:
+                    if (assisted || observation.Origin != LearningObservationOrigin.SourceDisplay)
+                    {
+                        throw new InvalidOperationException(
+                            "Unaided source evidence cannot be recorded for a semantic unit assisted in this encounter.");
+                    }
+                    break;
+
+                case LearningEvidenceKind.AssistanceRequested:
+                    var expectedOrigin = assisted
+                        ? LearningObservationOrigin.AssistedDisplay
+                        : LearningObservationOrigin.SourceDisplay;
+                    if (observation.Origin != expectedOrigin)
+                    {
+                        throw new InvalidOperationException(
+                            "Assistance request origin does not match the display action for this encounter.");
+                    }
+                    break;
+
+                case LearningEvidenceKind.RecallSucceeded:
+                case LearningEvidenceKind.RecallFailed:
+                    if (observation.Origin != LearningObservationOrigin.RecallProbe)
+                        throw new InvalidOperationException("Recall evidence must originate from a recall probe.");
+                    break;
+
+                case LearningEvidenceKind.MarkedKnown:
+                case LearningEvidenceKind.MarkedUnknown:
+                    if (observation.Origin != LearningObservationOrigin.ExplicitSelfReport)
+                        throw new InvalidOperationException("Known/unknown labels must originate from explicit self-report.");
+                    break;
+            }
+        }
+
         private void EnsureOpen()
         {
             if (finishedSummary != null)
                 throw new InvalidOperationException("The learning encounter has already been finished.");
-        }
-
-        private static IEnumerable<SemanticUnit> BuildAtomicUnits(SemanticDocument document)
-        {
-            var mwes = document.OfKind(SemanticUnitKind.MultiwordExpression).OrderBy(unit => unit.Start).ToArray();
-            foreach (var mwe in mwes) yield return mwe;
-            foreach (var word in document.OfKind(SemanticUnitKind.Word))
-            {
-                if (!mwes.Any(mwe => mwe.Overlaps(word))) yield return word;
-            }
         }
 
         private static bool ContainsIndex(SemanticUnit unit, int sourceIndex) =>
@@ -165,18 +247,6 @@ namespace PhraseLayer.Core.Learning
                 case SemanticUnitKind.Sentence: return 4;
                 default: return 5;
             }
-        }
-
-        private readonly struct PendingEvidence
-        {
-            public PendingEvidence(SemanticUnit unit, LearningEvidenceKind evidence)
-            {
-                Unit = unit;
-                Evidence = evidence;
-            }
-
-            public SemanticUnit Unit { get; }
-            public LearningEvidenceKind Evidence { get; }
         }
     }
 }

@@ -10,38 +10,42 @@ namespace PhraseLayer.Core.Tests
     public sealed class LearnerAdaptationTests
     {
         [Fact]
-        public void AssistedExposureCannotPromotePassiveUseToKnown()
+        public void AssistedExposureDoesNotMutateOrCreateExplicitKnowledge()
         {
             var unit = GetKeepOffUnit();
             var learner = new InMemoryLearnerModel(0.10);
-            learner.SetUnderstanding(unit.Text, 0.10);
-            var engine = new LearnerAdaptationEngine(learner);
-
-            for (var i = 0; i < 250; i++)
-                engine.Apply(unit, LearningEvidenceKind.AssistedExposure);
-
-            var estimate = learner.Estimate(unit);
-            Assert.InRange(estimate.Understanding, 0.79, 0.80);
-            Assert.NotEqual(KnowledgeState.Known, estimate.State);
-        }
-
-        [Fact]
-        public void AssistedExposureDoesNotLowerExistingMastery()
-        {
-            var unit = GetKeepOffUnit();
-            var learner = new InMemoryLearnerModel(0.95);
-            learner.SetUnderstanding(unit.Text, 0.95);
             var engine = new LearnerAdaptationEngine(learner);
 
             var update = engine.Apply(unit, LearningEvidenceKind.AssistedExposure);
+            var estimate = learner.Estimate(unit);
 
-            Assert.Equal(0.95, update.PreviousUnderstanding, 12);
-            Assert.Equal(0.95, update.UpdatedUnderstanding, 12);
-            Assert.Equal(KnowledgeState.Known, learner.Estimate(unit).State);
+            Assert.False(update.Applied);
+            Assert.Equal(0.10, update.PreviousUnderstanding, 12);
+            Assert.Equal(0.10, update.UpdatedUnderstanding, 12);
+            Assert.False(estimate.IsExplicit);
+            Assert.Equal(0.10, estimate.Understanding, 12);
         }
 
         [Fact]
-        public void UnassistedCompletionRaisesUnderstandingAndReducesAutoSupport()
+        public void SilentCompletionDoesNotBecomeMasteryEvidence()
+        {
+            var unit = GetKeepOffUnit();
+            var learner = new InMemoryLearnerModel(0.20);
+            var engine = new LearnerAdaptationEngine(learner);
+
+            for (var i = 0; i < 100; i++)
+            {
+                var update = engine.Apply(unit, LearningEvidenceKind.CompletedWithoutAssistance);
+                Assert.False(update.Applied);
+            }
+
+            var estimate = learner.Estimate(unit);
+            Assert.False(estimate.IsExplicit);
+            Assert.Equal(0.20, estimate.Understanding, 12);
+        }
+
+        [Fact]
+        public void VerifiedUnaidedSuccessRaisesUnderstandingAndReducesAutoSupport()
         {
             var segmenter = new RuleBasedSemanticSegmenter(new[] { "keep off" });
             var document = segmenter.Segment("Please keep off the grass.");
@@ -54,7 +58,7 @@ namespace PhraseLayer.Core.Tests
             var engine = new LearnerAdaptationEngine(learner);
 
             for (var i = 0; i < 20; i++)
-                engine.Apply(unit, LearningEvidenceKind.CompletedWithoutAssistance);
+                engine.Apply(unit, LearningEvidenceKind.VerifiedUnaidedSuccess);
 
             var after = planner.Plan(document, learner, policy);
             Assert.True(learner.Estimate(unit).Understanding > 0.80);
@@ -74,11 +78,43 @@ namespace PhraseLayer.Core.Tests
             Assert.Empty(planner.Plan(document, learner, policy).Decisions);
 
             var engine = new LearnerAdaptationEngine(learner);
-            engine.Apply(unit, LearningEvidenceKind.AssistanceRequested);
+            var update = engine.Apply(unit, LearningEvidenceKind.AssistanceRequested);
 
             var decision = Assert.Single(planner.Plan(document, learner, policy).Decisions);
             Assert.Equal("keep off", decision.Unit.Text, ignoreCase: true);
             Assert.True(decision.EstimatedUnderstanding < policy.PreserveKnownThreshold);
+            Assert.Equal(LearningObservationOrigin.SourceDisplay, update.Origin);
+            Assert.True(update.EngagementVerified);
+        }
+
+        [Fact]
+        public void RecallEvidenceRecordsProbeOrigin()
+        {
+            var unit = GetKeepOffUnit();
+            var learner = new InMemoryLearnerModel(0.55);
+            var engine = new LearnerAdaptationEngine(learner);
+
+            var update = engine.Apply(unit, LearningEvidenceKind.RecallSucceeded);
+
+            Assert.True(update.Applied);
+            Assert.Equal(LearningObservationOrigin.RecallProbe, update.Origin);
+            Assert.True(update.EngagementVerified);
+            Assert.True(update.UpdatedUnderstanding > update.PreviousUnderstanding);
+        }
+
+        [Fact]
+        public void IncompatibleObservationOriginIsRejected()
+        {
+            var unit = GetKeepOffUnit();
+            var learner = new InMemoryLearnerModel(0.55);
+            var engine = new LearnerAdaptationEngine(learner);
+            var invalid = new LearningObservation(
+                unit,
+                LearningEvidenceKind.RecallSucceeded,
+                LearningObservationOrigin.SourceDisplay,
+                engagementVerified: true);
+
+            Assert.Throws<InvalidOperationException>(() => engine.Apply(invalid));
         }
 
         [Fact]
@@ -91,6 +127,7 @@ namespace PhraseLayer.Core.Tests
 
             var known = engine.Apply(unit, LearningEvidenceKind.MarkedKnown);
             Assert.Equal(0.97, known.UpdatedUnderstanding, 12);
+            Assert.Equal(LearningObservationOrigin.ExplicitSelfReport, known.Origin);
             Assert.Equal(KnowledgeState.Known, learner.Estimate(unit).State);
 
             var unknown = engine.Apply(unit, LearningEvidenceKind.MarkedUnknown);
@@ -99,12 +136,16 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public void PersistentLearnerSavesEachAdaptationMutation()
+        public void PersistentLearnerDoesNotSaveNoEvidenceButSavesRecall()
         {
             var unit = GetKeepOffUnit();
             var store = new CountingStore();
             var learner = new PersistentLearnerModel(store, 0.55);
             var engine = new LearnerAdaptationEngine(learner);
+
+            var passive = engine.Apply(unit, LearningEvidenceKind.AssistedExposure);
+            Assert.False(passive.Applied);
+            Assert.Equal(0, store.SaveCount);
 
             engine.Apply(unit, LearningEvidenceKind.RecallSucceeded);
 
@@ -116,8 +157,12 @@ namespace PhraseLayer.Core.Tests
         [Fact]
         public void UpdatePolicyRejectsNonFiniteOrOutOfRangeRates()
         {
-            Assert.Throws<ArgumentOutOfRangeException>(() => new LearnerAdaptationPolicy(assistedExposureGain: double.NaN));
-            Assert.Throws<ArgumentOutOfRangeException>(() => new LearnerAdaptationPolicy(recallFailureLoss: 1.01));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new LearnerAdaptationPolicy(assistedExposureGain: double.NaN));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new LearnerAdaptationPolicy(recallFailureLoss: 1.01));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new LearnerAdaptationPolicy(verifiedUnaidedSuccessGain: -0.01));
         }
 
         private static SemanticUnit GetKeepOffUnit()
