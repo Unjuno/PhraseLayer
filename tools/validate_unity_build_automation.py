@@ -74,6 +74,11 @@ def main() -> int:
         "PhraseLayer.Unity.Editor.asmdef must define PHRASELAYER_UNITY_AI_INFERENCE_2_2 for com.unity.ai.inference 2.2.x",
         errors,
     )
+    require(
+        "Unity.InferenceEngine" in editor_asmdef.get("references", []),
+        "PhraseLayer.Unity.Editor.asmdef must directly reference Unity.InferenceEngine when its guarded editor code uses ModelAsset/BackendType",
+        errors,
+    )
 
     # Meta's current Passthrough Camera sample resolves MRUK directly from Unity Package Manager and does
     # not install a custom scoped registry. Keep the manifest equally simple so unattended UBA import does

@@ -3,7 +3,8 @@
   "rootNamespace": "PhraseLayer.Unity.Editor",
   "references": [
     "PhraseLayer.Core",
-    "PhraseLayer.Unity"
+    "PhraseLayer.Unity",
+    "Unity.InferenceEngine"
   ],
   "includePlatforms": [
     "Editor"
