@@ -10,6 +10,7 @@ UNITY = ROOT / "unity" / "PhraseLayer.Unity"
 HOOK = UNITY / "Assets" / "Editor" / "PhraseLayerCloudBuildVerification.cs"
 EDITOR_VERIFY = UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs"
 EDITOR_SETUP = UNITY / "Assets" / "Editor" / "PhraseLayerEditorSetup.cs"
+EDITOR_ASMDEF = UNITY / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
 PROJECT_VERSION = UNITY / "ProjectSettings" / "ProjectVersion.txt"
 MANIFEST = UNITY / "Packages" / "manifest.json"
 DOC = ROOT / "docs" / "UNITY_BUILD_AUTOMATION.md"
@@ -21,6 +22,11 @@ EXPECTED_BRANCH = "agent/multi-sentence-segmentation"
 EXPECTED_META_PACKAGE = "com.meta.xr.mrutilitykit"
 EXPECTED_META_VERSION = "85.0.0"
 EXPECTED_CORE_PACKAGE_PATH = "file:../../../src/PhraseLayer.Core"
+EXPECTED_INFERENCE_DEFINE = {
+    "name": "com.unity.ai.inference",
+    "expression": "[2.2.1,2.3.0)",
+    "define": "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+}
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -30,7 +36,7 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    for path in (HOOK, EDITOR_VERIFY, EDITOR_SETUP, PROJECT_VERSION, MANIFEST, DOC):
+    for path in (HOOK, EDITOR_VERIFY, EDITOR_SETUP, EDITOR_ASMDEF, PROJECT_VERSION, MANIFEST, DOC):
         require(path.exists(), f"missing required UBA file: {path.relative_to(ROOT)}", errors)
     if errors:
         for error in errors:
@@ -40,6 +46,7 @@ def main() -> int:
     hook = HOOK.read_text(encoding="utf-8")
     verify = EDITOR_VERIFY.read_text(encoding="utf-8")
     setup = EDITOR_SETUP.read_text(encoding="utf-8")
+    editor_asmdef = json.loads(EDITOR_ASMDEF.read_text(encoding="utf-8"))
     version = PROJECT_VERSION.read_text(encoding="utf-8")
     doc = DOC.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -58,6 +65,15 @@ def main() -> int:
     require("VerifyCorePipeline" in verify, "editor verification entry point missing", errors)
     require("EditorBuildSettings.scenes" in setup, "editor setup must configure build scenes", errors)
     require(EXPECTED_UNITY in version, f"Unity project must remain pinned to {EXPECTED_UNITY}", errors)
+
+    # The pre-export verification itself lives in the Editor assembly and uses the same conditional
+    # Unity Inference code path as the runtime assembly. versionDefines are assembly-local in Unity, so
+    # the Editor asmdef must declare the define explicitly or the gate always executes its unsupported path.
+    require(
+        EXPECTED_INFERENCE_DEFINE in editor_asmdef.get("versionDefines", []),
+        "PhraseLayer.Unity.Editor.asmdef must define PHRASELAYER_UNITY_AI_INFERENCE_2_2 for com.unity.ai.inference 2.2.x",
+        errors,
+    )
 
     # Meta's current Passthrough Camera sample resolves MRUK directly from Unity Package Manager and does
     # not install a custom scoped registry. Keep the manifest equally simple so unattended UBA import does
