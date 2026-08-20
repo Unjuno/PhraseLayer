@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PhraseLayer.Core.Semantics;
 
 namespace PhraseLayer.Core.Learning
 {
@@ -67,8 +68,6 @@ namespace PhraseLayer.Core.Learning
                 if (entry == null)
                     throw new ArgumentException("Learner profile entries cannot contain null values.", nameof(entries));
 
-                // Reconstruct each entry so externally supplied subclasses/mutable collections cannot bypass
-                // normalization and score validation, then reject duplicate normalized keys deterministically.
                 var normalized = new LearnerKnowledgeEntry(entry.Text, entry.Understanding);
                 if (!seen.Add(normalized.Text))
                 {
@@ -90,10 +89,6 @@ namespace PhraseLayer.Core.Learning
         public IReadOnlyList<LearnerKnowledgeEntry> Entries => entries;
     }
 
-    /// <summary>
-    /// Mutable learner contract used by adaptive assistance and persistence layers.
-    /// Existing ILearnerModel remains read-only for consumers that only need estimation.
-    /// </summary>
     public interface IMutableLearnerModel : ILearnerModel
     {
         void SetUnderstanding(string text, double understanding);
@@ -135,7 +130,7 @@ namespace PhraseLayer.Core.Learning
                 : InMemoryLearnerModel.FromSnapshot(existing);
         }
 
-        public KnowledgeEstimate Estimate(Semantics.SemanticUnit unit) => inner.Estimate(unit);
+        public KnowledgeEstimate Estimate(SemanticUnit unit) => inner.Estimate(unit);
 
         public void SetUnderstanding(string text, double understanding)
         {
