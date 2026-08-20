@@ -40,7 +40,7 @@ namespace PhraseLayer.Unity
         public string BackupPath => FilePath + ".bak";
         public string TemporaryPath => FilePath + ".tmp";
 
-        public LearnerProfileSnapshot? Load()
+        public LearnerProfileSnapshot Load()
         {
             if (File.Exists(FilePath))
                 return ReadSnapshot(FilePath);
@@ -140,7 +140,7 @@ namespace PhraseLayer.Unity
     /// </summary>
     public sealed class UnityLearnerProfileStore : ILearnerProfileStore
     {
-        public LearnerProfileSnapshot? Load()
+        public LearnerProfileSnapshot Load()
         {
             throw new NotSupportedException("UnityLearnerProfileStore requires a Unity runtime.");
         }
