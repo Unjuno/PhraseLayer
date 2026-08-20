@@ -13,12 +13,18 @@ namespace PhraseLayer.Core.Assistance
         private AssistancePolicy(AssistanceMode mode, double? targetRatio)
         {
             Mode = mode; TargetAssistanceRatio = targetRatio;
-            PreserveKnownThreshold = 0.82; ClauseReplacementUnderstandingThreshold = 0.48; MaxClauseTokens = 12;
+            PreserveKnownThreshold = 0.82;
+            PhraseReplacementUnderstandingThreshold = 0.55;
+            ClauseReplacementUnderstandingThreshold = 0.48;
+            MaxPhraseTokens = 8;
+            MaxClauseTokens = 12;
         }
         public AssistanceMode Mode { get; }
         public double? TargetAssistanceRatio { get; }
         public double PreserveKnownThreshold { get; set; }
+        public double PhraseReplacementUnderstandingThreshold { get; set; }
         public double ClauseReplacementUnderstandingThreshold { get; set; }
+        public int MaxPhraseTokens { get; set; }
         public int MaxClauseTokens { get; set; }
         public static AssistancePolicy ForMode(AssistanceMode mode)
         {
@@ -64,6 +70,7 @@ namespace PhraseLayer.Core.Assistance
             var estimates = atomicUnits.ToDictionary(unit => unit.Id, learner.Estimate);
             var candidates = new List<AssistanceDecision>();
             var clauses = document.OfKind(SemanticUnitKind.Clause).ToArray();
+            var phrases = document.OfKind(SemanticUnitKind.Phrase).ToArray();
 
             foreach (var clause in clauses)
             {
@@ -77,6 +84,21 @@ namespace PhraseLayer.Core.Assistance
                 }
                 else
                 {
+                    foreach (var phrase in phrases.Where(clause.Contains))
+                    {
+                        var phraseAtoms = atoms.Where(phrase.Contains).ToArray();
+                        if (phraseAtoms.Length == 0) continue;
+                        var explicitPhrase = learner.Estimate(phrase);
+                        var phraseUnderstanding = explicitPhrase.IsExplicit
+                            ? explicitPhrase.Understanding
+                            : WeightedUnderstanding(phraseAtoms, estimates);
+                        if (phrase.TokenCount <= policy.MaxPhraseTokens &&
+                            phraseUnderstanding < policy.PhraseReplacementUnderstandingThreshold)
+                        {
+                            candidates.Add(new AssistanceDecision(phrase, phraseUnderstanding));
+                        }
+                    }
+
                     foreach (var atom in atoms)
                     {
                         var estimate = estimates[atom.Id];
@@ -87,6 +109,21 @@ namespace PhraseLayer.Core.Assistance
 
             if (clauses.Length == 0)
             {
+                foreach (var phrase in phrases)
+                {
+                    var phraseAtoms = atomicUnits.Where(phrase.Contains).ToArray();
+                    if (phraseAtoms.Length == 0) continue;
+                    var explicitPhrase = learner.Estimate(phrase);
+                    var phraseUnderstanding = explicitPhrase.IsExplicit
+                        ? explicitPhrase.Understanding
+                        : WeightedUnderstanding(phraseAtoms, estimates);
+                    if (phrase.TokenCount <= policy.MaxPhraseTokens &&
+                        phraseUnderstanding < policy.PhraseReplacementUnderstandingThreshold)
+                    {
+                        candidates.Add(new AssistanceDecision(phrase, phraseUnderstanding));
+                    }
+                }
+
                 foreach (var atom in atomicUnits)
                 {
                     var estimate = estimates[atom.Id];
