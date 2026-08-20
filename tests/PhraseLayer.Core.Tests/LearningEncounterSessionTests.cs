@@ -100,6 +100,18 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public async Task ConvenienceRecordStillConditionsOnActualDisplayAction()
+        {
+            var learner = CreateLearner();
+            var plan = await BuildPipeline(learner).PlanAsync(Source, AssistancePolicy.ForMode(AssistanceMode.Balanced));
+            var keepOff = GetUnit(plan, "keep off", SemanticUnitKind.MultiwordExpression);
+            var session = new LearningEncounterSession(plan, new LearnerAdaptationEngine(learner));
+
+            Assert.Throws<InvalidOperationException>(() =>
+                session.Record(keepOff, LearningEvidenceKind.CompletedWithoutAssistance));
+        }
+
+        [Fact]
         public async Task ExplicitObservationOriginCannotContradictEncounterDisplayAction()
         {
             var learner = CreateLearner();

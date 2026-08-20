@@ -55,7 +55,7 @@ namespace PhraseLayer.Core.Learning
         public static LearningObservation ForEvidence(
             SemanticUnit unit,
             LearningEvidenceKind evidence,
-            bool assistedDisplay = false)
+            bool? assistedDisplay = null)
         {
             if (unit == null) throw new ArgumentNullException(nameof(unit));
 
@@ -74,10 +74,15 @@ namespace PhraseLayer.Core.Learning
                         LearningObservationOrigin.SourceDisplay,
                         engagementVerified: false);
                 case LearningEvidenceKind.AssistanceRequested:
+                    if (!assistedDisplay.HasValue)
+                    {
+                        throw new InvalidOperationException(
+                            "AssistanceRequested is action-dependent. The caller must specify whether the unit was assisted when the request occurred.");
+                    }
                     return new LearningObservation(
                         unit,
                         evidence,
-                        assistedDisplay
+                        assistedDisplay.Value
                             ? LearningObservationOrigin.AssistedDisplay
                             : LearningObservationOrigin.SourceDisplay,
                         engagementVerified: true);

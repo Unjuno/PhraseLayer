@@ -78,13 +78,28 @@ namespace PhraseLayer.Core.Tests
             Assert.Empty(planner.Plan(document, learner, policy).Decisions);
 
             var engine = new LearnerAdaptationEngine(learner);
-            var update = engine.Apply(unit, LearningEvidenceKind.AssistanceRequested);
+            var update = engine.Apply(new LearningObservation(
+                unit,
+                LearningEvidenceKind.AssistanceRequested,
+                LearningObservationOrigin.SourceDisplay,
+                engagementVerified: true));
 
             var decision = Assert.Single(planner.Plan(document, learner, policy).Decisions);
             Assert.Equal("keep off", decision.Unit.Text, ignoreCase: true);
             Assert.True(decision.EstimatedUnderstanding < policy.PreserveKnownThreshold);
             Assert.Equal(LearningObservationOrigin.SourceDisplay, update.Origin);
             Assert.True(update.EngagementVerified);
+        }
+
+        [Fact]
+        public void AssistanceRequestWithoutDisplayActionIsRejected()
+        {
+            var unit = GetKeepOffUnit();
+            var learner = new InMemoryLearnerModel(0.55);
+            var engine = new LearnerAdaptationEngine(learner);
+
+            Assert.Throws<InvalidOperationException>(() =>
+                engine.Apply(unit, LearningEvidenceKind.AssistanceRequested));
         }
 
         [Fact]
