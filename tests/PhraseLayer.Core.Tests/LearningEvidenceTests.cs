@@ -210,12 +210,12 @@ namespace PhraseLayer.Core.Tests
         }
 
         private static LearningAdaptationPolicy Policy(
-            LearningEvidenceRule unaided = null,
-            LearningEvidenceRule assistedSuccess = null,
-            LearningEvidenceRule assistanceRequested = null,
-            LearningEvidenceRule incorrect = null,
-            LearningEvidenceRule explicitKnown = null,
-            LearningEvidenceRule explicitUnknown = null)
+            LearningEvidenceRule? unaided = null,
+            LearningEvidenceRule? assistedSuccess = null,
+            LearningEvidenceRule? assistanceRequested = null,
+            LearningEvidenceRule? incorrect = null,
+            LearningEvidenceRule? explicitKnown = null,
+            LearningEvidenceRule? explicitUnknown = null)
         {
             var neutral = new LearningEvidenceRule(target: 0.50, adaptationRate: 0.00);
             return new LearningAdaptationPolicy(
@@ -240,11 +240,11 @@ namespace PhraseLayer.Core.Tests
 
         private sealed class RecordingStore : ILearnerProfileStore
         {
-            public LearnerProfileSnapshot Loaded { get; set; }
-            public LearnerProfileSnapshot Saved { get; private set; }
+            public LearnerProfileSnapshot? Loaded { get; set; }
+            public LearnerProfileSnapshot? Saved { get; private set; }
             public int SaveCount { get; private set; }
 
-            public LearnerProfileSnapshot Load() => Loaded;
+            public LearnerProfileSnapshot? Load() => Loaded;
 
             public void Save(LearnerProfileSnapshot snapshot)
             {
