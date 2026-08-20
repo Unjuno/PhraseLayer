@@ -25,6 +25,20 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void ConfiguredPhraseCannotCrossClauseBoundaryAndShorterValidPatternStillMatches()
+        {
+            var document = new RuleBasedSemanticSegmenter(
+                    phrasePatterns: new[] { "tired, so I", "so I" })
+                .Segment("I was tired, so I left.");
+
+            var phrase = Assert.Single(document.OfKind(SemanticUnitKind.Phrase));
+            Assert.Equal("so I", phrase.Text, ignoreCase: true);
+            var containingClause = Assert.Single(
+                document.OfKind(SemanticUnitKind.Clause).Where(clause => clause.Contains(phrase)));
+            Assert.Equal("so I left", containingClause.Text);
+        }
+
+        [Fact]
         public void PlannerCanSelectDifficultPhraseWhileComponentWordsRemainKnown()
         {
             const string source = "I fell asleep immediately.";
@@ -33,6 +47,28 @@ namespace PhraseLayer.Core.Tests
             var document = segmenter.Segment(source);
             var learner = new InMemoryLearnerModel(0.95);
             learner.SetUnderstanding("fell asleep immediately", 0.10);
+
+            var plan = new AssistancePlanner().Plan(
+                document,
+                learner,
+                AssistancePolicy.ForMode(AssistanceMode.Balanced));
+
+            var decision = Assert.Single(plan.Decisions);
+            Assert.Equal(SemanticUnitKind.Phrase, decision.Unit.Kind);
+            Assert.Equal("fell asleep immediately", decision.Unit.Text, ignoreCase: true);
+        }
+
+        [Fact]
+        public void DifficultPhraseReplacesContainedDifficultAtomsAsOneUnit()
+        {
+            const string source = "I fell asleep immediately.";
+            var document = new RuleBasedSemanticSegmenter(
+                    phrasePatterns: new[] { "fell asleep immediately" })
+                .Segment(source);
+            var learner = new InMemoryLearnerModel(0.10);
+            learner.SetUnderstanding("I fell asleep immediately", 0.95);
+            learner.SetUnderstanding("I", 0.95);
+            learner.SetUnderstanding("fell asleep immediately", 0.40);
 
             var plan = new AssistancePlanner().Plan(
                 document,
@@ -70,13 +106,15 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public void KnownPhraseDoesNotReceiveAutomaticAssistance()
+        public void KnownPhraseProtectsContainedAtomsFromAutomaticAssistance()
         {
             const string source = "I fell asleep immediately.";
             var document = new RuleBasedSemanticSegmenter(
                     phrasePatterns: new[] { "fell asleep immediately" })
                 .Segment(source);
-            var learner = new InMemoryLearnerModel(0.95);
+            var learner = new InMemoryLearnerModel(0.10);
+            learner.SetUnderstanding("I fell asleep immediately", 0.95);
+            learner.SetUnderstanding("I", 0.95);
             learner.SetUnderstanding("fell asleep immediately", 0.98);
 
             var plan = new AssistancePlanner().Plan(
