@@ -159,8 +159,8 @@ namespace PhraseLayer.Core.Tests
         private static SemanticUnit GetUnit(MixedLanguagePlan plan, string text, SemanticUnitKind kind)
         {
             Assert.NotNull(plan.Document);
-            return Assert.Single(plan.Document!.OfKind(kind).Where(unit =>
-                string.Equals(unit.Text, text, StringComparison.OrdinalIgnoreCase)));
+            return Assert.Single(plan.Document!.OfKind(kind), unit =>
+                string.Equals(unit.Text, text, StringComparison.OrdinalIgnoreCase));
         }
     }
 }
