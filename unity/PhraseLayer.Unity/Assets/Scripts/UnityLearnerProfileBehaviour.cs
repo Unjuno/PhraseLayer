@@ -1,5 +1,6 @@
 using System;
 using PhraseLayer.Core.Learning;
+using PhraseLayer.Core.Pipeline;
 using UnityEngine;
 
 namespace PhraseLayer.Unity
@@ -59,6 +60,20 @@ namespace PhraseLayer.Unity
         public LearnerProfileSnapshot CreateSnapshot()
         {
             return Model.CreateSnapshot();
+        }
+
+        /// <summary>
+        /// Starts a deferred learning encounter backed by the persistent learner profile.
+        /// Evidence collected in the returned session is saved only when the session is finished.
+        /// </summary>
+        public LearningEncounterSession BeginEncounter(
+            MixedLanguagePlan plan,
+            LearnerAdaptationPolicy policy = null)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            Initialize();
+            var adaptation = new LearnerAdaptationEngine(Model, policy);
+            return new LearningEncounterSession(plan, adaptation);
         }
     }
 }
