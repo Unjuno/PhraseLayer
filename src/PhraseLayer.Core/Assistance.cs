@@ -84,51 +84,27 @@ namespace PhraseLayer.Core.Assistance
                 }
                 else
                 {
-                    foreach (var phrase in phrases.Where(clause.Contains))
-                    {
-                        var phraseAtoms = atoms.Where(phrase.Contains).ToArray();
-                        if (phraseAtoms.Length == 0) continue;
-                        var explicitPhrase = learner.Estimate(phrase);
-                        var phraseUnderstanding = explicitPhrase.IsExplicit
-                            ? explicitPhrase.Understanding
-                            : WeightedUnderstanding(phraseAtoms, estimates);
-                        if (phrase.TokenCount <= policy.MaxPhraseTokens &&
-                            phraseUnderstanding < policy.PhraseReplacementUnderstandingThreshold)
-                        {
-                            candidates.Add(new AssistanceDecision(phrase, phraseUnderstanding));
-                        }
-                    }
-
-                    foreach (var atom in atoms)
-                    {
-                        var estimate = estimates[atom.Id];
-                        if (estimate.Understanding < policy.PreserveKnownThreshold) candidates.Add(new AssistanceDecision(atom, estimate.Understanding));
-                    }
+                    AddPhraseAndAtomicCandidates(
+                        clause,
+                        atoms,
+                        phrases,
+                        estimates,
+                        learner,
+                        policy,
+                        candidates);
                 }
             }
 
             if (clauses.Length == 0)
             {
-                foreach (var phrase in phrases)
-                {
-                    var phraseAtoms = atomicUnits.Where(phrase.Contains).ToArray();
-                    if (phraseAtoms.Length == 0) continue;
-                    var explicitPhrase = learner.Estimate(phrase);
-                    var phraseUnderstanding = explicitPhrase.IsExplicit
-                        ? explicitPhrase.Understanding
-                        : WeightedUnderstanding(phraseAtoms, estimates);
-                    if (phrase.TokenCount <= policy.MaxPhraseTokens &&
-                        phraseUnderstanding < policy.PhraseReplacementUnderstandingThreshold)
-                    {
-                        candidates.Add(new AssistanceDecision(phrase, phraseUnderstanding));
-                    }
-                }
-
-                foreach (var atom in atomicUnits)
-                {
-                    var estimate = estimates[atom.Id];
-                    if (estimate.Understanding < policy.PreserveKnownThreshold) candidates.Add(new AssistanceDecision(atom, estimate.Understanding));
-                }
+                AddPhraseAndAtomicCandidates(
+                    null,
+                    atomicUnits,
+                    phrases,
+                    estimates,
+                    learner,
+                    policy,
+                    candidates);
             }
 
             candidates = candidates.GroupBy(item => item.Unit.Start + ":" + item.Unit.Length)
@@ -150,6 +126,50 @@ namespace PhraseLayer.Core.Assistance
             selected.Sort((left, right) => left.Unit.Start.CompareTo(right.Unit.Start));
             var selectedRatio = Math.Min(1.0, (double)selectedTokens / totalTokens);
             return new AssistancePlan(selected, targetRatio, selectedRatio);
+        }
+
+        private static void AddPhraseAndAtomicCandidates(
+            SemanticUnit? clause,
+            IReadOnlyList<SemanticUnit> atoms,
+            IReadOnlyList<SemanticUnit> phrases,
+            IReadOnlyDictionary<string, KnowledgeEstimate> estimates,
+            ILearnerModel learner,
+            AssistancePolicy policy,
+            ICollection<AssistanceDecision> candidates)
+        {
+            var handledAtomIds = new HashSet<string>(StringComparer.Ordinal);
+            var localPhrases = clause == null ? phrases : phrases.Where(clause.Contains).ToArray();
+
+            foreach (var phrase in localPhrases)
+            {
+                var phraseAtoms = atoms.Where(phrase.Contains).ToArray();
+                if (phraseAtoms.Length == 0) continue;
+                var explicitPhrase = learner.Estimate(phrase);
+                var phraseUnderstanding = explicitPhrase.IsExplicit
+                    ? explicitPhrase.Understanding
+                    : WeightedUnderstanding(phraseAtoms, estimates);
+
+                if (phraseUnderstanding >= policy.PreserveKnownThreshold)
+                {
+                    foreach (var atom in phraseAtoms) handledAtomIds.Add(atom.Id);
+                    continue;
+                }
+
+                if (phrase.TokenCount <= policy.MaxPhraseTokens &&
+                    phraseUnderstanding < policy.PhraseReplacementUnderstandingThreshold)
+                {
+                    candidates.Add(new AssistanceDecision(phrase, phraseUnderstanding));
+                    foreach (var atom in phraseAtoms) handledAtomIds.Add(atom.Id);
+                }
+            }
+
+            foreach (var atom in atoms)
+            {
+                if (handledAtomIds.Contains(atom.Id)) continue;
+                var estimate = estimates[atom.Id];
+                if (estimate.Understanding < policy.PreserveKnownThreshold)
+                    candidates.Add(new AssistanceDecision(atom, estimate.Understanding));
+            }
         }
 
         private static IEnumerable<SemanticUnit> BuildAtomicUnits(SemanticDocument document)
