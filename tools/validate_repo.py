@@ -275,7 +275,7 @@ require(expected_define in unity_asmdef.get("versionDefines", []),
 unity_manifest = json.loads((UNITY / "Packages" / "manifest.json").read_text(encoding="utf-8"))
 deps = unity_manifest.get("dependencies", {})
 for package, expected in {
-    "com.unjuno.phraselayer.core": "file:../../src/PhraseLayer.Core",
+    "com.unjuno.phraselayer.core": "file:../../../src/PhraseLayer.Core",
     "com.meta.xr.mrutilitykit": "85.0.0",
     "com.unity.ai.inference": "2.2.1",
     "com.unity.xr.management": "4.5.4",
@@ -284,6 +284,18 @@ for package, expected in {
 }.items():
     require(deps.get(package) == expected,
             f"Unity package drift: {package} expected {expected} but found {deps.get(package)}")
+
+registries = unity_manifest.get("scopedRegistries", [])
+meta_registry = next(
+    (registry for registry in registries
+     if registry.get("url") == "https://npm.developer.oculus.com"),
+    None,
+)
+require(meta_registry is not None,
+        "Unity manifest must use the public Meta scoped registry for cloud/package-manager builds")
+if meta_registry is not None:
+    require("com.meta.xr" in meta_registry.get("scopes", []),
+            "Meta scoped registry must cover com.meta.xr packages")
 
 project_version = (UNITY / "ProjectSettings" / "ProjectVersion.txt").read_text(encoding="utf-8")
 require("m_EditorVersion: 6000.0.66f2" in project_version,
