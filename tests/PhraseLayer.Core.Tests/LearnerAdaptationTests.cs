@@ -26,6 +26,21 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void AssistedExposureDoesNotLowerExistingMastery()
+        {
+            var unit = GetKeepOffUnit();
+            var learner = new InMemoryLearnerModel(0.95);
+            learner.SetUnderstanding(unit.Text, 0.95);
+            var engine = new LearnerAdaptationEngine(learner);
+
+            var update = engine.Apply(unit, LearningEvidenceKind.AssistedExposure);
+
+            Assert.Equal(0.95, update.PreviousUnderstanding, 12);
+            Assert.Equal(0.95, update.UpdatedUnderstanding, 12);
+            Assert.Equal(KnowledgeState.Known, learner.Estimate(unit).State);
+        }
+
+        [Fact]
         public void UnassistedCompletionRaisesUnderstandingAndReducesAutoSupport()
         {
             var segmenter = new RuleBasedSemanticSegmenter(new[] { "keep off" });
