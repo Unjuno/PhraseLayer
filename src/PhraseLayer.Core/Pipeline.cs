@@ -24,10 +24,28 @@ namespace PhraseLayer.Core.Pipeline
     public sealed class MixedLanguagePlan
     {
         public MixedLanguagePlan(string sourceText, IReadOnlyList<MixedLanguageSegment> segments, AssistancePlan assistance)
-        { SourceText = sourceText; Segments = segments; Assistance = assistance; }
+            : this(sourceText, segments, assistance, null)
+        {
+        }
+
+        public MixedLanguagePlan(
+            string sourceText,
+            IReadOnlyList<MixedLanguageSegment> segments,
+            AssistancePlan assistance,
+            SemanticDocument? document)
+        {
+            SourceText = sourceText ?? throw new ArgumentNullException(nameof(sourceText));
+            Segments = segments ?? throw new ArgumentNullException(nameof(segments));
+            Assistance = assistance ?? throw new ArgumentNullException(nameof(assistance));
+            if (document != null && !string.Equals(document.SourceText, sourceText, StringComparison.Ordinal))
+                throw new ArgumentException("Semantic document source text must match the plan source text.", nameof(document));
+            Document = document;
+        }
+
         public string SourceText { get; }
         public IReadOnlyList<MixedLanguageSegment> Segments { get; }
         public AssistancePlan Assistance { get; }
+        public SemanticDocument? Document { get; }
         public string DisplayText => string.Concat(Segments.Select(segment => segment.DisplayText));
     }
 
@@ -66,7 +84,7 @@ namespace PhraseLayer.Core.Pipeline
                 segments.Add(new MixedLanguageSegment(rest, rest, false, null));
             }
             if (segments.Count == 0) segments.Add(new MixedLanguageSegment(sourceText, sourceText, false, null));
-            return new MixedLanguagePlan(sourceText, segments, assistance);
+            return new MixedLanguagePlan(sourceText, segments, assistance, document);
         }
     }
 
