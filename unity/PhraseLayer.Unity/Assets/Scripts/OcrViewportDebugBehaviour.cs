@@ -11,6 +11,8 @@ namespace PhraseLayer.Unity
     /// </summary>
     public sealed class OcrViewportDebugBehaviour : MonoBehaviour, IOcrObservationSink
     {
+        [SerializeField] private bool loadSyntheticFixtureOnStart = true;
+
         private readonly List<OcrViewportRegion> regions = new List<OcrViewportRegion>();
         private OcrObservation lastObservation;
         private int frameWidth;
@@ -25,10 +27,16 @@ namespace PhraseLayer.Unity
         public double LastConfidence => hasObservation ? lastObservation.Confidence : 0.0;
         public long? LastFrameTimestampMicroseconds => hasObservation ? frameTimestampMicroseconds : (long?)null;
         public OcrScheduleStatus LastScheduleStatus => lastScheduleStatus;
+        public bool LoadSyntheticFixtureOnStart
+        {
+            get => loadSyntheticFixtureOnStart;
+            set => loadSyntheticFixtureOnStart = value;
+        }
 
         private void Start()
         {
-            LoadSyntheticFixture();
+            if (loadSyntheticFixtureOnStart)
+                LoadSyntheticFixture();
         }
 
         public void Present(OcrObservation observation, ImageFrame frame)
