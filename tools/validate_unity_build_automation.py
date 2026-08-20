@@ -18,7 +18,6 @@ EXPECTED_METHOD = "PhraseLayer.Unity.Editor.PhraseLayerCloudBuildVerification.Pr
 EXPECTED_UNITY = "6000.0.66f2"
 EXPECTED_SUBFOLDER = "unity/PhraseLayer.Unity"
 EXPECTED_BRANCH = "agent/multi-sentence-segmentation"
-EXPECTED_META_REGISTRY = "https://npm.developer.oculus.com"
 EXPECTED_META_PACKAGE = "com.meta.xr.mrutilitykit"
 EXPECTED_META_VERSION = "85.0.0"
 EXPECTED_CORE_PACKAGE_PATH = "file:../../../src/PhraseLayer.Core"
@@ -60,15 +59,15 @@ def main() -> int:
     require("EditorBuildSettings.scenes" in setup, "editor setup must configure build scenes", errors)
     require(EXPECTED_UNITY in version, f"Unity project must remain pinned to {EXPECTED_UNITY}", errors)
 
-    registries = manifest.get("scopedRegistries", [])
-    meta_registry = next((item for item in registries if item.get("url") == EXPECTED_META_REGISTRY), None)
-    require(meta_registry is not None, "Meta scoped registry must be present for unattended UBA package resolution", errors)
-    if meta_registry is not None:
-        require(
-            any(scope == "com.meta.xr" or scope.startswith("com.meta.xr.") for scope in meta_registry.get("scopes", [])),
-            "Meta scoped registry must cover com.meta.xr packages",
-            errors,
-        )
+    # Meta's current Passthrough Camera sample resolves MRUK directly from Unity Package Manager and does
+    # not install a custom scoped registry. Keep the manifest equally simple so unattended UBA import does
+    # not depend on an unnecessary alternate registry/authentication path.
+    require(
+        not manifest.get("scopedRegistries"),
+        "Unity manifest must not add a custom Meta scoped registry for MRUK; use the standard package resolution path",
+        errors,
+    )
+
     dependencies = manifest.get("dependencies", {})
     require(
         dependencies.get(EXPECTED_META_PACKAGE) == EXPECTED_META_VERSION,
@@ -97,7 +96,7 @@ def main() -> int:
         (EXPECTED_UNITY, "Unity version"),
         ("Android", "platform"),
         ("SDK 36", "Android SDK"),
-        (EXPECTED_META_REGISTRY, "Meta package registry"),
+        ("standard Unity Package Manager resolution", "Meta package resolution"),
         ("Required Pre-Export hook", "required hook behavior"),
     ):
         require(value in doc, f"UBA documentation must state {label}: {value}", errors)

@@ -52,11 +52,11 @@ Using `file:../../src/PhraseLayer.Core` incorrectly resolves to `unity/src/Phras
 
 ## Meta package resolution in cloud CI
 
-`Packages/manifest.json` pins Meta MRUK `85.0.0` and routes `com.meta.xr` packages through Meta's public package registry:
+`Packages/manifest.json` pins Meta MRUK `85.0.0` and uses the **standard Unity Package Manager resolution path**. Do not add a custom Meta scoped registry for this package unless an upstream Meta/Unity requirement explicitly changes.
 
-`https://npm.developer.oculus.com`
+Meta's current Passthrough Camera API sample also declares `com.meta.xr.mrutilitykit` directly in `Packages/manifest.json` without a custom `scopedRegistries` entry. Keeping PhraseLayer aligned with that package-resolution shape avoids introducing an unnecessary alternate registry/authentication failure mode in unattended UBA builds.
 
-This avoids relying on an interactive Unity Asset Store entitlement flow on an unattended UBA builder. Package download is a development/build-time network dependency only; it does not add runtime networking to the shipped Quest application.
+Package download during CI is a development/build-time network dependency only; it does not add runtime networking to the shipped Quest application.
 
 ## Build result visibility
 
