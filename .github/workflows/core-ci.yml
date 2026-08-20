@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/validate_repo.py
+      - run: python tools/validate_learner_persistence.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
       - run: python tools/validate_quest_ocr_smoke_harness.py

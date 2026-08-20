@@ -20,7 +20,9 @@ namespace PhraseLayer.Unity
         private InMemoryLearnerModel learner;
         private LanguagePipeline pipeline;
         private MixedLanguagePlan currentPlan;
+        private LearningEncounterSession currentEncounter;
         private string status = "Preparing PhraseLayer...";
+        private string learningStatus = "No learning evidence recorded yet.";
         private Vector2 scroll;
 
         public string SourceText => sourceText;
@@ -40,6 +42,9 @@ namespace PhraseLayer.Unity
             try
             {
                 currentPlan = await pipeline.PlanAsync(sourceText, AssistancePolicy.ForMode(assistanceMode), sourceText);
+                currentEncounter = new LearningEncounterSession(
+                    currentPlan,
+                    new LearnerAdaptationEngine(learner));
                 status = string.Format(
                     "Mode: {0}  Target: {1:P0}  Selected: {2:P0}",
                     assistanceMode,
@@ -48,6 +53,7 @@ namespace PhraseLayer.Unity
             }
             catch (Exception exception)
             {
+                currentEncounter = null;
                 status = exception.Message;
                 Debug.LogException(exception, this);
             }
@@ -56,7 +62,64 @@ namespace PhraseLayer.Unity
         public async Task SetProfileAsync(DemoLearnerProfile profile)
         {
             ConfigureLearner(profile);
+            learningStatus = string.Format("Demo profile reset to {0}.", profile);
             await ReplanAsync();
+        }
+
+        public async Task RecordFirstAssistedAsync(LearningEvidenceKind evidence)
+        {
+            if (currentEncounter == null || currentPlan == null)
+            {
+                learningStatus = "No active encounter.";
+                return;
+            }
+
+            if (currentPlan.Assistance.Decisions.Count == 0)
+            {
+                learningStatus = "This encounter has no assisted unit to score.";
+                return;
+            }
+
+            var unit = currentPlan.Assistance.Decisions[0].Unit;
+            currentEncounter.Record(unit, evidence);
+            var summary = currentEncounter.Finish();
+            var update = FindUpdate(summary, unit.Id);
+            learningStatus = update == null
+                ? string.Format("Recorded {0} for {1}.", evidence, unit.Text)
+                : string.Format(
+                    "{0}: {1}  {2:P0} → {3:P0}",
+                    evidence,
+                    unit.Text,
+                    update.PreviousUnderstanding,
+                    update.UpdatedUnderstanding);
+            await ReplanAsync();
+        }
+
+        public async Task CompleteEncounterAsync(bool successfulUnassistedCompletion)
+        {
+            if (currentEncounter == null)
+            {
+                learningStatus = "No active encounter.";
+                return;
+            }
+
+            var summary = currentEncounter.Finish(successfulUnassistedCompletion);
+            learningStatus = string.Format(
+                "Encounter finished. {0} learner update(s); unassisted success: {1}.",
+                summary.Updates.Count,
+                successfulUnassistedCompletion ? "yes" : "no");
+            await ReplanAsync();
+        }
+
+        private static LearnerUpdate FindUpdate(LearningEncounterSummary summary, string unitId)
+        {
+            for (var i = 0; i < summary.Updates.Count; i++)
+            {
+                if (string.Equals(summary.Updates[i].Unit.Id, unitId, StringComparison.Ordinal))
+                    return summary.Updates[i];
+            }
+
+            return null;
         }
 
         private void BuildPipeline()
@@ -137,14 +200,34 @@ namespace PhraseLayer.Unity
             GUILayout.Label(DisplayText, assisted);
             GUILayout.Space(12);
             GUILayout.Label(status, body);
+            GUILayout.Label(learningStatus, body);
             GUILayout.Space(16);
 
+            GUILayout.Label("Encounter evidence (applies to the next view)", body);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Remembered assisted phrase", GUILayout.Height(36)))
+                _ = RecordFirstAssistedAsync(LearningEvidenceKind.RecallSucceeded);
+            if (GUILayout.Button("Need more help", GUILayout.Height(36)))
+                _ = RecordFirstAssistedAsync(LearningEvidenceKind.AssistanceRequested);
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Read without extra help", GUILayout.Height(36)))
+                _ = CompleteEncounterAsync(true);
+            if (GUILayout.Button("Continue", GUILayout.Height(36)))
+                _ = CompleteEncounterAsync(false);
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(16);
+            GUILayout.Label("Reset demo learner", body);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Beginner", GUILayout.Height(36))) _ = SetProfileAsync(DemoLearnerProfile.Beginner);
             if (GUILayout.Button("Intermediate", GUILayout.Height(36))) _ = SetProfileAsync(DemoLearnerProfile.Intermediate);
             if (GUILayout.Button("Advanced", GUILayout.Height(36))) _ = SetProfileAsync(DemoLearnerProfile.Advanced);
             GUILayout.EndHorizontal();
 
+            GUILayout.Space(12);
+            GUILayout.Label("Assistance mode", body);
             GUILayout.BeginHorizontal();
             foreach (AssistanceMode mode in Enum.GetValues(typeof(AssistanceMode)))
             {

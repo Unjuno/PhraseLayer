@@ -19,11 +19,11 @@ namespace PhraseLayer.Unity
         [SerializeField] private OcrDebugRuntimeBehaviour runtimeDriver = default(OcrDebugRuntimeBehaviour);
         [SerializeField] private OcrViewportDebugBehaviour presenter = default(OcrViewportDebugBehaviour);
         [SerializeField] private UnityPaddleOcrBootstrapBehaviour bootstrap = default(UnityPaddleOcrBootstrapBehaviour);
-        [SerializeField] private bool autoRunOnStart;
+        [SerializeField] private bool autoRunOnStart = false;
         [SerializeField] private float timeoutSeconds = 60f;
         [SerializeField] private float retryIntervalSeconds = 0.25f;
         [SerializeField] private int minimumRecognizedRegions = 1;
-        [SerializeField] private bool includeRecognizedTextInReport;
+        [SerializeField] private bool includeRecognizedTextInReport = false;
         [SerializeField] private string lastReport = string.Empty;
 
         private CancellationTokenSource lifetime;
@@ -186,7 +186,7 @@ namespace PhraseLayer.Unity
                                 totalMilliseconds,
                                 lastAttemptMilliseconds,
                                 lastResult);
-                            Debug.Log(lastReport, this);
+                            Debug.Log(lastReport);
                             return lastReport;
                         }
 
