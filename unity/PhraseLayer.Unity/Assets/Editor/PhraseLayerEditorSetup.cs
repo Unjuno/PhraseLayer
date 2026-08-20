@@ -13,6 +13,8 @@ namespace PhraseLayer.Unity.Editor
         [MenuItem("PhraseLayer/Create or Reset Demo Scene")]
         public static void CreateDemoScene()
         {
+            PhraseLayerLocalOnlyBuildGuard.ApplyLocalOnlyAndroidDefaults();
+
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
             root.AddComponent<PhraseLayerDemoBehaviour>();
@@ -24,7 +26,7 @@ namespace PhraseLayer.Unity.Editor
 
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
-            Debug.Log("PhraseLayer demo scene created: " + DemoScenePath);
+            Debug.Log("PhraseLayer demo scene created with local-only Android defaults: " + DemoScenePath);
         }
 
         public static void CreateDemoSceneBatch()
