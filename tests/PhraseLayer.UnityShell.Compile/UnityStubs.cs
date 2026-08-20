@@ -163,9 +163,23 @@ namespace UnityEditor
         public MenuItem(string itemName) { }
     }
 
+    public enum BuildTarget
+    {
+        NoTarget = -2,
+        Android = 13,
+        StandaloneWindows64 = 19
+    }
+
     public sealed class EditorBuildSettingsScene
     {
-        public EditorBuildSettingsScene(string path, bool enabled) { }
+        public EditorBuildSettingsScene(string path, bool enabled)
+        {
+            this.path = path;
+            this.enabled = enabled;
+        }
+
+        public string path { get; }
+        public bool enabled { get; }
     }
 
     public static class EditorBuildSettings
@@ -181,6 +195,51 @@ namespace UnityEditor
     public static class EditorApplication
     {
         public static void Exit(int returnValue) { }
+    }
+
+    public static class EditorUserBuildSettings
+    {
+        public static BuildTarget activeBuildTarget => BuildTarget.Android;
+    }
+
+    public static class PlayerSettings
+    {
+        public static class Android
+        {
+            public static bool forceInternetPermission { get; set; }
+            public static bool forceSDCardPermission { get; set; }
+        }
+    }
+}
+
+namespace UnityEditor.Build
+{
+    using UnityEditor.Build.Reporting;
+
+    public interface IPreprocessBuildWithReport
+    {
+        int callbackOrder { get; }
+        void OnPreprocessBuild(BuildReport report);
+    }
+
+    public sealed class BuildFailedException : Exception
+    {
+        public BuildFailedException(string message) : base(message) { }
+    }
+}
+
+namespace UnityEditor.Build.Reporting
+{
+    using UnityEditor;
+
+    public sealed class BuildSummary
+    {
+        public BuildTarget platform { get; set; }
+    }
+
+    public sealed class BuildReport
+    {
+        public BuildSummary summary { get; } = new BuildSummary();
     }
 }
 
