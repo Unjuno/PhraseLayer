@@ -7,6 +7,7 @@ using PhraseLayer.Core.Assistance;
 using PhraseLayer.Core.Inputs;
 using PhraseLayer.Core.Learning;
 using PhraseLayer.Core.Semantics;
+using PhraseLayer.Core.Spatial;
 using PhraseLayer.Core.Translation;
 
 namespace PhraseLayer.Core.Pipeline
@@ -109,23 +110,61 @@ namespace PhraseLayer.Core.Pipeline
             Observation = observation ?? throw new ArgumentNullException(nameof(observation));
             ViewportRegions = viewportRegions ?? throw new ArgumentNullException(nameof(viewportRegions));
             LanguagePlan = languagePlan ?? throw new ArgumentNullException(nameof(languagePlan));
+            TextAlignment = new OcrRegionTextAligner().Align(observation, viewportRegions);
+            SpatialAssistance = new SemanticRegionAligner().Align(languagePlan, TextAlignment);
         }
 
         public ImageFrame Frame { get; }
         public OcrObservation Observation { get; }
         public IReadOnlyList<OcrViewportRegion> ViewportRegions { get; }
         public MixedLanguagePlan LanguagePlan { get; }
+        public OcrTextAlignmentResult TextAlignment { get; }
+        public SpatialAssistancePlan SpatialAssistance { get; }
+    }
+
+    /// <summary>
+    /// Downstream Read-mode pipeline for an OCR observation that has already been produced.
+    /// This is the integration boundary used by the live Quest OCR pump: camera/OCR runs once, then the
+    /// same observation/frame pair is passed through semantic assistance and spatial alignment.
+    /// </summary>
+    public sealed class ReadObservationPipeline
+    {
+        private readonly LanguagePipeline language;
+
+        public ReadObservationPipeline(LanguagePipeline language)
+        {
+            this.language = language ?? throw new ArgumentNullException(nameof(language));
+        }
+
+        public async Task<ReadModeSpatialResult> ProcessAsync(
+            ImageFrame frame,
+            OcrObservation observation,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (observation == null) throw new ArgumentNullException(nameof(observation));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var viewportRegions = OcrViewportMapper.Map(observation, frame);
+            var languagePlan = await language
+                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new ReadModeSpatialResult(frame, observation, viewportRegions, languagePlan);
+        }
     }
 
     public sealed class ReadModePipeline
     {
         private readonly IOcrEngine _ocr;
-        private readonly LanguagePipeline _language;
+        private readonly ReadObservationPipeline _observationPipeline;
 
         public ReadModePipeline(IOcrEngine ocr, LanguagePipeline language)
         {
             _ocr = ocr ?? throw new ArgumentNullException(nameof(ocr));
-            _language = language ?? throw new ArgumentNullException(nameof(language));
+            _observationPipeline = new ReadObservationPipeline(language ?? throw new ArgumentNullException(nameof(language)));
         }
 
         public async Task<MixedLanguagePlan> ProcessAsync(
@@ -146,12 +185,9 @@ namespace PhraseLayer.Core.Pipeline
             if (policy == null) throw new ArgumentNullException(nameof(policy));
 
             var observation = await _ocr.RecognizeAsync(frame, cancellationToken).ConfigureAwait(false);
-            var languagePlan = await _language
-                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken)
+            return await _observationPipeline
+                .ProcessAsync(frame, observation, policy, cancellationToken)
                 .ConfigureAwait(false);
-            var viewportRegions = OcrViewportMapper.Map(observation, frame);
-
-            return new ReadModeSpatialResult(frame, observation, viewportRegions, languagePlan);
         }
     }
 
