@@ -92,8 +92,9 @@ namespace PhraseLayer.Core.Semantics
                     units.Add(CreateUnit(SemanticUnitKind.Clause, clause.Start, clause.Length, sourceText));
             }
 
-            units.AddRange(FindConfiguredSpans(sourceText, _phrasePatterns, SemanticUnitKind.Phrase));
-            units.AddRange(FindConfiguredSpans(sourceText, _multiwordExpressions, SemanticUnitKind.MultiwordExpression));
+            var clauses = units.Where(unit => unit.Kind == SemanticUnitKind.Clause).ToArray();
+            units.AddRange(FindConfiguredSpans(sourceText, _phrasePatterns, SemanticUnitKind.Phrase, clauses));
+            units.AddRange(FindConfiguredSpans(sourceText, _multiwordExpressions, SemanticUnitKind.MultiwordExpression, clauses));
             foreach (Match match in WordRegex.Matches(sourceText))
                 units.Add(new SemanticUnit(MakeId(SemanticUnitKind.Word, match.Index, match.Length), SemanticUnitKind.Word, match.Index, match.Length, match.Value, 1));
 
@@ -114,7 +115,8 @@ namespace PhraseLayer.Core.Semantics
         private static IEnumerable<SemanticUnit> FindConfiguredSpans(
             string sourceText,
             IReadOnlyList<string> patterns,
-            SemanticUnitKind kind)
+            SemanticUnitKind kind,
+            IReadOnlyList<SemanticUnit> clauseContainers)
         {
             var accepted = new List<SemanticUnit>();
             foreach (var pattern in patterns)
@@ -134,7 +136,11 @@ namespace PhraseLayer.Core.Semantics
                             pattern.Length,
                             sourceText.Substring(index, pattern.Length),
                             TokenCount(pattern));
-                        if (!accepted.Any(existing => existing.Overlaps(candidate))) accepted.Add(candidate);
+                        if (clauseContainers.Any(clause => clause.Contains(candidate)) &&
+                            !accepted.Any(existing => existing.Overlaps(candidate)))
+                        {
+                            accepted.Add(candidate);
+                        }
                     }
                     searchStart = index + Math.Max(1, pattern.Length);
                 }
