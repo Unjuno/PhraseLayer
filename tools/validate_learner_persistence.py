@@ -25,7 +25,6 @@ learning = require_file(CORE / "Learning.cs")
 store = require_file(UNITY / "UnityLearnerProfileStore.cs")
 service = require_file(UNITY / "UnityLearnerProfileBehaviour.cs")
 demo = require_file(UNITY / "PhraseLayerDemoBehaviour.cs")
-
 tests = require_file(ROOT / "tests" / "PhraseLayer.Core.Tests" / "LearnerProfilePersistenceTests.cs")
 
 require_markers(
@@ -90,8 +89,9 @@ if "private InMemoryLearnerModel learner;" not in demo:
 if "UnityLearnerProfileStore" in demo or "PersistentLearnerModel" in demo:
     violations.append("PhraseLayerDemoBehaviour must not write production learner persistence")
 
-# Persistence-format and filesystem concerns must stay outside Core.
-for forbidden in ("UnityEngine", "JsonUtility", "persistentDataPath", "System.IO"):
+# Persistence-format and filesystem API calls must stay outside Core. Comments may discuss the
+# platform boundary, so validate concrete API/type references instead of English substrings.
+for forbidden in ("using UnityEngine", "UnityEngine.", "JsonUtility.", "Application.persistentDataPath", "using System.IO"):
     if forbidden in core:
         violations.append(f"LearnerProfilePersistence.cs must remain platform-neutral; found {forbidden}")
 
