@@ -138,7 +138,9 @@ namespace PhraseLayer.Core.Assistance
             ICollection<AssistanceDecision> candidates)
         {
             var handledAtomIds = new HashSet<string>(StringComparer.Ordinal);
-            var localPhrases = clause == null ? phrases : phrases.Where(clause.Contains).ToArray();
+            IEnumerable<SemanticUnit> localPhrases = phrases;
+            if (clause != null)
+                localPhrases = phrases.Where(phrase => clause.Contains(phrase));
 
             foreach (var phrase in localPhrases)
             {
