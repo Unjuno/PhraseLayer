@@ -1,6 +1,15 @@
 {
+  "scopedRegistries": [
+    {
+      "name": "Meta",
+      "url": "https://npm.developer.oculus.com",
+      "scopes": [
+        "com.meta.xr"
+      ]
+    }
+  ],
   "dependencies": {
-    "com.unjuno.phraselayer.core": "file:../../src/PhraseLayer.Core",
+    "com.unjuno.phraselayer.core": "file:../../../src/PhraseLayer.Core",
     "com.meta.xr.mrutilitykit": "85.0.0",
     "com.unity.ai.inference": "2.2.1",
     "com.unity.xr.management": "4.5.4",
