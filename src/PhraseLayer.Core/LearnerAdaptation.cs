@@ -106,7 +106,9 @@ namespace PhraseLayer.Core.Learning
             switch (evidence)
             {
                 case LearningEvidenceKind.AssistedExposure:
-                    updated = MoveToward(previous, policy.AssistedExposureCeiling, policy.AssistedExposureGain);
+                    updated = previous >= policy.AssistedExposureCeiling
+                        ? previous
+                        : MoveToward(previous, policy.AssistedExposureCeiling, policy.AssistedExposureGain);
                     break;
                 case LearningEvidenceKind.CompletedWithoutAssistance:
                     updated = MoveToward(previous, 1.0, policy.UnassistedCompletionGain);
