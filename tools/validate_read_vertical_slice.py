@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "PhraseLayer.Core"
 SCRIPTS = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts"
+TESTS = ROOT / "tests" / "PhraseLayer.Core.Tests"
 violations = []
 
 
@@ -24,9 +25,25 @@ require(
         "OcrRegionTextAligner().Align",
         "SemanticRegionAligner().Align",
         "SpatialAssistancePlan SpatialAssistance",
-        "_observationPipeline.ProcessAsync",
+        "languagePlan.SourceText, observation.Text",
+        "alignmentObservation",
     ),
     "Core Read observation pipeline",
+)
+
+require(
+    CORE / "ReadEncounterStability.cs",
+    (
+        "enum ReadEncounterTransition",
+        "sealed class ReadEncounterTracker",
+        "SwitchConfirmationObservations = 2",
+        "IgnoredStaleObservation",
+        "sealed class ReadEncounterPipeline",
+        "MixedLanguagePlan? frozenPlan",
+        "decision.IsNewEncounter",
+        "new ReadModeSpatialResult(frame, observation, viewportRegions, frozenPlan)",
+    ),
+    "Core Read encounter stability",
 )
 
 require(
@@ -43,32 +60,48 @@ require(
 require(
     SCRIPTS / "QuestReadAssistanceDebugBehaviour.cs",
     (
-        "ReadObservationPipeline pipeline",
+        "ReadEncounterPipeline pipeline",
         "learnerProfile.Model",
         "ocrPresenter.ObservationPresented += HandleObservationPresented",
         "pendingObservation = observation",
         "latestSequence++",
         "sequence == latestSequence",
+        "encounter.Decision.IsPendingSwitch",
+        "keepPreviousOverlay",
         "SpatialAssistanceCoverage.Unresolved",
         "SpatialAssistanceCoverage.Partial && !showPartialCoverage",
-        "target.Segment.SourceText, target.Segment.DisplayText",
         "GUI.Box(ToScreenRect(target.Envelope.Value), target.Segment.DisplayText)",
     ),
-    "Quest Read assistance debug slice",
+    "Quest Read assistance encounter slice",
 )
 
 require(
-    ROOT / "tests" / "PhraseLayer.Core.Tests" / "ReadObservationPipelineTests.cs",
+    TESTS / "ReadObservationPipelineTests.cs",
     (
         "ExistingOcrObservationFlowsToExactSpatialAssistanceWithoutSecondOcrPass",
         "ReadModePipelineUsesSameDownstreamSpatialContractAfterOcr",
         "SpatialAssistanceCoverage.Exact",
-        "Assert.Equal(2, target.Regions.Count)",
     ),
     "Read observation pipeline regression tests",
+)
+
+require(
+    TESTS / "ReadEncounterStabilityTests.cs",
+    (
+        "SameEncounterKeepsFrozenPlanAfterLearnerBeliefChanges",
+        "OneContradictoryObservationDoesNotSwitchEncounter",
+        "RepeatedContradictoryObservationConfirmsNewEncounter",
+        "LongGapStartsFreshEncounterEvenForSameText",
+        "StaleFrameCannotRollEncounterIdentityBackward",
+        "Assert.Same(first.SpatialResult.LanguagePlan, second.SpatialResult.LanguagePlan)",
+    ),
+    "Read encounter stability regression tests",
 )
 
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: recognized OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline without re-running OCR; unsafe unresolved/partial overlays are suppressed by default")
+print(
+    "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; "
+    "language plans are frozen per encounter with switch hysteresis and stale-frame rejection"
+)
