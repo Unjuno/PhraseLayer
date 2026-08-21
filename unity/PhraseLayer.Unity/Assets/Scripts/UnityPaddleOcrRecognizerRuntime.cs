@@ -120,7 +120,11 @@ namespace PhraseLayer.Unity
                         "PP-OCR recognizer default output is not a float tensor. Capture UnityInferenceModelProbe output and update the runtime contract.");
                 }
 
-                var cpuTensor = outputTensor.ReadbackAndClone();
+                // In Inference Engine 2.2.1 ReadbackAndClone() returns the non-generic Tensor base type.
+                // Recover the expected element type explicitly before DownloadToArray().
+                var cpuTensor = outputTensor.ReadbackAndClone() as Tensor<float>;
+                if (cpuTensor == null)
+                    throw new InvalidOperationException("PP-OCR recognizer CPU readback did not preserve float tensor type.");
                 try
                 {
                     return new PaddleRecognizerRawOutput(
