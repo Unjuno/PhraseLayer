@@ -16,19 +16,38 @@ PhraseLayer uses Unity Build Automation (UBA) as the reference cloud compile/bui
 
 ## Host compile preflight
 
-GitHub Core CI compiles the Unity shell before relying on UBA. The preflight project deliberately enables the same reviewed conditional branches that are active in the real Unity project:
+GitHub Core CI compiles the Unity shell before relying on UBA. Two profiles are used because Unity Editor compilation and Android Player compilation expose different conditional branches.
+
+### Editor profile
+
+`PhraseLayer.UnityShell.Compile.csproj` enables:
 
 - `UNITY_5_3_OR_NEWER`
 - `UNITY_EDITOR`
 - `PHRASELAYER_UNITY_AI_INFERENCE_2_2`
 
-It includes both `Assets/Scripts/**/*.cs` and `Assets/Editor/**/*.cs`, with narrow Unity/Inference compile stubs. This is not a substitute for the real Unity compiler: the stubs cannot prove package import, source-generated APIs, graphics behavior, Meta XR compatibility, Android export, or device execution. It exists to reject ordinary C# breakage, missing project references, and guarded-branch drift before spending a UBA build.
+It compiles both `Assets/Scripts/**/*.cs` and `Assets/Editor/**/*.cs`. This catches Editor verification, Pre-Export hooks, local OCR asset tooling, and Unity Inference guarded code.
+
+### Android Player profile
+
+`PhraseLayer.UnityAndroid.Compile.csproj` enables:
+
+- `UNITY_5_3_OR_NEWER`
+- `UNITY_ANDROID`
+- `PHRASELAYER_UNITY_AI_INFERENCE_2_2`
+
+It deliberately does **not** define `UNITY_EDITOR` and compiles only `Assets/Scripts/**/*.cs`. This exposes Quest/Android-only code such as runtime camera permission handling that would otherwise stay hidden in an Editor-only host compile.
+
+The two projects keep separate `obj/` and `bin/` roots so restore/build artifacts cannot overwrite one another.
+
+Both profiles use narrow Unity/Inference compile stubs. They are not substitutes for the real Unity compiler: stubs cannot prove package import, source-generated APIs, graphics behavior, Meta XR compatibility, Android export, or device execution. They exist to reject ordinary C# breakage, missing project references, and guarded-branch drift before spending a UBA build.
 
 Repository-side checks:
 
 ```bash
 python tools/validate_unity_compile_preflight.py
 dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
+dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityAndroid.Compile.csproj -c Release
 ```
 
 ## Required Pre-Export hook
@@ -48,7 +67,8 @@ The repository also implements `IPreprocessBuildWithReport`. That second gate ru
 
 ```text
 Git push
-  -> GitHub host compile preflight
+  -> GitHub Editor compile preflight
+  -> GitHub Android Player compile preflight
   -> UBA checkout/import
   -> real Unity C# compile
   -> PhraseLayerCloudBuildVerification.PreExport
