@@ -128,14 +128,17 @@ namespace PhraseLayer.Core.Pipeline
             if (viewportRegions == null) throw new ArgumentNullException(nameof(viewportRegions));
 
             var observed = EncounterFingerprint.Create(observation.Text, viewportRegions);
-            if (currentEncounterId == null || currentFingerprint == null)
-                return StartNew(observed, timestampMicroseconds, ReadEncounterTransition.Started, null, 1.0, 0.0);
+            var encounterId = currentEncounterId;
+            var fingerprint = currentFingerprint;
+            if (encounterId == null || !fingerprint.HasValue)
+                return StartNew(observed, timestampMicroseconds, ReadEncounterTransition.Started, null, 1.0, null);
 
+            var current = fingerprint.Value;
             if (timestampMicroseconds < currentTimestampMicroseconds)
             {
-                var staleComparison = Compare(currentFingerprint.Value, observed);
+                var staleComparison = Compare(current, observed);
                 return new ReadEncounterDecision(
-                    currentEncounterId,
+                    encounterId,
                     null,
                     ReadEncounterTransition.IgnoredStaleObservation,
                     staleComparison.TextSimilarity,
@@ -145,24 +148,24 @@ namespace PhraseLayer.Core.Pipeline
 
             if (timestampMicroseconds - currentTimestampMicroseconds > options.MaxGapMicroseconds)
             {
-                var gapComparison = Compare(currentFingerprint.Value, observed);
+                var gapComparison = Compare(current, observed);
                 return StartNew(
                     observed,
                     timestampMicroseconds,
                     ReadEncounterTransition.RestartedAfterGap,
-                    currentEncounterId,
+                    encounterId,
                     gapComparison.TextSimilarity,
                     gapComparison.SpatialCenterDistance);
             }
 
-            var comparison = Compare(currentFingerprint.Value, observed);
+            var comparison = Compare(current, observed);
             if (comparison.IsMatch)
             {
                 currentFingerprint = observed;
                 currentTimestampMicroseconds = timestampMicroseconds;
                 ClearPending();
                 return new ReadEncounterDecision(
-                    currentEncounterId,
+                    encounterId,
                     null,
                     ReadEncounterTransition.Continued,
                     comparison.TextSimilarity,
@@ -170,7 +173,7 @@ namespace PhraseLayer.Core.Pipeline
                     0);
             }
 
-            if (pendingFingerprint == null)
+            if (!pendingFingerprint.HasValue)
             {
                 pendingFingerprint = observed;
                 pendingCount = 1;
@@ -192,19 +195,18 @@ namespace PhraseLayer.Core.Pipeline
 
             if (pendingCount >= options.SwitchConfirmationObservations)
             {
-                var previous = currentEncounterId;
                 return StartNew(
                     observed,
                     timestampMicroseconds,
                     ReadEncounterTransition.Switched,
-                    previous,
+                    encounterId,
                     comparison.TextSimilarity,
                     comparison.SpatialCenterDistance);
             }
 
             currentTimestampMicroseconds = timestampMicroseconds;
             return new ReadEncounterDecision(
-                currentEncounterId,
+                encounterId,
                 null,
                 ReadEncounterTransition.PendingSwitch,
                 comparison.TextSimilarity,
@@ -229,12 +231,13 @@ namespace PhraseLayer.Core.Pipeline
             double? spatialCenterDistance)
         {
             nextEncounterNumber++;
-            currentEncounterId = "read-" + nextEncounterNumber.ToString("D6", CultureInfo.InvariantCulture);
+            var encounterId = "read-" + nextEncounterNumber.ToString("D6", CultureInfo.InvariantCulture);
+            currentEncounterId = encounterId;
             currentFingerprint = fingerprint;
             currentTimestampMicroseconds = timestampMicroseconds;
             ClearPending();
             return new ReadEncounterDecision(
-                currentEncounterId,
+                encounterId,
                 previousEncounterId,
                 transition,
                 textSimilarity,
@@ -453,17 +456,22 @@ namespace PhraseLayer.Core.Pipeline
             cancellationToken.ThrowIfCancellationRequested();
             var viewportRegions = OcrViewportMapper.Map(observation, frame);
             var decision = tracker.Observe(observation, viewportRegions, frame.TimestampMicroseconds);
+            var plan = frozenPlan;
 
-            if (decision.IsNewEncounter || frozenPlan == null ||
+            if (decision.IsNewEncounter || plan == null ||
                 !string.Equals(frozenEncounterId, decision.EncounterId, StringComparison.Ordinal))
             {
-                frozenPlan = await language
+                plan = await language
                     .PlanAsync(observation.Text, policy, observation.Text, cancellationToken)
                     .ConfigureAwait(false);
+                frozenPlan = plan;
                 frozenEncounterId = decision.EncounterId;
             }
 
-            var spatial = new ReadModeSpatialResult(frame, observation, viewportRegions, frozenPlan);
+            if (plan == null)
+                throw new InvalidOperationException("Read encounter pipeline did not establish a frozen language plan.");
+
+            var spatial = new ReadModeSpatialResult(frame, observation, viewportRegions, plan);
             return new ReadEncounterResult(decision, spatial);
         }
 
