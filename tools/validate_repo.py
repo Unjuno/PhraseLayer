@@ -200,7 +200,7 @@ validate_markers(
 validate_markers(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs",
     "Unity PP-OCR detector runtime",
-    ("PHRASELAYER_UNITY_AI_INFERENCE_2_2", "PaddleOcrV6TinyDetectionPreprocess.CreateResizeTransform", "worker.Schedule(inputTensor)", "ReadbackAndClone()"),
+    ("PHRASELAYER_UNITY_AI_INFERENCE_2_2", "PaddleOcrV6TinyDetectionPreprocess.CreateResizeTransform", "worker.Schedule(inputTensor)", "outputTensor.DownloadToArray()"),
 )
 validate_markers(
     UNITY / "Assets" / "Scripts" / "PaddleDetectorRawOutputExtensions.cs",
@@ -210,7 +210,7 @@ validate_markers(
 validate_markers(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     "Unity PP-OCR recognizer runtime",
-    ("PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform", "PaddleCtcGreedyDecoder.DecodeFromPredictions", "worker.Schedule(inputTensor)", "ReadbackAndClone()"),
+    ("PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform", "PaddleCtcGreedyDecoder.DecodeFromPredictions", "worker.Schedule(inputTensor)", "outputTensor.DownloadToArray()"),
 )
 validate_markers(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
@@ -286,16 +286,10 @@ for package, expected in {
             f"Unity package drift: {package} expected {expected} but found {deps.get(package)}")
 
 registries = unity_manifest.get("scopedRegistries", [])
-meta_registry = next(
-    (registry for registry in registries
-     if registry.get("url") == "https://npm.developer.oculus.com"),
-    None,
+require(
+    not any(registry.get("url") == "https://npm.developer.oculus.com" for registry in registries),
+    "Unity manifest must not require the legacy Meta custom registry; MRUK 85 resolves through the reviewed package setup",
 )
-require(meta_registry is not None,
-        "Unity manifest must use the public Meta scoped registry for cloud/package-manager builds")
-if meta_registry is not None:
-    require("com.meta.xr" in meta_registry.get("scopes", []),
-            "Meta scoped registry must cover com.meta.xr packages")
 
 project_version = (UNITY / "ProjectSettings" / "ProjectVersion.txt").read_text(encoding="utf-8")
 require("m_EditorVersion: 6000.0.66f2" in project_version,
