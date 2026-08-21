@@ -12,6 +12,9 @@ ANDROID_CSPROJ = SHELL / "PhraseLayer.UnityAndroid.Compile.csproj"
 UNITY_STUBS = SHELL / "UnityStubs.cs"
 ANDROID_STUBS = SHELL / "UnityAndroidStubs.cs"
 INFERENCE_STUBS = SHELL / "UnityInferenceStubs.cs"
+UNITY_SCRIPTS = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts"
+DETECTOR_RUNTIME = UNITY_SCRIPTS / "UnityPaddleOcrDetectorRuntime.cs"
+RECOGNIZER_RUNTIME = UNITY_SCRIPTS / "UnityPaddleOcrRecognizerRuntime.cs"
 RUNTIME_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "PhraseLayer.Unity.asmdef"
 EDITOR_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
 
@@ -57,6 +60,8 @@ def main() -> int:
     unity_stubs = read(UNITY_STUBS)
     android_stubs = read(ANDROID_STUBS)
     inference_stubs = read(INFERENCE_STUBS)
+    detector_runtime = read(DETECTOR_RUNTIME)
+    recognizer_runtime = read(RECOGNIZER_RUNTIME)
 
     for marker in (
         "UNITY_5_3_OR_NEWER",
@@ -110,17 +115,37 @@ def main() -> int:
     ):
         require(marker in android_stubs, f"Android compile stubs missing permission surface: {marker}")
 
+    # Keep these signatures deliberately close to the reviewed public Inference Engine 2.2.1 API.
+    # A previous stub returned Tensor<T> from ReadbackAndClone(), while the real API returns Tensor;
+    # that hid a real compile error in detector/recognizer output readback until UBA.
     for marker in (
         "namespace Unity.InferenceEngine",
         "public sealed class ModelAsset",
+        "public readonly struct DynamicTensorShape",
+        "public struct Input",
+        "public struct Output",
         "public static class ModelLoader",
         "public sealed class Worker",
         "public sealed class Tensor<T>",
-        "ReadbackAndClone()",
+        "public Tensor ReadbackAndClone()",
+        "public void Schedule(Tensor input)",
         "DownloadToArray()",
         "GPUCompute",
     ):
-        require(marker in inference_stubs, f"Unity Inference 2.2 compile stub missing marker: {marker}")
+        require(marker in inference_stubs, f"Unity Inference 2.2 compile stub missing reviewed API marker: {marker}")
+
+    for runtime_text, label in (
+        (detector_runtime, "PP-OCR detector runtime"),
+        (recognizer_runtime, "PP-OCR recognizer runtime"),
+    ):
+        require(
+            "outputTensor.ReadbackAndClone() as Tensor<float>" in runtime_text,
+            f"{label} must cast the Inference Engine 2.2.1 non-generic readback clone before DownloadToArray",
+        )
+        require(
+            "cpuTensor.DownloadToArray()" in runtime_text,
+            f"{label} must download only after recovering Tensor<float> from the CPU readback clone",
+        )
 
     validate_asmdef(RUNTIME_ASMDEF)
     validate_asmdef(EDITOR_ASMDEF)
@@ -131,7 +156,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight covers isolated Editor and Android Player guarded branches before UBA"
+        "PASS: Unity compile preflight covers isolated Editor and Android Player guarded branches with reviewed Inference Engine 2.2.1 signatures before UBA"
     )
     return 0
 
