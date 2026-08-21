@@ -18,11 +18,6 @@ namespace Unity.InferenceEngine
 
     public sealed class ModelAsset : UnityEngine.Object { }
 
-    /// <summary>
-    /// Narrow compile stub matching the public Inference Engine 2.2.1 distinction between
-    /// model-input DynamicTensorShape and runtime TensorShape. This is intentionally not a
-    /// functional shape implementation; it exists to keep host preflight signatures honest.
-    /// </summary>
     public readonly struct DynamicTensorShape
     {
         private readonly string description;
@@ -53,7 +48,7 @@ namespace Unity.InferenceEngine
             public int index;
         }
 
-        public List<Input> inputs { get; } = new List<Input>
+        public List<Input> inputs = new List<Input>
         {
             new Input
             {
@@ -64,7 +59,7 @@ namespace Unity.InferenceEngine
             }
         };
 
-        public List<Output> outputs { get; } = new List<Output>
+        public List<Output> outputs = new List<Output>
         {
             new Output { name = string.Empty, index = 0 }
         };
@@ -75,55 +70,62 @@ namespace Unity.InferenceEngine
         public static Model Load(ModelAsset asset) => new Model();
     }
 
-    public readonly struct TensorShape
+    // Public API fidelity matters here because this file exists specifically to catch compile-time drift before UBA.
+    [Serializable]
+    public struct TensorShape
     {
-        private readonly int[] dimensions;
+        private int[] dimensions;
 
-        public TensorShape(int d0)
-        {
-            dimensions = new[] { d0 };
-        }
-
-        public TensorShape(int d0, int d1)
-        {
-            dimensions = new[] { d0, d1 };
-        }
-
-        public TensorShape(int d0, int d1, int d2)
-        {
-            dimensions = new[] { d0, d1, d2 };
-        }
-
-        public TensorShape(int d0, int d1, int d2, int d3)
-        {
-            dimensions = new[] { d0, d1, d2, d3 };
-        }
+        public TensorShape(int d0) { dimensions = new[] { d0 }; }
+        public TensorShape(int d0, int d1) { dimensions = new[] { d0, d1 }; }
+        public TensorShape(int d0, int d1, int d2) { dimensions = new[] { d0, d1, d2 }; }
+        public TensorShape(int d0, int d1, int d2, int d3) { dimensions = new[] { d0, d1, d2, d3 }; }
 
         public int rank => dimensions == null ? 0 : dimensions.Length;
-        public int this[int axis] => dimensions[axis];
+        public int length
+        {
+            get
+            {
+                if (dimensions == null || dimensions.Length == 0) return 1;
+                var total = 1;
+                for (var i = 0; i < dimensions.Length; i++) total *= dimensions[i];
+                return total;
+            }
+        }
+
+        public int this[int axis]
+        {
+            get
+            {
+                var resolved = ResolveAxis(axis);
+                return dimensions[resolved];
+            }
+            set
+            {
+                var resolved = ResolveAxis(axis);
+                dimensions[resolved] = value;
+            }
+        }
+
+        private int ResolveAxis(int axis)
+        {
+            var resolved = axis < 0 ? rank + axis : axis;
+            if (resolved < 0 || resolved >= rank) throw new IndexOutOfRangeException();
+            return resolved;
+        }
+
         public override string ToString() => dimensions == null ? "[]" : "[" + string.Join(",", dimensions) + "]";
     }
 
-    /// <summary>
-    /// Inference Engine 2.2.1 declares ReadbackAndClone on non-generic Tensor and returns Tensor.
-    /// Keeping that return type exact is important: returning Tensor&lt;T&gt; here previously hid a real
-    /// Unity compile error when runtime code called DownloadToArray without casting the CPU clone.
-    /// </summary>
     public abstract class Tensor : IDisposable
     {
         public abstract TensorShape shape { get; }
-
-        public Tensor ReadbackAndClone()
-        {
-            return CloneForReadback();
-        }
-
+        public virtual Tensor ReadbackAndClone() => CloneForReadback();
         protected abstract Tensor CloneForReadback();
-
         public virtual void Dispose() { }
     }
 
-    public sealed class Tensor<T> : Tensor
+    public sealed class Tensor<T> : Tensor where T : unmanaged
     {
         private readonly TensorShape tensorShape;
         private readonly T[] values;
@@ -136,10 +138,9 @@ namespace Unity.InferenceEngine
 
         public override TensorShape shape => tensorShape;
 
-        protected override Tensor CloneForReadback()
-        {
-            return new Tensor<T>(tensorShape, DownloadToArray());
-        }
+        protected override Tensor CloneForReadback() => new Tensor<T>(tensorShape, DownloadToArray());
+
+        public new Tensor<T> ReadbackAndClone() => new Tensor<T>(tensorShape, DownloadToArray());
 
         public T[] DownloadToArray()
         {
@@ -155,8 +156,6 @@ namespace Unity.InferenceEngine
 
         public Worker(Model model, BackendType backendType) { }
 
-        // Inference Engine 2.2.1 Schedule is void. Keeping this exact prevents fluent-call
-        // assumptions in host preflight that would fail in the real Unity package.
         public void Schedule(Tensor input)
         {
             output = input;

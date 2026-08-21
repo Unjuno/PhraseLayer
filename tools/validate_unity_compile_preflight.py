@@ -115,9 +115,7 @@ def main() -> int:
     ):
         require(marker in android_stubs, f"Android compile stubs missing permission surface: {marker}")
 
-    # Keep these signatures deliberately close to the reviewed public Inference Engine 2.2.1 API.
-    # A previous stub returned Tensor<T> from ReadbackAndClone(), while the real API returns Tensor;
-    # that hid a real compile error in detector/recognizer output readback until UBA.
+    # Mirror the public Unity Inference Engine 2.2.1 compile surface used by PhraseLayer.
     for marker in (
         "namespace Unity.InferenceEngine",
         "public sealed class ModelAsset",
@@ -126,8 +124,11 @@ def main() -> int:
         "public struct Output",
         "public static class ModelLoader",
         "public sealed class Worker",
-        "public sealed class Tensor<T>",
-        "public Tensor ReadbackAndClone()",
+        "public sealed class Tensor<T> : Tensor where T : unmanaged",
+        "[Serializable]\n    public struct TensorShape",
+        "public int length",
+        "public int this[int axis]",
+        "public new Tensor<T> ReadbackAndClone()",
         "public void Schedule(Tensor input)",
         "DownloadToArray()",
         "GPUCompute",
@@ -139,12 +140,16 @@ def main() -> int:
         (recognizer_runtime, "PP-OCR recognizer runtime"),
     ):
         require(
-            "outputTensor.ReadbackAndClone() as Tensor<float>" in runtime_text,
-            f"{label} must cast the Inference Engine 2.2.1 non-generic readback clone before DownloadToArray",
+            "worker.PeekOutput() as Tensor<float>" in runtime_text,
+            f"{label} must recover the documented float output tensor from Worker.PeekOutput",
         )
         require(
-            "cpuTensor.DownloadToArray()" in runtime_text,
-            f"{label} must download only after recovering Tensor<float> from the CPU readback clone",
+            "outputTensor.DownloadToArray()" in runtime_text,
+            f"{label} must use the documented synchronous Tensor<T>.DownloadToArray baseline",
+        )
+        require(
+            "ReadbackAndClone() as Tensor<float>" not in runtime_text,
+            f"{label} must not depend on a redundant readback cast in the reference synchronous path",
         )
 
     validate_asmdef(RUNTIME_ASMDEF)

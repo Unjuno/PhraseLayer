@@ -36,7 +36,7 @@ namespace PhraseLayer.Unity
     /// This is deliberately a development baseline rather than the final Quest performance path:
     /// - resize/readback currently crosses GPU -> CPU;
     /// - normalization is performed on CPU into BGR NCHW floats;
-    /// - detector output is synchronously read back to CPU;
+    /// - detector output is synchronously downloaded to CPU;
     /// - DB contour/polygon extraction remains a separate backend.
     ///
     /// Keeping this path explicit gives us a reference implementation that can be parity-tested before replacing
@@ -108,8 +108,7 @@ namespace PhraseLayer.Unity
                 resizeTransform.ModelHeight,
                 resizeTransform.ModelWidth);
 
-            var inputTensor = new Tensor<float>(inputShape, inputValues);
-            try
+            using (var inputTensor = new Tensor<float>(inputShape, inputValues))
             {
                 worker.Schedule(inputTensor);
                 var outputTensor = worker.PeekOutput() as Tensor<float>;
@@ -119,27 +118,12 @@ namespace PhraseLayer.Unity
                         "PP-OCR detector default output is not a float tensor. Capture UnityInferenceModelProbe output and update the runtime contract.");
                 }
 
-                // In Inference Engine 2.2.1 Tensor.ReadbackAndClone() is declared on the non-generic
-                // Tensor base class and therefore returns Tensor. Cast the owned CPU clone back to the
-                // expected element type before accessing DownloadToArray(). Keeping this explicit also
-                // makes a future output dtype drift fail at the boundary rather than later in post-processing.
-                var cpuTensor = outputTensor.ReadbackAndClone() as Tensor<float>;
-                if (cpuTensor == null)
-                    throw new InvalidOperationException("PP-OCR detector CPU readback did not preserve float tensor type.");
-                try
-                {
-                    var shape = CopyShape(cpuTensor.shape);
-                    var values = cpuTensor.DownloadToArray();
-                    return new PaddleDetectorRawOutput(resizeTransform, shape, values);
-                }
-                finally
-                {
-                    cpuTensor.Dispose();
-                }
-            }
-            finally
-            {
-                inputTensor.Dispose();
+                // Unity Inference Engine 2.2.1 documents DownloadToArray() directly on Tensor<T> after
+                // PeekOutput(). This is the smallest synchronous correctness baseline and avoids depending on
+                // ReadbackAndClone overload details that differ between the base and generic tensor surfaces.
+                var shape = CopyShape(outputTensor.shape);
+                var values = outputTensor.DownloadToArray();
+                return new PaddleDetectorRawOutput(resizeTransform, shape, values);
             }
         }
 

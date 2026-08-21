@@ -109,8 +109,7 @@ namespace PhraseLayer.Unity
                 PaddleOcrV6TinyRecognitionPreprocess.Channels,
                 resizeTransform.ModelHeight,
                 resizeTransform.ModelWidth);
-            var inputTensor = new Tensor<float>(inputShape, inputValues);
-            try
+            using (var inputTensor = new Tensor<float>(inputShape, inputValues))
             {
                 worker.Schedule(inputTensor);
                 var outputTensor = worker.PeekOutput() as Tensor<float>;
@@ -120,26 +119,12 @@ namespace PhraseLayer.Unity
                         "PP-OCR recognizer default output is not a float tensor. Capture UnityInferenceModelProbe output and update the runtime contract.");
                 }
 
-                // In Inference Engine 2.2.1 ReadbackAndClone() returns the non-generic Tensor base type.
-                // Recover the expected element type explicitly before DownloadToArray().
-                var cpuTensor = outputTensor.ReadbackAndClone() as Tensor<float>;
-                if (cpuTensor == null)
-                    throw new InvalidOperationException("PP-OCR recognizer CPU readback did not preserve float tensor type.");
-                try
-                {
-                    return new PaddleRecognizerRawOutput(
-                        resizeTransform,
-                        CopyShape(cpuTensor.shape),
-                        cpuTensor.DownloadToArray());
-                }
-                finally
-                {
-                    cpuTensor.Dispose();
-                }
-            }
-            finally
-            {
-                inputTensor.Dispose();
+                // Unity Inference Engine 2.2.1 documents blocking DownloadToArray() directly on Tensor<T>.
+                // Keep this reference path minimal; async readback can replace it only after Quest parity data exists.
+                return new PaddleRecognizerRawOutput(
+                    resizeTransform,
+                    CopyShape(outputTensor.shape),
+                    outputTensor.DownloadToArray());
             }
         }
 
