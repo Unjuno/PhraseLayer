@@ -6,6 +6,8 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <BaseIntermediateOutputPath>obj/Android/</BaseIntermediateOutputPath>
+    <OutputPath>bin/Android/</OutputPath>
     <DefineConstants>$(DefineConstants);UNITY_5_3_OR_NEWER;UNITY_ANDROID;PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
