@@ -7,8 +7,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SHELL = ROOT / "tests" / "PhraseLayer.UnityShell.Compile"
-CSPROJ = SHELL / "PhraseLayer.UnityShell.Compile.csproj"
+EDITOR_CSPROJ = SHELL / "PhraseLayer.UnityShell.Compile.csproj"
+ANDROID_CSPROJ = SHELL / "PhraseLayer.UnityAndroid.Compile.csproj"
 UNITY_STUBS = SHELL / "UnityStubs.cs"
+ANDROID_STUBS = SHELL / "UnityAndroidStubs.cs"
 INFERENCE_STUBS = SHELL / "UnityInferenceStubs.cs"
 RUNTIME_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "PhraseLayer.Unity.asmdef"
 EDITOR_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
@@ -50,8 +52,10 @@ def validate_asmdef(path: Path) -> None:
 
 
 def main() -> int:
-    csproj = read(CSPROJ)
+    editor_csproj = read(EDITOR_CSPROJ)
+    android_csproj = read(ANDROID_CSPROJ)
     unity_stubs = read(UNITY_STUBS)
+    android_stubs = read(ANDROID_STUBS)
     inference_stubs = read(INFERENCE_STUBS)
 
     for marker in (
@@ -62,7 +66,25 @@ def main() -> int:
         "../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs",
         "TreatWarningsAsErrors>true",
     ):
-        require(marker in csproj, f"Unity shell compile project missing required preflight marker: {marker}")
+        require(marker in editor_csproj, f"Unity Editor shell compile project missing required marker: {marker}")
+
+    for marker in (
+        "UNITY_5_3_OR_NEWER",
+        "UNITY_ANDROID",
+        "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        "../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs",
+        "TreatWarningsAsErrors>true",
+    ):
+        require(marker in android_csproj, f"Unity Android compile project missing required marker: {marker}")
+
+    require(
+        "UNITY_EDITOR" not in android_csproj,
+        "Android Player compile preflight must not define UNITY_EDITOR; otherwise Quest-only branches remain hidden",
+    )
+    require(
+        "Assets/Editor/**/*.cs" not in android_csproj,
+        "Android Player compile preflight must compile runtime scripts only",
+    )
 
     for marker in (
         "public sealed class RenderTexture : Texture",
@@ -72,8 +94,17 @@ def main() -> int:
         "public sealed class SerializedObject",
         "public static class EditorUtility",
         "FindObjectsOfTypeAll<T>",
+        "public byte[] bytes",
     ):
         require(marker in unity_stubs, f"Unity stubs missing real-branch compile surface: {marker}")
+
+    for marker in (
+        "namespace UnityEngine.Android",
+        "PermissionCallbacks",
+        "HasUserAuthorizedPermission",
+        "RequestUserPermissions",
+    ):
+        require(marker in android_stubs, f"Android compile stubs missing permission surface: {marker}")
 
     for marker in (
         "namespace Unity.InferenceEngine",
@@ -96,7 +127,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight covers runtime + Editor sources with real Unity/Inference guarded branches enabled"
+        "PASS: Unity compile preflight covers Editor and Android Player guarded branches before UBA"
     )
     return 0
 
