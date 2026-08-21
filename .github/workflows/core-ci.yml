@@ -21,6 +21,7 @@ jobs:
       - run: python tools/test_validate_local_only.py
       - run: python tools/validate_unity_build_automation.py
       - run: python tools/validate_unity_compile_preflight.py
+      - run: python tools/test_extract_unity_compile_errors.py
       - run: python tools/validate_learner_persistence.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
@@ -69,9 +70,9 @@ jobs:
         shell: bash
         run: |
           echo "## Unity Editor diagnostics"
-          grep -nE '(^|[[:space:]])error (CS|[A-Z]{2,})[0-9]*:' .ci/unity-editor-preflight.log || true
+          python tools/extract_unity_compile_errors.py .ci/unity-editor-preflight.log || true
           echo "## Android Player diagnostics"
-          grep -nE '(^|[[:space:]])error (CS|[A-Z]{2,})[0-9]*:' .ci/unity-android-preflight.log || true
+          python tools/extract_unity_compile_errors.py .ci/unity-android-preflight.log || true
       - name: Upload compile preflight logs
         if: always()
         uses: actions/upload-artifact@v4
