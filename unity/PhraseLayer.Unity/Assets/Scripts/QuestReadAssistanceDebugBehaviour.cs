@@ -17,6 +17,9 @@ namespace PhraseLayer.Unity
     /// Device/debug vertical slice from an already-presented Quest OCR observation to viewport-aligned
     /// PhraseLayer assistance. It intentionally uses a tiny local dictionary until the reviewed local NMT
     /// runtime is integrated; camera/OCR is never repeated here.
+    ///
+    /// The visible language plan is frozen per Read encounter. OCR geometry may refresh, but a transient OCR
+    /// mutation cannot cause the displayed source/translation mix to oscillate frame by frame.
     /// </summary>
     public sealed class QuestReadAssistanceDebugBehaviour : MonoBehaviour
     {
@@ -46,16 +49,18 @@ namespace PhraseLayer.Unity
             new TranslationEntry("fell asleep", "眠ってしまった")
         };
 
-        private ReadObservationPipeline pipeline;
+        private ReadEncounterPipeline pipeline;
         private CancellationTokenSource lifetime;
         private Task worker;
         private OcrObservation pendingObservation;
         private ImageFrame pendingFrame;
         private long latestSequence;
         private ReadModeSpatialResult lastResult;
+        private string currentEncounterId = string.Empty;
         private string status = "Waiting for real OCR observation.";
 
         public ReadModeSpatialResult LastResult => lastResult;
+        public string CurrentEncounterId => currentEncounterId;
         public string Status => status;
 
         private void OnEnable()
@@ -73,6 +78,7 @@ namespace PhraseLayer.Unity
             if (ocrPresenter != null)
                 ocrPresenter.ObservationPresented -= HandleObservationPresented;
             lifetime?.Cancel();
+            pipeline?.Reset();
         }
 
         private void OnDestroy()
@@ -82,9 +88,11 @@ namespace PhraseLayer.Unity
             lifetime?.Cancel();
             lifetime?.Dispose();
             lifetime = null;
+            pipeline?.Reset();
+            pipeline = null;
         }
 
-        private ReadObservationPipeline BuildPipeline()
+        private ReadEncounterPipeline BuildPipeline()
         {
             var translations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var multiwordExpressions = new List<string>();
@@ -109,7 +117,7 @@ namespace PhraseLayer.Unity
                 learnerProfile.Model,
                 new AssistancePlanner(),
                 new DictionaryTranslationEngine(translations));
-            return new ReadObservationPipeline(language);
+            return new ReadEncounterPipeline(language);
         }
 
         private void HandleObservationPresented(OcrObservation observation, ImageFrame frame)
@@ -140,21 +148,37 @@ namespace PhraseLayer.Unity
                     if (observation == null || frame == null)
                         return;
 
-                    var result = await pipeline.ProcessAsync(
+                    var encounter = await pipeline.ProcessAsync(
                         frame,
                         observation,
                         AssistancePolicy.ForMode(assistanceMode),
                         cancellationToken);
 
-                    if (sequence == latestSequence)
+                    if (sequence == latestSequence && !encounter.Decision.IsStale)
                     {
-                        lastResult = result;
+                        currentEncounterId = encounter.Decision.EncounterId;
+                        var result = encounter.SpatialResult;
+
+                        // A one-frame contradictory OCR sample must not erase a stable overlay. Hold the most
+                        // recent placeable geometry until the encounter tracker either recovers or confirms a switch.
+                        var keepPreviousOverlay =
+                            !encounter.Decision.IsNewEncounter &&
+                            lastResult != null &&
+                            lastResult.SpatialAssistance.ExactCount > 0 &&
+                            (encounter.Decision.IsPendingSwitch || result.SpatialAssistance.ExactCount == 0);
+
+                        if (!keepPreviousOverlay)
+                            lastResult = result;
+
                         status = string.Format(
-                            "Read assistance: {0} target(s), exact={1}, partial={2}, unresolved={3}.",
+                            "Read encounter {0} | {1} | targets={2}, exact={3}, partial={4}, unresolved={5}, held={6}.",
+                            encounter.Decision.EncounterId,
+                            encounter.Decision.Transition,
                             result.SpatialAssistance.Targets.Count,
                             result.SpatialAssistance.ExactCount,
                             result.SpatialAssistance.PartialCount,
-                            result.SpatialAssistance.UnresolvedCount);
+                            result.SpatialAssistance.UnresolvedCount,
+                            keepPreviousOverlay);
                     }
 
                     if (pendingObservation == null)
