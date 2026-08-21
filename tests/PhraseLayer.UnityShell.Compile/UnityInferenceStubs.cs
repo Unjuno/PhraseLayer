@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace Unity.InferenceEngine
 {
@@ -19,25 +18,56 @@ namespace Unity.InferenceEngine
 
     public sealed class ModelAsset : UnityEngine.Object { }
 
-    public sealed class ModelInput
+    /// <summary>
+    /// Narrow compile stub matching the public Inference Engine 2.2.1 distinction between
+    /// model-input DynamicTensorShape and runtime TensorShape. This is intentionally not a
+    /// functional shape implementation; it exists to keep host preflight signatures honest.
+    /// </summary>
+    public readonly struct DynamicTensorShape
     {
-        public string name { get; set; } = string.Empty;
-        public int index { get; set; }
-        public DataType dataType { get; set; }
-        public TensorShape shape { get; set; } = new TensorShape(1);
-    }
+        private readonly string description;
 
-    public sealed class ModelOutput
-    {
-        public string name { get; set; } = string.Empty;
-        public int index { get; set; }
+        public DynamicTensorShape(string description)
+        {
+            this.description = description ?? string.Empty;
+        }
+
+        public override string ToString() => description ?? string.Empty;
     }
 
     public sealed class Model
     {
-        public string ProducerName { get; set; } = string.Empty;
-        public List<ModelInput> inputs { get; } = new List<ModelInput> { new ModelInput() };
-        public List<ModelOutput> outputs { get; } = new List<ModelOutput> { new ModelOutput() };
+        public string ProducerName = string.Empty;
+
+        public struct Input
+        {
+            public string name;
+            public int index;
+            public DataType dataType;
+            public DynamicTensorShape shape;
+        }
+
+        public struct Output
+        {
+            public string name;
+            public int index;
+        }
+
+        public List<Input> inputs { get; } = new List<Input>
+        {
+            new Input
+            {
+                name = string.Empty,
+                index = 0,
+                dataType = DataType.Float,
+                shape = new DynamicTensorShape("(1)")
+            }
+        };
+
+        public List<Output> outputs { get; } = new List<Output>
+        {
+            new Output { name = string.Empty, index = 0 }
+        };
     }
 
     public static class ModelLoader
@@ -59,6 +89,11 @@ namespace Unity.InferenceEngine
             dimensions = new[] { d0, d1 };
         }
 
+        public TensorShape(int d0, int d1, int d2)
+        {
+            dimensions = new[] { d0, d1, d2 };
+        }
+
         public TensorShape(int d0, int d1, int d2, int d3)
         {
             dimensions = new[] { d0, d1, d2, d3 };
@@ -69,9 +104,22 @@ namespace Unity.InferenceEngine
         public override string ToString() => dimensions == null ? "[]" : "[" + string.Join(",", dimensions) + "]";
     }
 
+    /// <summary>
+    /// Inference Engine 2.2.1 declares ReadbackAndClone on non-generic Tensor and returns Tensor.
+    /// Keeping that return type exact is important: returning Tensor&lt;T&gt; here previously hid a real
+    /// Unity compile error when runtime code called DownloadToArray without casting the CPU clone.
+    /// </summary>
     public abstract class Tensor : IDisposable
     {
         public abstract TensorShape shape { get; }
+
+        public Tensor ReadbackAndClone()
+        {
+            return CloneForReadback();
+        }
+
+        protected abstract Tensor CloneForReadback();
+
         public virtual void Dispose() { }
     }
 
@@ -87,7 +135,12 @@ namespace Unity.InferenceEngine
         }
 
         public override TensorShape shape => tensorShape;
-        public Tensor<T> ReadbackAndClone() => new Tensor<T>(tensorShape, DownloadToArray());
+
+        protected override Tensor CloneForReadback()
+        {
+            return new Tensor<T>(tensorShape, DownloadToArray());
+        }
+
         public T[] DownloadToArray()
         {
             var copy = new T[values.Length];
@@ -102,10 +155,11 @@ namespace Unity.InferenceEngine
 
         public Worker(Model model, BackendType backendType) { }
 
-        public Worker Schedule(Tensor input)
+        // Inference Engine 2.2.1 Schedule is void. Keeping this exact prevents fluent-call
+        // assumptions in host preflight that would fail in the real Unity package.
+        public void Schedule(Tensor input)
         {
             output = input;
-            return this;
         }
 
         public Tensor PeekOutput() => output;
