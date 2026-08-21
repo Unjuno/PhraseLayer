@@ -145,6 +145,7 @@ namespace UnityEngine
     public sealed class TextAsset : Object
     {
         public string text { get; set; } = string.Empty;
+        public byte[] bytes => Array.Empty<byte>();
     }
 
     public sealed class RectOffset
