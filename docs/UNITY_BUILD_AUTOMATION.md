@@ -14,6 +14,23 @@ PhraseLayer uses Unity Build Automation (UBA) as the reference cloud compile/bui
 - Scheduling: none required
 - Auto-build: enabled
 
+## Host compile preflight
+
+GitHub Core CI compiles the Unity shell before relying on UBA. The preflight project deliberately enables the same reviewed conditional branches that are active in the real Unity project:
+
+- `UNITY_5_3_OR_NEWER`
+- `UNITY_EDITOR`
+- `PHRASELAYER_UNITY_AI_INFERENCE_2_2`
+
+It includes both `Assets/Scripts/**/*.cs` and `Assets/Editor/**/*.cs`, with narrow Unity/Inference compile stubs. This is not a substitute for the real Unity compiler: the stubs cannot prove package import, source-generated APIs, graphics behavior, Meta XR compatibility, Android export, or device execution. It exists to reject ordinary C# breakage, missing project references, and guarded-branch drift before spending a UBA build.
+
+Repository-side checks:
+
+```bash
+python tools/validate_unity_compile_preflight.py
+dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
+```
+
 ## Required Pre-Export hook
 
 Set **Advanced Settings -> Pre-Export Method** to exactly:
@@ -31,8 +48,9 @@ The repository also implements `IPreprocessBuildWithReport`. That second gate ru
 
 ```text
 Git push
+  -> GitHub host compile preflight
   -> UBA checkout/import
-  -> Unity C# compile
+  -> real Unity C# compile
   -> PhraseLayerCloudBuildVerification.PreExport
        -> establish shell/build scene
        -> local-only verification

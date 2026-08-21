@@ -6,6 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>$(DefineConstants);UNITY_5_3_OR_NEWER;UNITY_EDITOR;PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
