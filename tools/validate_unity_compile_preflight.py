@@ -65,6 +65,8 @@ def main() -> int:
         "../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs",
         "../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs",
         "TreatWarningsAsErrors>true",
+        "<BaseIntermediateOutputPath>obj/Editor/</BaseIntermediateOutputPath>",
+        "<OutputPath>bin/Editor/</OutputPath>",
     ):
         require(marker in editor_csproj, f"Unity Editor shell compile project missing required marker: {marker}")
 
@@ -74,6 +76,8 @@ def main() -> int:
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
         "../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs",
         "TreatWarningsAsErrors>true",
+        "<BaseIntermediateOutputPath>obj/Android/</BaseIntermediateOutputPath>",
+        "<OutputPath>bin/Android/</OutputPath>",
     ):
         require(marker in android_csproj, f"Unity Android compile project missing required marker: {marker}")
 
@@ -127,7 +131,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight covers Editor and Android Player guarded branches before UBA"
+        "PASS: Unity compile preflight covers isolated Editor and Android Player guarded branches before UBA"
     )
     return 0
 
