@@ -11,7 +11,9 @@
   "overrideReferences": false,
   "precompiledReferences": [],
   "autoReferenced": true,
-  "defineConstraints": [],
+  "defineConstraints": [
+    "!UNITY_6000_0_OR_NEWER"
+  ],
   "versionDefines": [
     {
       "name": "com.unity.ai.inference",
