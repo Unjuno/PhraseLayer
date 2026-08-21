@@ -110,7 +110,14 @@ namespace PhraseLayer.Core.Pipeline
             Observation = observation ?? throw new ArgumentNullException(nameof(observation));
             ViewportRegions = viewportRegions ?? throw new ArgumentNullException(nameof(viewportRegions));
             LanguagePlan = languagePlan ?? throw new ArgumentNullException(nameof(languagePlan));
-            TextAlignment = new OcrRegionTextAligner().Align(observation, viewportRegions);
+
+            // The visible language mix is frozen for an encounter, but OCR geometry may refresh every frame.
+            // Align current region texts against the frozen plan's canonical source text rather than allowing a
+            // one-frame OCR text mutation to implicitly create a different semantic plan.
+            var alignmentObservation = string.Equals(languagePlan.SourceText, observation.Text, StringComparison.Ordinal)
+                ? observation
+                : new OcrObservation(languagePlan.SourceText, observation.Confidence, observation.Regions);
+            TextAlignment = new OcrRegionTextAligner().Align(alignmentObservation, viewportRegions);
             SpatialAssistance = new SemanticRegionAligner().Align(languagePlan, TextAlignment);
         }
 
