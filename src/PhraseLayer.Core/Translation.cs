@@ -87,8 +87,7 @@ namespace PhraseLayer.Core.Translation
             string? cached = null;
             lock (gate)
             {
-                LinkedListNode<CacheEntry>? node;
-                if (entries.TryGetValue(key, out node))
+                if (entries.TryGetValue(key, out var node))
                 {
                     hits++;
                     lru.Remove(node);
@@ -115,8 +114,7 @@ namespace PhraseLayer.Core.Translation
 
             lock (gate)
             {
-                LinkedListNode<CacheEntry>? existing;
-                if (entries.TryGetValue(key, out existing))
+                if (entries.TryGetValue(key, out var existing))
                 {
                     // Another caller may have populated the same key while this request was in flight. Keep the
                     // newest successful result and move it to the MRU position.
