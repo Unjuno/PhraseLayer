@@ -34,7 +34,8 @@ namespace PhraseLayer.Core.Tests
             var phrase = Assert.Single(document.OfKind(SemanticUnitKind.Phrase));
             Assert.Equal("so I", phrase.Text, ignoreCase: true);
             var containingClause = Assert.Single(
-                document.OfKind(SemanticUnitKind.Clause).Where(clause => clause.Contains(phrase)));
+                document.OfKind(SemanticUnitKind.Clause),
+                clause => clause.Contains(phrase));
             Assert.Equal("so I left", containingClause.Text);
         }
 
@@ -101,7 +102,7 @@ namespace PhraseLayer.Core.Tests
                 AssistancePolicy.ForMode(AssistanceMode.Balanced));
 
             Assert.Equal("I すぐ眠ってしまった.", plan.DisplayText);
-            var assisted = Assert.Single(plan.Segments.Where(segment => segment.IsAssisted));
+            var assisted = Assert.Single(plan.Segments, segment => segment.IsAssisted);
             Assert.Equal(SemanticUnitKind.Phrase, assisted.Unit!.Kind);
         }
 

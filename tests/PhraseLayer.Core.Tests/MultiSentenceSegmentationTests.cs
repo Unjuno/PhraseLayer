@@ -22,7 +22,7 @@ namespace PhraseLayer.Core.Tests
                 clauses.Select(unit => unit.Text).ToArray());
 
             foreach (var clause in clauses)
-                Assert.Single(sentences.Where(sentence => sentence.Contains(clause)));
+                Assert.Single(sentences, sentence => sentence.Contains(clause));
         }
 
         [Fact]
