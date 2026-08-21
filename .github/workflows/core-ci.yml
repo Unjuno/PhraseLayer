@@ -118,6 +118,7 @@ jobs:
               sha: context.sha,
               state: passed ? 'success' : 'failure',
               context: 'phraselayer/unity-preflight',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               description: passed
                 ? 'Unity Editor and Android C# preflight passed'
                 : 'Unity Editor or Android C# preflight failed'
