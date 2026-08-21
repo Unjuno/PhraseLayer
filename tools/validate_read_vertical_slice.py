@@ -41,7 +41,8 @@ require(
         "sealed class ReadEncounterPipeline",
         "MixedLanguagePlan? frozenPlan",
         "decision.IsNewEncounter",
-        "new ReadModeSpatialResult(frame, observation, viewportRegions, frozenPlan)",
+        "if (plan == null)",
+        "new ReadModeSpatialResult(frame, observation, viewportRegions, plan)",
     ),
     "Core Read encounter stability",
 )
