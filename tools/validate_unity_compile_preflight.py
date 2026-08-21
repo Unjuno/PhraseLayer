@@ -7,6 +7,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SHELL = ROOT / "tests" / "PhraseLayer.UnityShell.Compile"
+DIRECTORY_PROPS = SHELL / "Directory.Build.props"
 EDITOR_CSPROJ = SHELL / "PhraseLayer.UnityShell.Compile.csproj"
 ANDROID_CSPROJ = SHELL / "PhraseLayer.UnityAndroid.Compile.csproj"
 UNITY_STUBS = SHELL / "UnityStubs.cs"
@@ -55,6 +56,7 @@ def validate_asmdef(path: Path) -> None:
 
 
 def main() -> int:
+    directory_props = read(DIRECTORY_PROPS)
     editor_csproj = read(EDITOR_CSPROJ)
     android_csproj = read(ANDROID_CSPROJ)
     unity_stubs = read(UNITY_STUBS)
@@ -64,13 +66,24 @@ def main() -> int:
     recognizer_runtime = read(RECOGNIZER_RUNTIME)
 
     for marker in (
+        "PhraseLayer.UnityShell.Compile",
+        "obj/Editor/",
+        "MSBuildProjectExtensionsPath",
+        "PhraseLayer.UnityAndroid.Compile",
+        "obj/Android/",
+    ):
+        require(marker in directory_props, f"compile preflight Directory.Build.props missing isolation marker: {marker}")
+
+    for marker in (
         "UNITY_5_3_OR_NEWER",
         "UNITY_EDITOR",
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        "<EnableDefaultCompileItems>false</EnableDefaultCompileItems>",
+        '<Compile Include="UnityStubs.cs" />',
+        '<Compile Include="UnityInferenceStubs.cs" />',
         "../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs",
         "../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs",
         "TreatWarningsAsErrors>true",
-        "<BaseIntermediateOutputPath>obj/Editor/</BaseIntermediateOutputPath>",
         "<OutputPath>bin/Editor/</OutputPath>",
     ):
         require(marker in editor_csproj, f"Unity Editor shell compile project missing required marker: {marker}")
@@ -79,13 +92,20 @@ def main() -> int:
         "UNITY_5_3_OR_NEWER",
         "UNITY_ANDROID",
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        "<EnableDefaultCompileItems>false</EnableDefaultCompileItems>",
+        '<Compile Include="UnityStubs.cs" />',
+        '<Compile Include="UnityInferenceStubs.cs" />',
+        '<Compile Include="UnityAndroidStubs.cs" />',
         "../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs",
         "TreatWarningsAsErrors>true",
-        "<BaseIntermediateOutputPath>obj/Android/</BaseIntermediateOutputPath>",
         "<OutputPath>bin/Android/</OutputPath>",
     ):
         require(marker in android_csproj, f"Unity Android compile project missing required marker: {marker}")
 
+    require(
+        "UnityAndroidStubs.cs" not in editor_csproj,
+        "Unity Editor compile preflight must not include Android permission stubs",
+    )
     require(
         "UNITY_EDITOR" not in android_csproj,
         "Android Player compile preflight must not define UNITY_EDITOR; otherwise Quest-only branches remain hidden",
@@ -161,7 +181,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight covers isolated Editor and Android Player guarded branches with reviewed Inference Engine 2.2.1 signatures before UBA"
+        "PASS: Unity compile preflight isolates Editor and Android generated sources and covers guarded branches with reviewed Inference Engine 2.2.1 signatures before UBA"
     )
     return 0
 

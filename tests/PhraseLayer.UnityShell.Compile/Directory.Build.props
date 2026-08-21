@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PhraseLayer.UnityShell.Compile'">
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/Editor/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(MSBuildThisFileDirectory)obj/Editor/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PhraseLayer.UnityAndroid.Compile'">
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/Android/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(MSBuildThisFileDirectory)obj/Android/</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

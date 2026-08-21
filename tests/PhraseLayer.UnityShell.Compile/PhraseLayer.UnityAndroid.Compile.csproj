@@ -4,14 +4,16 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <BaseIntermediateOutputPath>obj/Android/</BaseIntermediateOutputPath>
     <OutputPath>bin/Android/</OutputPath>
     <DefineConstants>$(DefineConstants);UNITY_5_3_OR_NEWER;UNITY_ANDROID;PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="UnityInferenceStubs.cs" />
+    <Compile Include="UnityAndroidStubs.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs" LinkBase="UnityRuntime" />
   </ItemGroup>
 </Project>

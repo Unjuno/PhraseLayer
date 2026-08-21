@@ -4,14 +4,15 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <BaseIntermediateOutputPath>obj/Editor/</BaseIntermediateOutputPath>
     <OutputPath>bin/Editor/</OutputPath>
     <DefineConstants>$(DefineConstants);UNITY_5_3_OR_NEWER;UNITY_EDITOR;PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="UnityInferenceStubs.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs" LinkBase="UnityRuntime" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs" LinkBase="UnityEditor" />
   </ItemGroup>
