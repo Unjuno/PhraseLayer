@@ -5,6 +5,10 @@ on:
     branches: [main, "agent/**"]
   pull_request:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   core:
     runs-on: ubuntu-latest
@@ -96,3 +100,25 @@ jobs:
             exit 1
           fi
           echo "Unity compile preflight PASS (Editor=0, Android=0)."
+
+  publish-unity-preflight-status:
+    name: Publish Unity preflight status
+    if: ${{ always() && github.event_name == 'push' }}
+    needs: [unity-compile-preflight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish commit status for MCP diagnostics
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passed = '${{ needs.unity-compile-preflight.result }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'phraselayer/unity-preflight',
+              description: passed
+                ? 'Unity Editor and Android C# preflight passed'
+                : 'Unity Editor or Android C# preflight failed'
+            });
