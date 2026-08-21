@@ -89,6 +89,36 @@ jobs:
             .ci/unity-editor-preflight.exit
             .ci/unity-android-preflight.exit
           if-no-files-found: error
+      - name: Publish exact compiler diagnostic status
+        if: ${{ always() && github.event_name == 'push' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const read = path => fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
+            const editorExit = read('.ci/unity-editor-preflight.exit').trim() || 'missing';
+            const androidExit = read('.ci/unity-android-preflight.exit').trim() || 'missing';
+            const passed = editorExit === '0' && androidExit === '0';
+            let diagnostic = '';
+            for (const path of ['.ci/unity-editor-preflight.log', '.ci/unity-android-preflight.log']) {
+              const match = read(path).match(/^.*error CS\d{4}.*$/m);
+              if (match) {
+                diagnostic = match[0].replace(/\s+/g, ' ').trim();
+                break;
+              }
+            }
+            const fallback = `Unity preflight failed Editor=${editorExit} Android=${androidExit}`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'phraselayer/unity-preflight',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              description: passed
+                ? 'Unity Editor and Android C# preflight passed'
+                : (diagnostic || fallback).slice(0, 140)
+            });
       - name: Enforce compile preflight result
         if: always()
         shell: bash
@@ -107,19 +137,19 @@ jobs:
     needs: [unity-compile-preflight]
     runs-on: ubuntu-latest
     steps:
-      - name: Publish commit status for MCP diagnostics
+      - name: Preserve final preflight status
         uses: actions/github-script@v7
         with:
           script: |
             const passed = '${{ needs.unity-compile-preflight.result }}' === 'success';
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: passed ? 'success' : 'failure',
-              context: 'phraselayer/unity-preflight',
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: passed
-                ? 'Unity Editor and Android C# preflight passed'
-                : 'Unity Editor or Android C# preflight failed'
-            });
+            if (passed) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: 'success',
+                context: 'phraselayer/unity-preflight',
+                target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+                description: 'Unity Editor and Android C# preflight passed'
+              });
+            }
