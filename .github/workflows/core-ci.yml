@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/validate_repo.py
+      - run: python tools/validate_ci_references.py
       - run: python tools/validate_local_only.py
       - run: python tools/test_validate_local_only.py
       - run: python tools/validate_unity_build_automation.py
