@@ -32,5 +32,65 @@ jobs:
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
       - run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --no-restore
-      - run: dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
-      - run: dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityAndroid.Compile.csproj -c Release
+
+  unity-compile-preflight:
+    name: Unity compile preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate preflight contract
+        run: python tools/validate_unity_compile_preflight.py
+      - name: Compile Unity Editor guarded branches
+        shell: bash
+        run: |
+          mkdir -p .ci
+          set +e
+          dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release 2>&1 | tee .ci/unity-editor-preflight.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > .ci/unity-editor-preflight.exit
+          exit 0
+      - name: Compile Android Player guarded branches
+        shell: bash
+        run: |
+          mkdir -p .ci
+          set +e
+          dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityAndroid.Compile.csproj -c Release 2>&1 | tee .ci/unity-android-preflight.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > .ci/unity-android-preflight.exit
+          exit 0
+      - name: Summarize compiler diagnostics
+        if: always()
+        shell: bash
+        run: |
+          echo "## Unity Editor diagnostics"
+          grep -nE '(^|[[:space:]])error (CS|[A-Z]{2,})[0-9]*:' .ci/unity-editor-preflight.log || true
+          echo "## Android Player diagnostics"
+          grep -nE '(^|[[:space:]])error (CS|[A-Z]{2,})[0-9]*:' .ci/unity-android-preflight.log || true
+      - name: Upload compile preflight logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-compile-preflight-logs
+          path: |
+            .ci/unity-editor-preflight.log
+            .ci/unity-android-preflight.log
+            .ci/unity-editor-preflight.exit
+            .ci/unity-android-preflight.exit
+          if-no-files-found: error
+      - name: Enforce compile preflight result
+        if: always()
+        shell: bash
+        run: |
+          editor=$(cat .ci/unity-editor-preflight.exit)
+          android=$(cat .ci/unity-android-preflight.exit)
+          if [ "$editor" -ne 0 ] || [ "$android" -ne 0 ]; then
+            echo "::error::Unity compile preflight failed (Editor=$editor, Android=$android). See the compiler diagnostics above and the unity-compile-preflight-logs artifact."
+            exit 1
+          fi
+          echo "Unity compile preflight PASS (Editor=0, Android=0)."
