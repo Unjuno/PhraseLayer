@@ -16,6 +16,7 @@ import platform
 import shutil
 import sys
 import traceback
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -70,9 +71,19 @@ def inspect_onnx(path: Path) -> dict[str, Any]:
     import onnx
 
     model = onnx.load_model(str(path), load_external_data=False)
+    operator_counts = Counter(node.op_type for node in model.graph.node)
+    external_locations: set[str] = set()
+    for initializer in model.graph.initializer:
+        if initializer.data_location != onnx.TensorProto.EXTERNAL:
+            continue
+        for item in initializer.external_data:
+            if item.key == "location" and item.value:
+                external_locations.add(item.value)
+
     return {
+        "ir_version": int(model.ir_version),
         "opsets": [
-            {"domain": item.domain, "version": int(item.version)}
+            {"domain": item.domain or "ai.onnx", "version": int(item.version)}
             for item in model.opset_import
         ],
         "inputs": [
@@ -91,6 +102,9 @@ def inspect_onnx(path: Path) -> dict[str, Any]:
             }
             for item in model.graph.output
         ],
+        "node_count": len(model.graph.node),
+        "operator_counts": dict(sorted(operator_counts.items())),
+        "external_data_locations": sorted(external_locations),
     }
 
 
@@ -156,8 +170,8 @@ def run_reference() -> list[dict[str, Any]]:
     import torch
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
-    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID, revision=REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION, trust_remote_code=False)
+    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID, revision=REVISION, trust_remote_code=False)
     model.eval()
     encoded = tokenizer(SAMPLES, return_tensors="pt", padding=True)
     with torch.no_grad():
@@ -172,7 +186,7 @@ def run_onnx(output: Path) -> list[dict[str, Any]]:
     from optimum.onnxruntime import ORTModelForSeq2SeqLM
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(str(output), local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(str(output), local_files_only=True, trust_remote_code=False)
     model = ORTModelForSeq2SeqLM.from_pretrained(
         str(output),
         provider="CPUExecutionProvider",
@@ -218,11 +232,12 @@ def main() -> int:
     args = parser.parse_args()
 
     report: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "model_id": MODEL_ID,
         "revision": REVISION,
         "task": TASK,
         "generation": GENERATION,
+        "runtime_status": "unverified-real-unity-import-required",
         "environment": {
             "python": sys.version,
             "platform": platform.platform(),
@@ -254,6 +269,8 @@ def main() -> int:
             task=TASK,
             revision=REVISION,
             framework="pt",
+            monolith=False,
+            trust_remote_code=False,
             do_validation=True,
         )
 
