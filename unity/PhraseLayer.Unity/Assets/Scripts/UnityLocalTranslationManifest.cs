@@ -12,7 +12,7 @@ namespace PhraseLayer.Unity
     /// </summary>
     public static class UnityLocalTranslationManifest
     {
-        public static LocalTranslationRuntimeSet ParseAndValidate(TextAsset manifestAsset)
+        public static StagedTranslationManifest ParseManifest(TextAsset manifestAsset)
         {
             if (manifestAsset == null) throw new ArgumentNullException(nameof(manifestAsset));
 
@@ -35,45 +35,23 @@ namespace PhraseLayer.Unity
                     item.kind ?? string.Empty));
             }
 
-            var manifest = new StagedTranslationManifest(
+            return new StagedTranslationManifest(
                 dto.schema_version,
                 dto.model_id ?? string.Empty,
                 dto.revision ?? string.Empty,
                 dto.reference_parity_exact,
                 dto.runtime_status ?? string.Empty,
                 files);
-            return LocalTranslationStagingContract.ValidateAndResolve(manifest);
+        }
+
+        public static LocalTranslationRuntimeSet ParseAndValidate(TextAsset manifestAsset)
+        {
+            return LocalTranslationStagingContract.ValidateAndResolve(ParseManifest(manifestAsset));
         }
 
         public static string ValidateAndBuildReport(TextAsset manifestAsset)
         {
-            if (manifestAsset == null) throw new ArgumentNullException(nameof(manifestAsset));
-
-            var dto = JsonUtility.FromJson<ManifestJson>(manifestAsset.text);
-            if (dto == null || dto.files == null)
-                throw new InvalidOperationException("Local translation staging manifest JSON is incomplete.");
-
-            var files = new List<StagedTranslationAsset>(dto.files.Length);
-            for (var index = 0; index < dto.files.Length; index++)
-            {
-                var item = dto.files[index];
-                if (item == null)
-                    throw new InvalidOperationException("Local translation staging manifest contains a null file entry.");
-                files.Add(new StagedTranslationAsset(
-                    item.asset_path ?? string.Empty,
-                    item.size_bytes,
-                    item.sha256 ?? string.Empty,
-                    item.kind ?? string.Empty));
-            }
-
-            return LocalTranslationStagingContract.ValidateAndBuildReport(
-                new StagedTranslationManifest(
-                    dto.schema_version,
-                    dto.model_id ?? string.Empty,
-                    dto.revision ?? string.Empty,
-                    dto.reference_parity_exact,
-                    dto.runtime_status ?? string.Empty,
-                    files));
+            return LocalTranslationStagingContract.ValidateAndBuildReport(ParseManifest(manifestAsset));
         }
 
         [Serializable]
