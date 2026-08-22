@@ -17,6 +17,11 @@
       "name": "com.unity.ai.inference",
       "expression": "[2.2.1,2.3.0)",
       "define": "PHRASELAYER_UNITY_AI_INFERENCE_2_2"
+    },
+    {
+      "name": "com.unity.ai.inference",
+      "expression": "[2.2.1,2.3.0)",
+      "define": "PHRASELAYER_UBA_ISOLATE_INFERENCE"
     }
   ],
   "noEngineReferences": false
