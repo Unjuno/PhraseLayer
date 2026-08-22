@@ -18,6 +18,7 @@ DETECTOR_RUNTIME = UNITY_SCRIPTS / "UnityPaddleOcrDetectorRuntime.cs"
 RECOGNIZER_RUNTIME = UNITY_SCRIPTS / "UnityPaddleOcrRecognizerRuntime.cs"
 RUNTIME_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "PhraseLayer.Unity.asmdef"
 EDITOR_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
+WORKFLOW = ROOT / ".github" / "workflows" / "core-ci.yml"
 
 errors: list[str] = []
 
@@ -64,6 +65,7 @@ def main() -> int:
     inference_stubs = read(INFERENCE_STUBS)
     detector_runtime = read(DETECTOR_RUNTIME)
     recognizer_runtime = read(RECOGNIZER_RUNTIME)
+    workflow = read(WORKFLOW)
 
     for marker in (
         "PhraseLayer.UnityShell.Compile",
@@ -75,6 +77,7 @@ def main() -> int:
         require(marker in directory_props, f"compile preflight Directory.Build.props missing isolation marker: {marker}")
 
     for marker in (
+        "<LangVersion>9.0</LangVersion>",
         "UNITY_5_3_OR_NEWER",
         "UNITY_EDITOR",
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
@@ -89,6 +92,7 @@ def main() -> int:
         require(marker in editor_csproj, f"Unity Editor shell compile project missing required marker: {marker}")
 
     for marker in (
+        "<LangVersion>9.0</LangVersion>",
         "UNITY_5_3_OR_NEWER",
         "UNITY_ANDROID",
         "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
@@ -172,6 +176,18 @@ def main() -> int:
             f"{label} must not depend on a redundant readback cast in the reference synchronous path",
         )
 
+    # The hosted Roslyn gate is the fast syntax/type checker. Keep its exact compiler diagnostics
+    # visible through a commit status so the GitHub connector can diagnose failures without UBA logs.
+    for marker in (
+        "Compile Unity Editor guarded branches",
+        "Compile Android Player guarded branches",
+        "error CS\\d{4}",
+        "phraselayer/unity-preflight",
+        "target_url:",
+        "GITHUB_RUN_ID",
+    ):
+        require(marker in workflow, f"Core CI missing MCP-readable Unity compiler diagnostic marker: {marker}")
+
     validate_asmdef(RUNTIME_ASMDEF)
     validate_asmdef(EDITOR_ASMDEF)
 
@@ -181,7 +197,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight isolates Editor and Android generated sources and covers guarded branches with reviewed Inference Engine 2.2.1 signatures before UBA"
+        "PASS: Unity compile preflight pins C# 9, isolates Editor and Android generated sources, covers guarded branches with reviewed Inference Engine 2.2.1 signatures, and publishes exact Roslyn diagnostics before UBA"
     )
     return 0
 
