@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""One-shot, non-production ONNX export probe for the pinned OPUS-MT candidate.
+"""Reproducible ONNX export + parity probe for the pinned OPUS-MT candidate.
 
-The probe intentionally does not publish model weights. It exports to the ephemeral runner,
-records exact files/sizes/hashes/graph signatures and a small ONNX Runtime parity smoke test,
-then CI uploads only the JSON report and Python package freeze.
+The probe intentionally does not publish model weights. It exports to the ephemeral runner and uploads only
+metadata: exact file names/sizes/hashes, ONNX graph signatures, toolchain versions, and reference-vs-ORT parity.
 """
 
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import importlib.metadata
 import json
@@ -26,6 +26,11 @@ SAMPLES = [
     "I was tired, so I went home.",
     "Please keep off the grass.",
 ]
+GENERATION = {
+    "num_beams": 4,
+    "max_new_tokens": 64,
+    "renormalize_logits": True,
+}
 
 
 def package_version(name: str) -> str:
@@ -104,7 +109,66 @@ def collect_files(output: Path) -> list[dict[str, Any]]:
     return files
 
 
-def run_parity(output: Path) -> list[dict[str, str]]:
+def runtime_sets(files: list[dict[str, Any]]) -> dict[str, Any]:
+    by_path = {item["path"]: item for item in files}
+
+    def describe(paths: list[str]) -> dict[str, Any]:
+        missing = [path for path in paths if path not in by_path]
+        if missing:
+            return {"files": paths, "missing": missing, "total_size_bytes": None}
+        total = sum(int(by_path[path]["size_bytes"]) for path in paths)
+        return {
+            "files": paths,
+            "total_size_bytes": total,
+            "total_size_mib": round(total / (1024 * 1024), 3),
+        }
+
+    return {
+        "encoder_plus_merged_decoder": describe([
+            "encoder_model.onnx",
+            "decoder_model_merged.onnx",
+        ]),
+        "encoder_plus_split_decoder_cache": describe([
+            "encoder_model.onnx",
+            "decoder_model.onnx",
+            "decoder_with_past_model.onnx",
+        ]),
+        "all_onnx_outputs": describe([
+            item["path"] for item in files if item["path"].endswith(".onnx")
+        ]),
+    }
+
+
+def generation_result(tokenizer: Any, generated: Any) -> list[dict[str, Any]]:
+    token_rows = generated.detach().cpu().tolist()
+    translations = tokenizer.batch_decode(generated, skip_special_tokens=True)
+    return [
+        {
+            "source": source,
+            "token_ids": [int(token) for token in token_ids],
+            "translation": translation,
+        }
+        for source, token_ids, translation in zip(SAMPLES, token_rows, translations)
+    ]
+
+
+def run_reference() -> list[dict[str, Any]]:
+    import torch
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION)
+    model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID, revision=REVISION)
+    model.eval()
+    encoded = tokenizer(SAMPLES, return_tensors="pt", padding=True)
+    with torch.no_grad():
+        generated = model.generate(**encoded, **GENERATION)
+    result = generation_result(tokenizer, generated)
+    del generated, encoded, model, tokenizer
+    gc.collect()
+    return result
+
+
+def run_onnx(output: Path) -> list[dict[str, Any]]:
     from optimum.onnxruntime import ORTModelForSeq2SeqLM
     from transformers import AutoTokenizer
 
@@ -115,17 +179,31 @@ def run_parity(output: Path) -> list[dict[str, str]]:
         local_files_only=True,
     )
     encoded = tokenizer(SAMPLES, return_tensors="pt", padding=True)
-    generated = model.generate(
-        **encoded,
-        num_beams=4,
-        max_new_tokens=64,
-        renormalize_logits=True,
+    generated = model.generate(**encoded, **GENERATION)
+    result = generation_result(tokenizer, generated)
+    del generated, encoded, model, tokenizer
+    gc.collect()
+    return result
+
+
+def compare_parity(reference: list[dict[str, Any]], onnx: list[dict[str, Any]]) -> dict[str, Any]:
+    comparisons: list[dict[str, Any]] = []
+    for reference_item, onnx_item in zip(reference, onnx):
+        comparisons.append({
+            "source": reference_item["source"],
+            "token_ids_equal": reference_item["token_ids"] == onnx_item["token_ids"],
+            "text_equal": reference_item["translation"] == onnx_item["translation"],
+            "reference_translation": reference_item["translation"],
+            "onnx_translation": onnx_item["translation"],
+            "reference_token_ids": reference_item["token_ids"],
+            "onnx_token_ids": onnx_item["token_ids"],
+        })
+    exact = (
+        len(reference) == len(onnx)
+        and len(comparisons) == len(SAMPLES)
+        and all(item["token_ids_equal"] and item["text_equal"] for item in comparisons)
     )
-    translations = tokenizer.batch_decode(generated, skip_special_tokens=True)
-    return [
-        {"source": source, "translation": translation}
-        for source, translation in zip(SAMPLES, translations)
-    ]
+    return {"exact": exact, "samples": comparisons}
 
 
 def write_report(path: Path, report: dict[str, Any]) -> None:
@@ -140,10 +218,11 @@ def main() -> int:
     args = parser.parse_args()
 
     report: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model_id": MODEL_ID,
         "revision": REVISION,
         "task": TASK,
+        "generation": GENERATION,
         "environment": {
             "python": sys.version,
             "platform": platform.platform(),
@@ -161,6 +240,10 @@ def main() -> int:
     try:
         from optimum.exporters.onnx import main_export
 
+        reference = run_reference()
+        report["reference_samples"] = reference
+        write_report(args.report, report)
+
         if args.output.exists():
             shutil.rmtree(args.output)
         args.output.mkdir(parents=True)
@@ -174,8 +257,15 @@ def main() -> int:
             do_validation=True,
         )
 
-        report["files"] = collect_files(args.output)
-        report["parity_samples"] = run_parity(args.output)
+        files = collect_files(args.output)
+        report["files"] = files
+        report["runtime_sets"] = runtime_sets(files)
+        onnx = run_onnx(args.output)
+        report["onnx_samples"] = onnx
+        report["parity"] = compare_parity(reference, onnx)
+        if not report["parity"]["exact"]:
+            raise RuntimeError("Pinned PyTorch and exported ONNX generation are not token-exact on the probe samples.")
+
         report["status"] = "pass"
         write_report(args.report, report)
         return 0

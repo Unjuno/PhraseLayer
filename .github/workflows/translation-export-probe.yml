@@ -25,7 +25,7 @@ jobs:
               sha: context.sha,
               state: 'pending',
               context: 'phraselayer/translation-export-probe',
-              description: 'Pinned OPUS-MT ONNX export probe is running',
+              description: 'Pinned OPUS-MT export/parity probe is running',
               target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
             });
 
@@ -35,13 +35,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install pinned-revision export toolchain
+      - name: Install measured export toolchain
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "optimum-onnx[onnxruntime]" "transformers<5" sentencepiece torch onnx
+          python -m pip install \
+            "torch==2.13.0" \
+            "transformers==4.57.6" \
+            "optimum==2.1.0" \
+            "optimum-onnx[onnxruntime]==0.1.0" \
+            "onnx==1.22.0" \
+            "onnxruntime==1.29.0" \
+            "sentencepiece==0.2.2"
           python -m pip freeze > translation-export-pip-freeze.txt
 
-      - name: Export and inspect pinned OPUS-MT
+      - name: Export, inspect, and compare pinned OPUS-MT
         id: export
         shell: bash
         run: |
@@ -82,10 +89,13 @@ jobs:
               }
             }
             const exitCode = process.env.EXPORT_EXIT_CODE || 'missing';
-            const passed = exitCode === '0' && report && report.status === 'pass';
+            const passed = exitCode === '0' && report && report.status === 'pass' && report.parity && report.parity.exact;
+            const mergedSize = report && report.runtime_sets && report.runtime_sets.encoder_plus_merged_decoder
+              ? report.runtime_sets.encoder_plus_merged_decoder.total_size_mib
+              : null;
             const detail = passed
-              ? `OPUS-MT export probe passed; ${(report.files || []).filter(item => item.path.endsWith('.onnx')).length} ONNX files measured`
-              : `OPUS-MT export probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
+              ? `OPUS-MT ONNX token parity exact; merged runtime ${mergedSize} MiB`
+              : `OPUS-MT export/parity probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
