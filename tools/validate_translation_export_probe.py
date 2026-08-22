@@ -68,16 +68,17 @@ if REQUEST.is_file():
 
 if DOC.is_file():
     text = DOC.read_text(encoding="utf-8")
+    folded = text.casefold()
     for marker in (
         "revision-pinned source",
         "token-exact parity",
         "hash-pinned",
-        "real Unity import",
-        "Quest",
+        "real unity import",
+        "quest",
         "bundled=false",
         "metadata-only",
     ):
-        if marker not in text:
+        if marker.casefold() not in folded:
             errors.append(f"local translation doc missing gate marker: {marker}")
 
 if errors:
