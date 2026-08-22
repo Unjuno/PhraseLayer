@@ -1,110 +1,45 @@
-name: Translation export probe
+name: Translation ONNX export probe
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ci/translation-export-probe.request
 
 permissions:
   contents: read
-  statuses: write
 
 jobs:
-  probe:
+  export-opus-mt:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - name: Publish pending probe status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: 'pending',
-              context: 'phraselayer/translation-export-probe',
-              description: 'Pinned OPUS-MT export/parity probe is running',
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-            });
-
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install measured export toolchain
+          python-version: "3.12"
+      - name: Install pinned export probe toolchain
         run: |
+          mkdir -p artifacts
           python -m pip install --upgrade pip
           python -m pip install \
-            "torch==2.13.0" \
-            "transformers==4.57.6" \
-            "optimum==2.1.0" \
-            "optimum-onnx[onnxruntime]==0.1.0" \
-            "onnx==1.22.0" \
-            "onnxruntime==1.29.0" \
+            "optimum[onnx]==2.3.0" \
             "sentencepiece==0.2.2"
-          python -m pip freeze > translation-export-pip-freeze.txt
-
-      - name: Export, inspect, and compare pinned OPUS-MT
-        id: export
-        shell: bash
+          python -m pip freeze > artifacts/translation-export-toolchain.txt
+      - name: Validate candidate and exporter contract
         run: |
-          mkdir -p .ci
-          set +e
-          python tools/probe_translation_export.py \
-            --output "$RUNNER_TEMP/opus-mt-en-jap-onnx" \
-            --report ".ci/translation-export-probe.json"
-          code=$?
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Upload probe metadata only
-        if: always()
+          python tools/validate_translation_model_candidate.py
+          python tools/validate_translation_export_probe.py
+          python tools/test_export_opus_mt_onnx.py
+      - name: Export exact OPUS-MT revision and inspect actual ONNX files
+        run: |
+          python tools/export_opus_mt_onnx.py \
+            --output-dir artifacts/translation-export/opus-mt-en-jap
+      - name: Show measured export manifest
+        run: cat artifacts/translation-export/opus-mt-en-jap/translation-export.manifest.json
+      - name: Upload export probe artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: translation-export-probe
+          name: opus-mt-en-jap-onnx-probe
           path: |
-            .ci/translation-export-probe.json
-            translation-export-pip-freeze.txt
+            artifacts/translation-export-toolchain.txt
+            artifacts/translation-export/opus-mt-en-jap/**
           if-no-files-found: error
-
-      - name: Publish final probe status
-        if: always()
-        uses: actions/github-script@v7
-        env:
-          EXPORT_EXIT_CODE: ${{ steps.export.outputs.exit_code }}
-        with:
-          script: |
-            const fs = require('fs');
-            const reportPath = '.ci/translation-export-probe.json';
-            let report = null;
-            if (fs.existsSync(reportPath)) {
-              try {
-                report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-              } catch (error) {
-                core.warning(`Could not parse translation export report: ${error}`);
-              }
-            }
-            const exitCode = process.env.EXPORT_EXIT_CODE || 'missing';
-            const passed = exitCode === '0' && report && report.status === 'pass' && report.parity && report.parity.exact;
-            const mergedSize = report && report.runtime_sets && report.runtime_sets.encoder_plus_merged_decoder
-              ? report.runtime_sets.encoder_plus_merged_decoder.total_size_mib
-              : null;
-            const detail = passed
-              ? `OPUS-MT ONNX token parity exact; merged runtime ${mergedSize} MiB`
-              : `OPUS-MT export/parity probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: passed ? 'success' : 'failure',
-              context: 'phraselayer/translation-export-probe',
-              description: detail.slice(0, 140),
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-            });
-            if (!passed) {
-              core.setFailed(detail);
-            }
+          retention-days: 7
