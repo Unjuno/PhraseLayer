@@ -2,7 +2,8 @@
 """Reproducible ONNX export + parity probe for the pinned OPUS-MT candidate.
 
 The probe intentionally does not publish model weights. It exports to the ephemeral runner and uploads only
-metadata: exact file names/sizes/hashes, ONNX graph signatures, toolchain versions, and reference-vs-ORT parity.
+metadata: exact file names/sizes/hashes, ONNX graph signatures, tokenizer fixtures, toolchain versions, and
+reference-vs-ORT parity.
 """
 
 from __future__ import annotations
@@ -138,6 +139,10 @@ def runtime_sets(files: list[dict[str, Any]]) -> dict[str, Any]:
         }
 
     return {
+        "encoder_plus_decoder": describe([
+            "encoder_model.onnx",
+            "decoder_model.onnx",
+        ]),
         "encoder_plus_merged_decoder": describe([
             "encoder_model.onnx",
             "decoder_model_merged.onnx",
@@ -166,23 +171,59 @@ def generation_result(tokenizer: Any, generated: Any) -> list[dict[str, Any]]:
     ]
 
 
-def run_reference() -> list[dict[str, Any]]:
+def tokenizer_fixture(tokenizer: Any) -> dict[str, Any]:
+    samples: list[dict[str, Any]] = []
+    for source in SAMPLES:
+        encoded = tokenizer(
+            source,
+            add_special_tokens=True,
+            return_attention_mask=True,
+            padding=False,
+            truncation=False,
+        )
+        input_ids = [int(value) for value in encoded["input_ids"]]
+        attention_mask = [int(value) for value in encoded["attention_mask"]]
+        samples.append({
+            "source": source,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "decoded_skip_special_tokens": tokenizer.decode(input_ids, skip_special_tokens=True),
+            "tokens": [str(value) for value in tokenizer.convert_ids_to_tokens(input_ids)],
+        })
+
+    return {
+        "tokenizer_class": type(tokenizer).__name__,
+        "vocab_size": int(tokenizer.vocab_size),
+        "pad_token": tokenizer.pad_token,
+        "pad_token_id": None if tokenizer.pad_token_id is None else int(tokenizer.pad_token_id),
+        "eos_token": tokenizer.eos_token,
+        "eos_token_id": None if tokenizer.eos_token_id is None else int(tokenizer.eos_token_id),
+        "bos_token": tokenizer.bos_token,
+        "bos_token_id": None if tokenizer.bos_token_id is None else int(tokenizer.bos_token_id),
+        "unk_token": tokenizer.unk_token,
+        "unk_token_id": None if tokenizer.unk_token_id is None else int(tokenizer.unk_token_id),
+        "samples": samples,
+    }
+
+
+def run_reference() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     import torch
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=REVISION, trust_remote_code=False)
     model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_ID, revision=REVISION, trust_remote_code=False)
     model.eval()
+    tokenizer_reference = tokenizer_fixture(tokenizer)
     encoded = tokenizer(SAMPLES, return_tensors="pt", padding=True)
     with torch.no_grad():
         generated = model.generate(**encoded, **GENERATION)
     result = generation_result(tokenizer, generated)
     del generated, encoded, model, tokenizer
     gc.collect()
-    return result
+    return result, tokenizer_reference
 
 
-def run_onnx(output: Path) -> list[dict[str, Any]]:
+def run_onnx(output: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     from optimum.onnxruntime import ORTModelForSeq2SeqLM
     from transformers import AutoTokenizer
 
@@ -192,12 +233,13 @@ def run_onnx(output: Path) -> list[dict[str, Any]]:
         provider="CPUExecutionProvider",
         local_files_only=True,
     )
+    tokenizer_exported = tokenizer_fixture(tokenizer)
     encoded = tokenizer(SAMPLES, return_tensors="pt", padding=True)
     generated = model.generate(**encoded, **GENERATION)
     result = generation_result(tokenizer, generated)
     del generated, encoded, model, tokenizer
     gc.collect()
-    return result
+    return result, tokenizer_exported
 
 
 def compare_parity(reference: list[dict[str, Any]], onnx: list[dict[str, Any]]) -> dict[str, Any]:
@@ -220,6 +262,49 @@ def compare_parity(reference: list[dict[str, Any]], onnx: list[dict[str, Any]]) 
     return {"exact": exact, "samples": comparisons}
 
 
+def compare_tokenizer_parity(reference: dict[str, Any], exported: dict[str, Any]) -> dict[str, Any]:
+    metadata_keys = (
+        "tokenizer_class",
+        "vocab_size",
+        "pad_token",
+        "pad_token_id",
+        "eos_token",
+        "eos_token_id",
+        "bos_token",
+        "bos_token_id",
+        "unk_token",
+        "unk_token_id",
+    )
+    metadata_equal = all(reference.get(key) == exported.get(key) for key in metadata_keys)
+    reference_samples = reference.get("samples", [])
+    exported_samples = exported.get("samples", [])
+    comparisons: list[dict[str, Any]] = []
+    for reference_item, exported_item in zip(reference_samples, exported_samples):
+        comparisons.append({
+            "source": reference_item["source"],
+            "input_ids_equal": reference_item["input_ids"] == exported_item["input_ids"],
+            "attention_mask_equal": reference_item["attention_mask"] == exported_item["attention_mask"],
+            "tokens_equal": reference_item["tokens"] == exported_item["tokens"],
+            "decoded_equal": reference_item["decoded_skip_special_tokens"] == exported_item["decoded_skip_special_tokens"],
+        })
+    exact = (
+        metadata_equal
+        and len(reference_samples) == len(exported_samples) == len(SAMPLES)
+        and all(
+            item["input_ids_equal"]
+            and item["attention_mask_equal"]
+            and item["tokens_equal"]
+            and item["decoded_equal"]
+            for item in comparisons
+        )
+    )
+    return {
+        "exact": exact,
+        "metadata_equal": metadata_equal,
+        "samples": comparisons,
+    }
+
+
 def write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -232,7 +317,7 @@ def main() -> int:
     args = parser.parse_args()
 
     report: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": 4,
         "model_id": MODEL_ID,
         "revision": REVISION,
         "task": TASK,
@@ -255,8 +340,9 @@ def main() -> int:
     try:
         from optimum.exporters.onnx import main_export
 
-        reference = run_reference()
+        reference, tokenizer_reference = run_reference()
         report["reference_samples"] = reference
+        report["tokenizer_reference"] = tokenizer_reference
         write_report(args.report, report)
 
         if args.output.exists():
@@ -277,9 +363,13 @@ def main() -> int:
         files = collect_files(args.output)
         report["files"] = files
         report["runtime_sets"] = runtime_sets(files)
-        onnx = run_onnx(args.output)
+        onnx, tokenizer_exported = run_onnx(args.output)
         report["onnx_samples"] = onnx
+        report["tokenizer_exported"] = tokenizer_exported
+        report["tokenizer_parity"] = compare_tokenizer_parity(tokenizer_reference, tokenizer_exported)
         report["parity"] = compare_parity(reference, onnx)
+        if not report["tokenizer_parity"]["exact"]:
+            raise RuntimeError("Pinned source and exported tokenizer files are not token-exact on the probe samples.")
         if not report["parity"]["exact"]:
             raise RuntimeError("Pinned PyTorch and exported ONNX generation are not token-exact on the probe samples.")
 
