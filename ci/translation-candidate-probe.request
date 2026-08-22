@@ -1,0 +1,6 @@
+purpose=screen-local-en-ja-models
+requested_at=2026-08-23
+beam_widths=1,4
+sentence_cases=10
+fragment_cases=5
+policy=metadata-and-output-only-no-weight-artifact
