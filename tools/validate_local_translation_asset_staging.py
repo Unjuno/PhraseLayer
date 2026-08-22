@@ -10,10 +10,13 @@ GITIGNORE = ROOT / ".gitignore"
 WORKFLOW = ROOT / ".github" / "workflows" / "core-ci.yml"
 DOC = ROOT / "docs" / "LOCAL_TRANSLATION.md"
 CORE_STAGING = ROOT / "src" / "PhraseLayer.Core" / "LocalTranslationStaging.cs"
+CORE_ONNX = ROOT / "src" / "PhraseLayer.Core" / "OpusMtOnnxExportMetadata.cs"
 UNITY_MANIFEST = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts" / "UnityLocalTranslationManifest.cs"
 UNITY_GATE = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts" / "UnityLocalTranslationAssetGateBehaviour.cs"
+UNITY_MODEL_PROBE = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts" / "UnityOpusMtModelProbe.cs"
 UNITY_EDITOR_ASSETS = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor" / "PhraseLayerLocalTranslationAssets.cs"
 CORE_TEST = ROOT / "tests" / "PhraseLayer.Core.Tests" / "LocalTranslationStagingTests.cs"
+ONNX_TEST = ROOT / "tests" / "PhraseLayer.Core.Tests" / "OpusMtOnnxExportMetadataTests.cs"
 
 errors: list[str] = []
 for path in (
@@ -23,10 +26,13 @@ for path in (
     WORKFLOW,
     DOC,
     CORE_STAGING,
+    CORE_ONNX,
     UNITY_MANIFEST,
     UNITY_GATE,
+    UNITY_MODEL_PROBE,
     UNITY_EDITOR_ASSETS,
     CORE_TEST,
+    ONNX_TEST,
 ):
     if not path.is_file():
         errors.append(f"missing local translation staging contract file: {path.relative_to(ROOT)}")
@@ -53,15 +59,36 @@ if CORE_STAGING.is_file():
         'ExpectedRevision = "a863894cdd2b80f3bc1c5966734aee9ffec207d1"',
         'ExpectedRuntimeStatus = "unverified-real-unity-import-required"',
         'EncoderPath = "encoder_model.onnx"',
-        'MergedDecoderPath = "decoder_model_merged.onnx"',
+        'DecoderPath = "decoder_model.onnx"',
         'SourceSentencePiecePath = "source.spm"',
         'TargetSentencePiecePath = "target.spm"',
         "ReferenceParityExact",
         "ValidateCanonicalRelativePath",
         "kind does not match file extension",
+        "runtime.Decoder.Path",
     ):
         if marker not in text:
             errors.append(f"Core translation staging contract missing reviewed marker: {marker}")
+    if "decoder_model_merged.onnx" in text:
+        errors.append("correctness-first staging contract must not require the cache-heavy merged decoder")
+
+if CORE_ONNX.is_file():
+    text = CORE_ONNX.read_text(encoding="utf-8")
+    for marker in (
+        'ProbeCommit = "792055c78981de4dfaf2a4b38865793005a546cb"',
+        "ReferenceRuntimeSizeBytes = 463431659",
+        "HiddenSize = 512",
+        "VocabularySize = 46276",
+        '"encoder_model.onnx"',
+        '"decoder_model.onnx"',
+        '"bb0d8d22053062bbd3695a468c88d1f84367eb195fa5f9fb75aa6c9548f57c59"',
+        '"513bbf05f48da69847ce247e3245a5e84a814a7e591e8f544dea4854d202dc00"',
+        '"encoder_hidden_states"',
+        '"logits"',
+        "opset: 18",
+    ):
+        if marker not in text:
+            errors.append(f"measured OPUS-MT ONNX contract missing marker: {marker}")
 
 if UNITY_MANIFEST.is_file():
     text = UNITY_MANIFEST.read_text(encoding="utf-8")
@@ -86,6 +113,19 @@ if UNITY_GATE.is_file():
         if marker not in text:
             errors.append(f"Unity translation asset gate missing reviewed marker: {marker}")
 
+if UNITY_MODEL_PROBE.is_file():
+    text = UNITY_MODEL_PROBE.read_text(encoding="utf-8")
+    for marker in (
+        "UnityOpusMtModelProbe.ValidateAndBuildReport",
+        'new[] { "input_ids", "attention_mask" }',
+        'new[] { "encoder_attention_mask", "input_ids", "encoder_hidden_states" }',
+        'RequireOutput(encoder, "encoder", "last_hidden_state")',
+        'RequireOutput(decoder, "decoder", "logits")',
+        "runtime-execution=unverified quest=unverified",
+    ):
+        if marker not in text:
+            errors.append(f"Unity OPUS-MT import probe missing reviewed marker: {marker}")
+
 if UNITY_EDITOR_ASSETS.is_file():
     text = UNITY_EDITOR_ASSETS.read_text(encoding="utf-8")
     for marker in (
@@ -104,12 +144,22 @@ if CORE_TEST.is_file():
     for marker in (
         "ValidParityVerifiedBundleResolvesReferenceRuntimeSet",
         "NonExactReferenceParityFailsClosed",
-        "MissingMergedDecoderFailsClosed",
+        "MissingReferenceDecoderFailsClosed",
         "TraversalPathIsRejectedEvenWhenRequiredFilesExist",
         "OnnxKindMustMatchOnnxExtension",
     ):
         if marker not in text:
             errors.append(f"translation staging regression test missing marker: {marker}")
+
+if ONNX_TEST.is_file():
+    text = ONNX_TEST.read_text(encoding="utf-8")
+    for marker in (
+        "ReferenceRuntimeUsesNonCachedThreeInputDecoder",
+        "MeasuredShapesLockHiddenAndVocabularyDimensions",
+        "ReferenceRuntimeSizeEqualsMeasuredEncoderPlusDecoder",
+    ):
+        if marker not in text:
+            errors.append(f"OPUS-MT measured ONNX regression test missing marker: {marker}")
 
 if GITIGNORE.is_file():
     ignored = GITIGNORE.read_text(encoding="utf-8")
@@ -140,6 +190,6 @@ if errors:
     raise SystemExit("\n".join(errors))
 
 print(
-    "PASS: local translation assets are parity-gated, hash-verified twice, git-ignored, "
-    "SentencePiece-ready as byte-identical Unity TextAssets, and not promoted as Unity-compatible"
+    "PASS: local translation assets are parity-gated, hash-verified twice, use the measured non-cached "
+    "decoder baseline, expose byte-identical SentencePiece TextAssets, and remain unpromoted until real Unity/Quest validation"
 )
