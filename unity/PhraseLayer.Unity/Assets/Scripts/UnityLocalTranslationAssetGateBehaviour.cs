@@ -10,7 +10,7 @@ namespace PhraseLayer.Unity
     /// </summary>
     public sealed class UnityLocalTranslationAssetGateBehaviour : MonoBehaviour
     {
-        [SerializeField] private TextAsset stagingManifest;
+        [SerializeField] private TextAsset stagingManifest = null;
         [SerializeField] private bool validateOnAwake = true;
         [SerializeField] private string lastReport = string.Empty;
 
