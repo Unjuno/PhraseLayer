@@ -15,7 +15,7 @@
   "versionDefines": [
     {
       "name": "com.unity.ai.inference",
-      "expression": "[2.2.1,2.3.0)",
+      "expression": "[999.0.0,999.1.0)",
       "define": "PHRASELAYER_UNITY_AI_INFERENCE_2_2"
     }
   ],
