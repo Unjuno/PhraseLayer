@@ -120,36 +120,52 @@ jobs:
             .ci/unity-editor-preflight.exit
             .ci/unity-android-preflight.exit
           if-no-files-found: error
-      - name: Publish exact compiler diagnostic status
+      - name: Publish exact compiler diagnostic statuses
         if: ${{ always() && github.event_name == 'push' }}
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const read = path => fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
+            const firstCompilerError = path => {
+              const match = read(path).match(/^.*error CS\d{4}.*$/m);
+              return match ? match[0].replace(/\s+/g, ' ').trim() : '';
+            };
             const editorExit = read('.ci/unity-editor-preflight.exit').trim() || 'missing';
             const androidExit = read('.ci/unity-android-preflight.exit').trim() || 'missing';
-            const passed = editorExit === '0' && androidExit === '0';
-            let diagnostic = '';
-            for (const path of ['.ci/unity-editor-preflight.log', '.ci/unity-android-preflight.log']) {
-              const match = read(path).match(/^.*error CS\d{4}.*$/m);
-              if (match) {
-                diagnostic = match[0].replace(/\s+/g, ' ').trim();
-                break;
-              }
-            }
-            const fallback = `Unity preflight failed Editor=${editorExit} Android=${androidExit}`;
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state: passed ? 'success' : 'failure',
-              context: 'phraselayer/unity-preflight',
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
-              description: passed
-                ? 'Unity Editor and Android C# preflight passed'
-                : (diagnostic || fallback).slice(0, 140)
-            });
+            const editorPassed = editorExit === '0';
+            const androidPassed = androidExit === '0';
+            const editorError = firstCompilerError('.ci/unity-editor-preflight.log');
+            const androidError = firstCompilerError('.ci/unity-android-preflight.log');
+            const targetUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const publish = async (contextName, passed, description) => {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: passed ? 'success' : 'failure',
+                context: contextName,
+                target_url: targetUrl,
+                description: description.slice(0, 140)
+              });
+            };
+            await publish(
+              'phraselayer/unity-editor-preflight',
+              editorPassed,
+              editorPassed ? 'Unity Editor C# preflight passed' : (editorError || `Unity Editor preflight failed exit=${editorExit}`)
+            );
+            await publish(
+              'phraselayer/unity-android-preflight',
+              androidPassed,
+              androidPassed ? 'Unity Android C# preflight passed' : (androidError || `Unity Android preflight failed exit=${androidExit}`)
+            );
+            const allPassed = editorPassed && androidPassed;
+            const aggregateError = editorError || androidError || `Unity preflight failed Editor=${editorExit} Android=${androidExit}`;
+            await publish(
+              'phraselayer/unity-preflight',
+              allPassed,
+              allPassed ? 'Unity Editor and Android C# preflight passed' : aggregateError
+            );
       - name: Enforce compile preflight result
         if: always()
         shell: bash
