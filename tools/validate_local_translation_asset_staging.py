@@ -131,7 +131,7 @@ if UNITY_EDITOR_ASSETS.is_file():
     for marker in (
         "VerifyStagedFile",
         "ComputeSha256",
-        'source.Path + ".bytes"',
+        'sourceAssetPath + ".bytes"',
         "AssetDatabase.Refresh()",
         "AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath)",
         "Imported SentencePiece TextAsset SHA-256 mismatch",
