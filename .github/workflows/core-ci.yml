@@ -35,9 +35,12 @@ jobs:
       - run: python tools/validate_quest_ocr_smoke_harness.py
       - run: python tools/validate_read_vertical_slice.py
       - run: python tools/validate_translation_model_candidate.py
+      - run: python tools/validate_translation_export_probe.py
+      - run: python tools/validate_local_translation_asset_staging.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: python tools/test_prepare_unity_ocr_assets.py
+      - run: python tools/test_prepare_unity_translation_assets.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
       - run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --no-restore
