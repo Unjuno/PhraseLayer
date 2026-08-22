@@ -1,0 +1,116 @@
+name: Unity Build Automation Feedback
+
+on:
+  push:
+    branches: ["agent/multi-sentence-segmentation"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: phraselayer-uba-feedback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uba-feedback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      UNITY_UBA_API_KEY: ${{ secrets.UNITY_UBA_API_KEY }}
+      UNITY_UBA_PROJECT_ID: ${{ vars.UNITY_UBA_PROJECT_ID }}
+      UNITY_UBA_ORG_ID: ${{ vars.UNITY_UBA_ORG_ID }}
+      UNITY_UBA_BUILD_TARGET: ${{ vars.UNITY_UBA_BUILD_TARGET }}
+      UNITY_UBA_POLL_INTERVAL: "30"
+      UNITY_UBA_POLL_TIMEOUT: "3000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test UBA feedback client
+        run: python tools/uba/test_sync_build_status.py
+
+      - name: Check UBA feedback configuration
+        id: config
+        shell: bash
+        run: |
+          if [ -n "$UNITY_UBA_API_KEY" ] && [ -n "$UNITY_UBA_PROJECT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "UBA feedback is not configured. Add UNITY_UBA_API_KEY as a repository secret and UNITY_UBA_PROJECT_ID as a repository variable."
+          fi
+
+      - name: Publish pending UBA status
+        if: steps.config.outputs.configured == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'pending',
+              context: 'phraselayer/uba',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              description: 'Waiting for matching Unity Build Automation build'
+            });
+
+      - name: Mirror UBA build result and diagnostics
+        if: steps.config.outputs.configured == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p .ci/uba
+          python tools/uba/sync_build_status.py --commit "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --output-dir .ci/uba
+
+      - name: Upload UBA feedback artifacts
+        if: ${{ always() && steps.config.outputs.configured == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uba-feedback-${{ github.sha }}
+          path: .ci/uba
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish final UBA status
+        if: ${{ always() && steps.config.outputs.configured == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = { outcome: 'error', diagnostic: 'UBA feedback client ended without a summary file.' };
+            if (fs.existsSync('.ci/uba/uba-feedback.json')) {
+              summary = JSON.parse(fs.readFileSync('.ci/uba/uba-feedback.json', 'utf8'));
+            }
+            const state = summary.outcome === 'success' ? 'success' : (summary.outcome === 'failure' ? 'failure' : 'error');
+            const number = summary.build_number ? ` #${summary.build_number}` : '';
+            const description = (summary.diagnostic || `UBA${number} ${summary.outcome}`).replace(/\s+/g, ' ').slice(0, 140);
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              context: 'phraselayer/uba',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              description
+            });
+
+      - name: Enforce authoritative UBA result
+        if: ${{ always() && steps.config.outputs.configured == 'true' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('.ci/uba/uba-feedback.json')
+          if not path.is_file():
+              raise SystemExit('UBA feedback summary is missing')
+          summary = json.loads(path.read_text(encoding='utf-8'))
+          if summary.get('outcome') != 'success':
+              raise SystemExit('UBA authoritative gate failed: ' + str(summary.get('diagnostic', summary.get('outcome'))))
+          print('UBA authoritative gate PASS')
+          PY

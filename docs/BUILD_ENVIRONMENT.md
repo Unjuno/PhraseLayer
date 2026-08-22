@@ -47,9 +47,26 @@ Reference: https://docs.unity3d.com/Manual/upm-conflicts-auto.html
 
 ## UBA environment capture
 
-`tools/uba/capture-environment.sh` is intended for the UBA **Pre-Build Script** hook. It prints a stable `PHRASELAYER_UBA_ENV_*` block containing the build revision, Unity version, target, builder OS, Android SDK/NDK paths, project editor pin, direct package manifest, and any already-existing `packages-lock.json`.
+`tools/uba/capture-environment.sh` is intended for the UBA **Pre-Build Script** hook. Build Automation requires the script to be committed to source control and configured by a path relative to the repository root. Set the build target's **Advanced Settings -> Pre-Build Script** to:
 
-This script runs before the Unity build process starts, which is the earliest UBA shell hook. It does not mutate the project and must never print credentials.
+```text
+tools/uba/capture-environment.sh
+```
+
+The script prints only reviewed, non-secret build metadata between `PHRASELAYER_UBA_ENV_BEGIN` and `PHRASELAYER_UBA_ENV_END`, including Unity version, Git revision/branch, build number/target, builder OS, Android SDK/NDK paths, project editor pin, direct package manifest, and any already-existing `packages-lock.json`. It does not dump the complete environment and therefore does not leak credentials.
+
+## GitHub -> UBA result feedback
+
+`.github/workflows/uba-feedback.yml` mirrors the authoritative UBA result back to the same Git commit. It polls at 30-second intervals (well below the API's 100 requests/minute limit), matches the UBA build by Git revision, downloads categorized failures and the full log after a failure, extracts concrete `error CSxxxx` diagnostics first, uploads the raw diagnostics as a GitHub artifact, and publishes commit status `phraselayer/uba`.
+
+The workflow is inert until these GitHub repository settings are added:
+
+- Secret `UNITY_UBA_API_KEY` — from Unity Dashboard -> DevOps -> Build Automation -> Settings. Never commit this value.
+- Variable `UNITY_UBA_PROJECT_ID` — the Unity Cloud project GUID.
+- Optional variable `UNITY_UBA_ORG_ID` — organization foreign key. If omitted, the client attempts to discover it from `/projects`.
+- Optional variable `UNITY_UBA_BUILD_TARGET` — build target ID or exact name (for example `PhraseLayer Quest CI`). If omitted, the client selects the target for the current branch when unambiguous.
+
+The API uses `Authorization: Basic <API key>`. `tools/uba/sync_build_status.py` uses only Python's standard library and never prints the API key. If a newer Git push supersedes the previous one, GitHub concurrency cancels the stale polling job, matching UBA's auto-cancel behavior.
 
 ## Feedback loop
 
@@ -59,9 +76,13 @@ The intended iteration loop is:
 push
   -> GitHub deterministic preflight
        -> exact CSxxxx diagnostic + logs + environment artifact
+       -> phraselayer/unity-preflight
   -> UBA real Unity build
        -> authoritative package/script/Android result
+  -> GitHub UBA feedback
+       -> failure categories + full log artifact
+       -> phraselayer/uba with concrete CSxxxx when available
   -> fix
 ```
 
-A later integration may poll the UBA REST API from GitHub Actions using Unity Service Account credentials stored only as GitHub Actions secrets. That can mirror UBA result/log metadata back into GitHub without operating a PhraseLayer server. No Unity credential or license file may be committed to this repository.
+No PhraseLayer server is required for this loop. GitHub Actions talks directly to the Unity Build Automation REST API using the repository secret, and no Unity credential or license file is committed to the repository.
