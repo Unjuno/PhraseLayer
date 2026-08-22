@@ -67,24 +67,43 @@
       "id": "opus-mt-en-jap",
       "purpose": "translation-en-ja",
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
+      "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
       "architecture": "marian",
       "source_language": "en",
       "target_language": "ja",
+      "upstream_target_language": "jap",
       "tokenization": "SentencePiece",
-      "upstream_head_observed": "a863894",
-      "export_format": "onnx-required-not-yet-produced",
-      "required_export_artifacts": [
-        "encoder_model.onnx",
-        "decoder_model.onnx",
+      "upstream_source_artifacts": [
+        "config.json",
+        "generation_config.json",
+        "pytorch_model.bin",
         "source.spm",
         "target.spm",
-        "vocab.json",
-        "generation_config.json"
+        "tokenizer_config.json",
+        "vocab.json"
       ],
+      "upstream_weight_artifact": "pytorch_model.bin",
+      "export_format": "onnx-required-not-yet-produced",
+      "export_status": "not-produced",
+      "required_export_components": [
+        "encoder",
+        "decoder"
+      ],
+      "export_filenames": "unverified-until-export",
+      "generation_contract": {
+        "bos_token_id": 0,
+        "decoder_start_token_id": 46275,
+        "eos_token_id": 0,
+        "forced_eos_token_id": 0,
+        "pad_token_id": 46275,
+        "max_length": 512,
+        "num_beams": 4,
+        "renormalize_logits": true
+      },
       "runtime_target": "com.unity.ai.inference@2.2.1",
       "runtime_compatibility": "unverified-reviewed-onnx-export-required",
       "license": "Apache-2.0",
-      "license_status": "upstream-metadata-verified; full-revision-and-export-redistribution-review-pending",
+      "license_status": "full-upstream-revision-and-license-metadata-verified; export-redistribution-review-pending",
       "bundled": false
     },
     {
