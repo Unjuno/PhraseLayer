@@ -1,0 +1,21 @@
+{
+  "name": "PhraseLayer preflight",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "8.0.423"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    }
+  },
+  "postCreateCommand": "chmod +x tools/ci/unity_preflight.sh tools/uba/capture-environment.sh && dotnet --version && python --version",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-python.python"
+      ]
+    }
+  }
+}

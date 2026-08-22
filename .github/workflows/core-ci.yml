@@ -16,10 +16,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "8.0.423"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python tools/validate_build_environment.py
       - run: python tools/validate_repo.py
       - run: python tools/validate_ci_references.py
       - run: python tools/validate_local_only.py
@@ -48,14 +49,39 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "8.0.423"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Validate preflight contract
         run: |
+          python tools/validate_build_environment.py
           python tools/validate_unity_compile_preflight.py
           python tools/validate_unity_csharp9.py
+      - name: Capture preflight environment
+        shell: bash
+        run: |
+          mkdir -p .ci
+          {
+            echo "commit=$GITHUB_SHA"
+            echo "runner_os=$RUNNER_OS"
+            echo "dotnet=$(dotnet --version)"
+            echo "python=$(python --version 2>&1)"
+            echo "--- global.json ---"
+            cat global.json
+            echo "--- ci/unity-environment.lock.json ---"
+            cat ci/unity-environment.lock.json
+            echo "--- ProjectVersion.txt ---"
+            cat unity/PhraseLayer.Unity/ProjectSettings/ProjectVersion.txt
+            echo "--- Packages/manifest.json ---"
+            cat unity/PhraseLayer.Unity/Packages/manifest.json
+            echo "--- Packages/packages-lock.json ---"
+            if [ -f unity/PhraseLayer.Unity/Packages/packages-lock.json ]; then
+              cat unity/PhraseLayer.Unity/Packages/packages-lock.json
+            else
+              echo "<not committed yet>"
+            fi
+          } > .ci/unity-environment.txt
       - name: Compile Unity Editor guarded branches
         shell: bash
         run: |
@@ -82,12 +108,13 @@ jobs:
           python tools/extract_unity_compile_errors.py .ci/unity-editor-preflight.log || true
           echo "## Android Player diagnostics"
           python tools/extract_unity_compile_errors.py .ci/unity-android-preflight.log || true
-      - name: Upload compile preflight logs
+      - name: Upload compile preflight logs and environment
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unity-compile-preflight-logs
           path: |
+            .ci/unity-environment.txt
             .ci/unity-editor-preflight.log
             .ci/unity-android-preflight.log
             .ci/unity-editor-preflight.exit

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "unity": {
+    "editor_version": "6000.0.66f2",
+    "project_subfolder": "unity/PhraseLayer.Unity",
+    "build_target": "Android",
+    "csharp_language_version": "9.0",
+    "api_compatibility": "netstandard2.1",
+    "uba_builder_os": "Windows 11 24H2",
+    "android_sdk": 36
+  },
+  "host_preflight": {
+    "dotnet_sdk": "8.0.423",
+    "python": "3.12",
+    "editor_project": "tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj",
+    "android_project": "tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityAndroid.Compile.csproj",
+    "editor_defines": [
+      "UNITY_5_3_OR_NEWER",
+      "UNITY_EDITOR",
+      "PHRASELAYER_UNITY_AI_INFERENCE_2_2"
+    ],
+    "android_defines": [
+      "UNITY_5_3_OR_NEWER",
+      "UNITY_ANDROID",
+      "PHRASELAYER_UNITY_AI_INFERENCE_2_2"
+    ]
+  },
+  "direct_packages": {
+    "com.unjuno.phraselayer.core": "file:../../../src/PhraseLayer.Core",
+    "com.meta.xr.mrutilitykit": "85.0.0",
+    "com.meta.xr.sdk.core": "85.0.0",
+    "com.unity.ai.inference": "2.2.1",
+    "com.unity.xr.management": "4.5.4",
+    "com.unity.xr.meta-openxr": "2.4.0",
+    "com.unity.xr.openxr": "1.15.1",
+    "com.unity.ugui": "2.0.0"
+  },
+  "upm_lock": {
+    "path": "unity/PhraseLayer.Unity/Packages/packages-lock.json",
+    "policy": "capture-from-real-unity-resolution-do-not-fabricate",
+    "required_after_first_reviewed_resolution": true
+  }
+}

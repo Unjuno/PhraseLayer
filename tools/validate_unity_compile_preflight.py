@@ -19,6 +19,8 @@ RECOGNIZER_RUNTIME = UNITY_SCRIPTS / "UnityPaddleOcrRecognizerRuntime.cs"
 RUNTIME_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "PhraseLayer.Unity.asmdef"
 EDITOR_ASMDEF = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
 WORKFLOW = ROOT / ".github" / "workflows" / "core-ci.yml"
+GLOBAL_JSON = ROOT / "global.json"
+ENVIRONMENT_LOCK = ROOT / "ci" / "unity-environment.lock.json"
 
 errors: list[str] = []
 
@@ -42,10 +44,7 @@ def validate_asmdef(path: Path) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     defines = data.get("versionDefines", [])
     constraints = data.get("defineConstraints", [])
-    require(
-        "!UNITY_6000_0_OR_NEWER" not in constraints,
-        f"{path.name} must not exclude the pinned Unity 6000 editor",
-    )
+    require("!UNITY_6000_0_OR_NEWER" not in constraints, f"{path.name} must not exclude the pinned Unity 6000 editor")
     require(
         any(
             item.get("name") == "com.unity.ai.inference"
@@ -55,10 +54,7 @@ def validate_asmdef(path: Path) -> None:
         ),
         f"{path.name} must mirror the reviewed Unity Inference 2.2.x version define",
     )
-    require(
-        "Unity.InferenceEngine" in data.get("references", []),
-        f"{path.name} must directly reference Unity.InferenceEngine",
-    )
+    require("Unity.InferenceEngine" in data.get("references", []), f"{path.name} must directly reference Unity.InferenceEngine")
 
 
 def main() -> int:
@@ -71,6 +67,8 @@ def main() -> int:
     detector_runtime = read(DETECTOR_RUNTIME)
     recognizer_runtime = read(RECOGNIZER_RUNTIME)
     workflow = read(WORKFLOW)
+    global_json = read(GLOBAL_JSON)
+    environment_lock = read(ENVIRONMENT_LOCK)
 
     for marker in (
         "PhraseLayer.UnityShell.Compile",
@@ -82,6 +80,7 @@ def main() -> int:
         require(marker in directory_props, f"compile preflight Directory.Build.props missing isolation marker: {marker}")
 
     for marker in (
+        "<TargetFramework>netstandard2.1</TargetFramework>",
         "<LangVersion>9.0</LangVersion>",
         "UNITY_5_3_OR_NEWER",
         "UNITY_EDITOR",
@@ -97,6 +96,7 @@ def main() -> int:
         require(marker in editor_csproj, f"Unity Editor shell compile project missing required marker: {marker}")
 
     for marker in (
+        "<TargetFramework>netstandard2.1</TargetFramework>",
         "<LangVersion>9.0</LangVersion>",
         "UNITY_5_3_OR_NEWER",
         "UNITY_ANDROID",
@@ -111,18 +111,9 @@ def main() -> int:
     ):
         require(marker in android_csproj, f"Unity Android compile project missing required marker: {marker}")
 
-    require(
-        "UnityAndroidStubs.cs" not in editor_csproj,
-        "Unity Editor compile preflight must not include Android permission stubs",
-    )
-    require(
-        "UNITY_EDITOR" not in android_csproj,
-        "Android Player compile preflight must not define UNITY_EDITOR; otherwise Quest-only branches remain hidden",
-    )
-    require(
-        "Assets/Editor/**/*.cs" not in android_csproj,
-        "Android Player compile preflight must compile runtime scripts only",
-    )
+    require("UnityAndroidStubs.cs" not in editor_csproj, "Unity Editor compile preflight must not include Android permission stubs")
+    require("UNITY_EDITOR" not in android_csproj, "Android Player compile preflight must not define UNITY_EDITOR; otherwise Quest-only branches remain hidden")
+    require("Assets/Editor/**/*.cs" not in android_csproj, "Android Player compile preflight must compile runtime scripts only")
 
     for marker in (
         "public sealed class RenderTexture : Texture",
@@ -167,18 +158,9 @@ def main() -> int:
         (detector_runtime, "PP-OCR detector runtime"),
         (recognizer_runtime, "PP-OCR recognizer runtime"),
     ):
-        require(
-            "worker.PeekOutput() as Tensor<float>" in runtime_text,
-            f"{label} must recover the documented float output tensor from Worker.PeekOutput",
-        )
-        require(
-            "outputTensor.DownloadToArray()" in runtime_text,
-            f"{label} must use the documented synchronous Tensor<T>.DownloadToArray baseline",
-        )
-        require(
-            "ReadbackAndClone() as Tensor<float>" not in runtime_text,
-            f"{label} must not depend on a redundant readback cast in the reference synchronous path",
-        )
+        require("worker.PeekOutput() as Tensor<float>" in runtime_text, f"{label} must recover the documented float output tensor from Worker.PeekOutput")
+        require("outputTensor.DownloadToArray()" in runtime_text, f"{label} must use the documented synchronous Tensor<T>.DownloadToArray baseline")
+        require("ReadbackAndClone() as Tensor<float>" not in runtime_text, f"{label} must not depend on a redundant readback cast in the reference synchronous path")
 
     for marker in (
         "Compile Unity Editor guarded branches",
@@ -187,8 +169,13 @@ def main() -> int:
         "phraselayer/unity-preflight",
         "target_url:",
         "GITHUB_RUN_ID",
+        "unity-environment.txt",
+        "validate_build_environment.py",
     ):
-        require(marker in workflow, f"Core CI missing MCP-readable Unity compiler diagnostic marker: {marker}")
+        require(marker in workflow, f"Core CI missing MCP-readable Unity compiler/environment diagnostic marker: {marker}")
+
+    require('"version": "8.0.423"' in global_json, "global.json must pin the reviewed .NET 8 SDK")
+    require('"api_compatibility": "netstandard2.1"' in environment_lock, "environment lock must pin netstandard2.1 compatibility")
 
     validate_asmdef(RUNTIME_ASMDEF)
     validate_asmdef(EDITOR_ASMDEF)
@@ -198,9 +185,7 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
 
-    print(
-        "PASS: Unity compile preflight pins C# 9, keeps the Unity 6000 assemblies enabled, isolates Editor and Android generated sources, covers guarded branches with reviewed Inference Engine 2.2.1 signatures, and publishes exact Roslyn diagnostics before UBA"
-    )
+    print("PASS: Unity preflight pins C# 9 + netstandard2.1, isolates Editor/Android sources, mirrors reviewed Inference 2.2.1 signatures, and publishes exact compiler/environment diagnostics before UBA")
     return 0
 
 
