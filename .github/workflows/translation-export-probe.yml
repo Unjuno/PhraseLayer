@@ -1,0 +1,100 @@
+name: Translation export probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ci/translation-export-probe.request
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Publish pending probe status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'pending',
+              context: 'phraselayer/translation-export-probe',
+              description: 'Pinned OPUS-MT ONNX export probe is running',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+            });
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned-revision export toolchain
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "optimum-onnx[onnxruntime]" "transformers<5" sentencepiece torch onnx
+          python -m pip freeze > translation-export-pip-freeze.txt
+
+      - name: Export and inspect pinned OPUS-MT
+        id: export
+        shell: bash
+        run: |
+          mkdir -p .ci
+          set +e
+          python tools/probe_translation_export.py \
+            --output "$RUNNER_TEMP/opus-mt-en-jap-onnx" \
+            --report ".ci/translation-export-probe.json"
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload probe metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-export-probe
+          path: |
+            .ci/translation-export-probe.json
+            translation-export-pip-freeze.txt
+          if-no-files-found: error
+
+      - name: Publish final probe status
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          EXPORT_EXIT_CODE: ${{ steps.export.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = '.ci/translation-export-probe.json';
+            let report = null;
+            if (fs.existsSync(reportPath)) {
+              try {
+                report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+              } catch (error) {
+                core.warning(`Could not parse translation export report: ${error}`);
+              }
+            }
+            const exitCode = process.env.EXPORT_EXIT_CODE || 'missing';
+            const passed = exitCode === '0' && report && report.status === 'pass';
+            const detail = passed
+              ? `OPUS-MT export probe passed; ${(report.files || []).filter(item => item.path.endsWith('.onnx')).length} ONNX files measured`
+              : `OPUS-MT export probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'phraselayer/translation-export-probe',
+              description: detail.slice(0, 140),
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+            });
+            if (!passed) {
+              core.setFailed(detail);
+            }
