@@ -25,8 +25,16 @@ if PROBE.is_file():
         "operator_counts",
         "external_data_locations",
         '"runtime_status": "unverified-real-unity-import-required"',
+        "tokenizer_fixture(tokenizer)",
+        '"input_ids": input_ids',
+        '"attention_mask": attention_mask',
+        '"decoded_skip_special_tokens"',
+        '"tokens": [str(value) for value in tokenizer.convert_ids_to_tokens(input_ids)]',
+        "compare_tokenizer_parity(tokenizer_reference, tokenizer_exported)",
+        'report["tokenizer_parity"]["exact"]',
         "compare_parity(reference, onnx)",
         'report["parity"]["exact"]',
+        '"encoder_plus_decoder"',
         "trust_remote_code=False",
         "do_validation=True",
         "monolith=False",
@@ -84,4 +92,7 @@ if DOC.is_file():
 if errors:
     raise SystemExit("\n".join(errors))
 
-print("PASS: OPUS-MT export/parity probe preserves metadata-only artifacts and real-Unity/Quest promotion gates")
+print(
+    "PASS: OPUS-MT export/parity probe preserves metadata-only weights policy, exact tokenizer fixtures, "
+    "generation parity, and real-Unity/Quest promotion gates"
+)
