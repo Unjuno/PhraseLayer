@@ -67,21 +67,22 @@ namespace PhraseLayer.Core.Translation
 
     /// <summary>
     /// Canonical correctness-first runtime set selected from a parity-verified local OPUS-MT export.
-    /// The first Quest implementation intentionally uses encoder + merged decoder. Decoder cache optimization
-    /// is deferred until real-device latency measurements justify the extra state-management surface.
+    /// The first Quest implementation intentionally uses the non-cached decoder and reruns the complete
+    /// generated prefix at each step. The measured merged decoder needs KV-cache tensors plus a branch flag;
+    /// that larger state-management surface is deferred until real-device profiling justifies it.
     /// </summary>
     public sealed class LocalTranslationRuntimeSet
     {
         public LocalTranslationRuntimeSet(
             StagedTranslationAsset encoder,
-            StagedTranslationAsset mergedDecoder,
+            StagedTranslationAsset decoder,
             StagedTranslationAsset sourceSentencePiece,
             StagedTranslationAsset targetSentencePiece,
             StagedTranslationAsset vocabulary,
             StagedTranslationAsset generationConfig)
         {
             Encoder = encoder ?? throw new ArgumentNullException(nameof(encoder));
-            MergedDecoder = mergedDecoder ?? throw new ArgumentNullException(nameof(mergedDecoder));
+            Decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
             SourceSentencePiece = sourceSentencePiece ?? throw new ArgumentNullException(nameof(sourceSentencePiece));
             TargetSentencePiece = targetSentencePiece ?? throw new ArgumentNullException(nameof(targetSentencePiece));
             Vocabulary = vocabulary ?? throw new ArgumentNullException(nameof(vocabulary));
@@ -89,7 +90,7 @@ namespace PhraseLayer.Core.Translation
         }
 
         public StagedTranslationAsset Encoder { get; }
-        public StagedTranslationAsset MergedDecoder { get; }
+        public StagedTranslationAsset Decoder { get; }
         public StagedTranslationAsset SourceSentencePiece { get; }
         public StagedTranslationAsset TargetSentencePiece { get; }
         public StagedTranslationAsset Vocabulary { get; }
@@ -103,7 +104,7 @@ namespace PhraseLayer.Core.Translation
         public const string ExpectedRuntimeStatus = "unverified-real-unity-import-required";
 
         public const string EncoderPath = "encoder_model.onnx";
-        public const string MergedDecoderPath = "decoder_model_merged.onnx";
+        public const string DecoderPath = "decoder_model.onnx";
         public const string SourceSentencePiecePath = "source.spm";
         public const string TargetSentencePiecePath = "target.spm";
         public const string VocabularyPath = "vocab.json";
@@ -138,7 +139,7 @@ namespace PhraseLayer.Core.Translation
 
             return new LocalTranslationRuntimeSet(
                 Require(byPath, EncoderPath, "onnx"),
-                Require(byPath, MergedDecoderPath, "onnx"),
+                Require(byPath, DecoderPath, "onnx"),
                 Require(byPath, SourceSentencePiecePath, "support"),
                 Require(byPath, TargetSentencePiecePath, "support"),
                 Require(byPath, VocabularyPath, "support"),
@@ -154,7 +155,7 @@ namespace PhraseLayer.Core.Translation
                 " parity=exact" +
                 " runtime_status=" + manifest.RuntimeStatus +
                 " encoder=" + runtime.Encoder.Path +
-                " decoder=" + runtime.MergedDecoder.Path +
+                " decoder=" + runtime.Decoder.Path +
                 " files=" + manifest.Files.Count;
         }
 
