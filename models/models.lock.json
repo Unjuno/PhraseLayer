@@ -67,8 +67,24 @@
       "id": "opus-mt-en-jap",
       "purpose": "translation-en-ja",
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
+      "architecture": "marian",
+      "source_language": "en",
+      "target_language": "ja",
+      "tokenization": "SentencePiece",
+      "upstream_head_observed": "a863894",
+      "export_format": "onnx-required-not-yet-produced",
+      "required_export_artifacts": [
+        "encoder_model.onnx",
+        "decoder_model.onnx",
+        "source.spm",
+        "target.spm",
+        "vocab.json",
+        "generation_config.json"
+      ],
+      "runtime_target": "com.unity.ai.inference@2.2.1",
+      "runtime_compatibility": "unverified-reviewed-onnx-export-required",
       "license": "Apache-2.0",
-      "license_status": "candidate-unverified-at-pinned-revision",
+      "license_status": "upstream-metadata-verified; full-revision-and-export-redistribution-review-pending",
       "bundled": false
     },
     {
