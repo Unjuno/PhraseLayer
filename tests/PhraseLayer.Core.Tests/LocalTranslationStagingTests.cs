@@ -18,9 +18,9 @@ namespace PhraseLayer.Core.Tests
             var report = LocalTranslationStagingContract.ValidateAndBuildReport(manifest);
 
             Assert.Equal(LocalTranslationStagingContract.EncoderPath, runtime.Encoder.Path);
-            Assert.Equal(LocalTranslationStagingContract.MergedDecoderPath, runtime.MergedDecoder.Path);
+            Assert.Equal(LocalTranslationStagingContract.DecoderPath, runtime.Decoder.Path);
             Assert.Contains("parity=exact", report);
-            Assert.Contains("decoder=decoder_model_merged.onnx", report);
+            Assert.Contains("decoder=decoder_model.onnx", report);
         }
 
         [Fact]
@@ -35,15 +35,15 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public void MissingMergedDecoderFailsClosed()
+        public void MissingReferenceDecoderFailsClosed()
         {
             var files = CreateRequiredFiles();
-            files.RemoveAll(item => item.Path == LocalTranslationStagingContract.MergedDecoderPath);
+            files.RemoveAll(item => item.Path == LocalTranslationStagingContract.DecoderPath);
 
             var error = Assert.Throws<InvalidOperationException>(
                 () => LocalTranslationStagingContract.ValidateAndResolve(CreateManifest(files)));
 
-            Assert.Contains("decoder_model_merged.onnx", error.Message);
+            Assert.Contains("decoder_model.onnx", error.Message);
         }
 
         [Fact]
@@ -93,7 +93,7 @@ namespace PhraseLayer.Core.Tests
             return new List<StagedTranslationAsset>
             {
                 new StagedTranslationAsset(LocalTranslationStagingContract.EncoderPath, 10, Digest, "onnx"),
-                new StagedTranslationAsset(LocalTranslationStagingContract.MergedDecoderPath, 10, Digest, "onnx"),
+                new StagedTranslationAsset(LocalTranslationStagingContract.DecoderPath, 10, Digest, "onnx"),
                 new StagedTranslationAsset(LocalTranslationStagingContract.SourceSentencePiecePath, 10, Digest, "support"),
                 new StagedTranslationAsset(LocalTranslationStagingContract.TargetSentencePiecePath, 10, Digest, "support"),
                 new StagedTranslationAsset(LocalTranslationStagingContract.VocabularyPath, 10, Digest, "support"),
