@@ -41,6 +41,11 @@ def validate_asmdef(path: Path) -> None:
         return
     data = json.loads(path.read_text(encoding="utf-8"))
     defines = data.get("versionDefines", [])
+    constraints = data.get("defineConstraints", [])
+    require(
+        "!UNITY_6000_0_OR_NEWER" not in constraints,
+        f"{path.name} must not exclude the pinned Unity 6000 editor",
+    )
     require(
         any(
             item.get("name") == "com.unity.ai.inference"
@@ -139,7 +144,6 @@ def main() -> int:
     ):
         require(marker in android_stubs, f"Android compile stubs missing permission surface: {marker}")
 
-    # Mirror the public Unity Inference Engine 2.2.1 compile surface used by PhraseLayer.
     for marker in (
         "namespace Unity.InferenceEngine",
         "public sealed class ModelAsset",
@@ -176,8 +180,6 @@ def main() -> int:
             f"{label} must not depend on a redundant readback cast in the reference synchronous path",
         )
 
-    # The hosted Roslyn gate is the fast syntax/type checker. Keep its exact compiler diagnostics
-    # visible through a commit status so the GitHub connector can diagnose failures without UBA logs.
     for marker in (
         "Compile Unity Editor guarded branches",
         "Compile Android Player guarded branches",
@@ -197,7 +199,7 @@ def main() -> int:
         return 1
 
     print(
-        "PASS: Unity compile preflight pins C# 9, isolates Editor and Android generated sources, covers guarded branches with reviewed Inference Engine 2.2.1 signatures, and publishes exact Roslyn diagnostics before UBA"
+        "PASS: Unity compile preflight pins C# 9, keeps the Unity 6000 assemblies enabled, isolates Editor and Android generated sources, covers guarded branches with reviewed Inference Engine 2.2.1 signatures, and publishes exact Roslyn diagnostics before UBA"
     )
     return 0
 
