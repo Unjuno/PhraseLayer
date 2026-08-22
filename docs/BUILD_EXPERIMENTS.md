@@ -29,6 +29,22 @@ Interpretation:
 - the same script compiler failure remains: Meta dependency under-specification is not sufficient to explain the failure; continue isolation in PhraseLayer/Inference/Editor surfaces;
 - package resolution fails earlier: revert only the experimental dependency addition and record the exact package error.
 
+## Experiment B — diagnostic transport control
+
+Hypothesis: the GitHub preflight can surface the exact compiler family and Actions run without changing PhraseLayer runtime code.
+
+Controlled change:
+
+- documentation-only commit;
+- no Unity source, package, asmdef, model, or build-setting change;
+- allow both GitHub CI and Unity Build Automation to run from the same commit.
+
+Interpretation:
+
+- `phraselayer/unity-editor-preflight` / `phraselayer/unity-android-preflight` expose a `CSxxxx` diagnostic: fix that host-reproducible defect before interpreting UBA;
+- host preflight is green but UBA still reports Script Compiler Error: the residual defect is specific to real Unity/package assembly resolution and should be isolated there;
+- status contains a run URL: GitHub MCP can traverse run -> job -> log directly, eliminating manual screenshot diagnosis for future experiments.
+
 ## Preflight observability contract
 
 GitHub Core CI publishes `phraselayer/unity-preflight` on every push. The status must contain a link to the exact Actions run and, on failure, the first `error CSxxxx` diagnostic when one is available. The associated artifact preserves Editor and Android compile logs plus the pinned environment snapshot.
