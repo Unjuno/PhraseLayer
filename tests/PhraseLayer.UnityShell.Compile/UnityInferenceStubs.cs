@@ -70,7 +70,6 @@ namespace Unity.InferenceEngine
         public static Model Load(ModelAsset asset) => new Model();
     }
 
-    // Public API fidelity matters here because this file exists specifically to catch compile-time drift before UBA.
     [Serializable]
     public struct TensorShape
     {
@@ -152,16 +151,39 @@ namespace Unity.InferenceEngine
 
     public sealed class Worker : IDisposable
     {
+        private readonly Dictionary<string, Tensor> namedInputs = new Dictionary<string, Tensor>(StringComparer.Ordinal);
         private Tensor output;
 
         public Worker(Model model, BackendType backendType) { }
+
+        public void SetInput(string name, Tensor input)
+        {
+            namedInputs[name] = input;
+            output = input;
+        }
+
+        public void SetInput(int index, Tensor input)
+        {
+            output = input;
+        }
+
+        public void Schedule()
+        {
+        }
 
         public void Schedule(Tensor input)
         {
             output = input;
         }
 
+        public void Schedule(params Tensor[] inputs)
+        {
+            if (inputs != null && inputs.Length > 0) output = inputs[0];
+        }
+
         public Tensor PeekOutput() => output;
+        public Tensor PeekOutput(int index) => output;
+        public Tensor PeekOutput(string name) => output;
         public void Dispose() { }
     }
 }
