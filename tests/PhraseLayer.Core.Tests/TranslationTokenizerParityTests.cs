@@ -94,8 +94,8 @@ namespace PhraseLayer.Core.Tests
 
             public IReadOnlyList<int> Encode(string text)
             {
-                IReadOnlyList<int> result;
-                if (!encodings.TryGetValue(text, out result))
+                IReadOnlyList<int>? result;
+                if (!encodings.TryGetValue(text, out result) || result == null)
                     throw new InvalidOperationException("Unknown fixture input: " + text);
                 return result;
             }
@@ -103,8 +103,8 @@ namespace PhraseLayer.Core.Tests
             public string Decode(IReadOnlyList<int> tokenIds)
             {
                 var key = string.Join(",", tokenIds);
-                string result;
-                if (!decodings.TryGetValue(key, out result))
+                string? result;
+                if (!decodings.TryGetValue(key, out result) || result == null)
                     throw new InvalidOperationException("Unknown fixture token sequence: " + key);
                 return result;
             }

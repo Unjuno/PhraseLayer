@@ -32,9 +32,9 @@ namespace PhraseLayer.Core.Tests
         public void ReferenceRuntimeSizeEqualsMeasuredEncoderPlusDecoder()
         {
             Assert.Equal(
+                OpusMtEnJapMeasuredOnnxContract.ReferenceRuntimeSizeBytes,
                 OpusMtEnJapMeasuredOnnxContract.Encoder.SizeBytes +
-                OpusMtEnJapMeasuredOnnxContract.Decoder.SizeBytes,
-                OpusMtEnJapMeasuredOnnxContract.ReferenceRuntimeSizeBytes);
+                OpusMtEnJapMeasuredOnnxContract.Decoder.SizeBytes);
             Assert.Equal(18, OpusMtEnJapMeasuredOnnxContract.Encoder.Opset);
             Assert.Equal(18, OpusMtEnJapMeasuredOnnxContract.Decoder.Opset);
         }
