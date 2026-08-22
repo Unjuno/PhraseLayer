@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "models" / "models.lock.json"
+CORE_CONTRACT = ROOT / "src" / "PhraseLayer.Core" / "OpusMtTranslationContract.cs"
 
 manifest = json.loads(LOCK.read_text(encoding="utf-8"))
 candidates = manifest.get("candidates", [])
@@ -69,6 +70,38 @@ expected_generation = {
 if translation.get("generation_contract") != expected_generation:
     violations.append("translation generation_contract drift from the pinned upstream generation config")
 
+# The platform-neutral search policy must consume exactly the same pinned generation values. This catches a
+# particularly dangerous class of drift where models.lock.json is correct but the on-device decoder silently uses
+# different special-token IDs, beam width, or max length.
+if not CORE_CONTRACT.is_file():
+    violations.append("missing Core OPUS-MT generation contract: src/PhraseLayer.Core/OpusMtTranslationContract.cs")
+else:
+    core = CORE_CONTRACT.read_text(encoding="utf-8")
+    expected_core_constants = {
+        "BosTokenId": expected_generation["bos_token_id"],
+        "DecoderStartTokenId": expected_generation["decoder_start_token_id"],
+        "EosTokenId": expected_generation["eos_token_id"],
+        "ForcedEosTokenId": expected_generation["forced_eos_token_id"],
+        "PadTokenId": expected_generation["pad_token_id"],
+        "MaxLength": expected_generation["max_length"],
+        "BeamWidth": expected_generation["num_beams"],
+    }
+    for name, value in expected_core_constants.items():
+        marker = f"public const int {name} = {value};"
+        if marker not in core:
+            violations.append(f"Core OPUS-MT generation contract missing pinned marker: {marker}")
+    for marker in (
+        "public const double LengthPenalty = 1.0;",
+        "new ForcedEosTranslationBackend(",
+        "ForcedEosTokenId,",
+        "MaxLength);",
+        "new TranslationGenerationOptions(",
+        "beamWidth: BeamWidth",
+        "maxLength: MaxLength",
+    ):
+        if marker not in core:
+            violations.append(f"Core OPUS-MT generation contract missing reviewed behavior: {marker}")
+
 # Do not let a guessed ONNX filename become a false reproducibility claim. The export must be produced,
 # inspected, hash-pinned, and then promoted from this component-level contract.
 if "required_export_artifacts" in translation:
@@ -80,4 +113,7 @@ if translation.get("bundled") is True:
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: OPUS-MT source revision, source artifacts, generation contract, and unproduced ONNX boundary are pinned")
+print(
+    "PASS: OPUS-MT source revision, source artifacts, generation contract, Core forced-EOS policy, "
+    "and unproduced ONNX boundary are pinned"
+)
