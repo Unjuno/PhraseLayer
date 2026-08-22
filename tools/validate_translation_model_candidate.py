@@ -15,13 +15,20 @@ if translation is None:
 expected = {
     "id": "opus-mt-en-jap",
     "upstream": "Helsinki-NLP/opus-mt-en-jap",
+    "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
     "architecture": "marian",
     "source_language": "en",
     "target_language": "ja",
+    "upstream_target_language": "jap",
     "tokenization": "SentencePiece",
+    "upstream_weight_artifact": "pytorch_model.bin",
     "export_format": "onnx-required-not-yet-produced",
+    "export_status": "not-produced",
+    "export_filenames": "unverified-until-export",
     "runtime_target": "com.unity.ai.inference@2.2.1",
     "runtime_compatibility": "unverified-reviewed-onnx-export-required",
+    "license": "Apache-2.0",
+    "license_status": "full-upstream-revision-and-license-metadata-verified; export-redistribution-review-pending",
     "bundled": False,
 }
 
@@ -30,30 +37,47 @@ for key, value in expected.items():
     if translation.get(key) != value:
         violations.append(f"translation candidate {key} expected {value!r} but found {translation.get(key)!r}")
 
-observed = translation.get("upstream_head_observed", "")
-if re.fullmatch(r"[0-9a-f]{7,40}", observed) is None:
-    violations.append("translation upstream_head_observed must be a hexadecimal Git revision observation")
+revision = translation.get("revision", "")
+if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+    violations.append("translation revision must be a full 40-character Git revision")
 
-required_artifacts = translation.get("required_export_artifacts")
-expected_artifacts = [
-    "encoder_model.onnx",
-    "decoder_model.onnx",
+expected_source_artifacts = [
+    "config.json",
+    "generation_config.json",
+    "pytorch_model.bin",
     "source.spm",
     "target.spm",
+    "tokenizer_config.json",
     "vocab.json",
-    "generation_config.json",
 ]
-if required_artifacts != expected_artifacts:
-    violations.append(
-        "translation required_export_artifacts must remain the reviewed encoder/decoder/tokenizer/generation baseline"
-    )
+if translation.get("upstream_source_artifacts") != expected_source_artifacts:
+    violations.append("translation upstream_source_artifacts drift from the reviewed revision tree")
 
-# A short observed upstream HEAD is not sufficient for redistribution. A real export may only become bundleable
-# after the lock file is upgraded to a full revision plus hash-pinned exported artifacts.
-if translation.get("bundled") is True and len(observed) != 40:
-    violations.append("translation model cannot be bundled without a full 40-character upstream revision")
+if translation.get("required_export_components") != ["encoder", "decoder"]:
+    violations.append("translation ONNX export must retain explicit encoder and decoder components")
+
+expected_generation = {
+    "bos_token_id": 0,
+    "decoder_start_token_id": 46275,
+    "eos_token_id": 0,
+    "forced_eos_token_id": 0,
+    "pad_token_id": 46275,
+    "max_length": 512,
+    "num_beams": 4,
+    "renormalize_logits": True,
+}
+if translation.get("generation_contract") != expected_generation:
+    violations.append("translation generation_contract drift from the pinned upstream generation config")
+
+# Do not let a guessed ONNX filename become a false reproducibility claim. The export must be produced,
+# inspected, hash-pinned, and then promoted from this component-level contract.
+if "required_export_artifacts" in translation:
+    violations.append("translation candidate must not claim unproduced ONNX filenames as required_export_artifacts")
+
+if translation.get("bundled") is True:
+    violations.append("translation model must remain unbundled until exported artifacts are hash-pinned and Quest-tested")
 
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: local translation candidate remains unbundled and export-gated with Marian/SentencePiece requirements")
+print("PASS: OPUS-MT source revision, source artifacts, generation contract, and unproduced ONNX boundary are pinned")
