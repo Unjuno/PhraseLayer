@@ -44,6 +44,7 @@ jobs:
       - run: python tools/validate_translation_model_candidate.py
       - run: python tools/validate_translation_export_probe.py
       - run: python tools/validate_local_translation_asset_staging.py
+      - run: python tools/test_validate_translation_quality_review.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: python tools/test_prepare_unity_ocr_assets.py
