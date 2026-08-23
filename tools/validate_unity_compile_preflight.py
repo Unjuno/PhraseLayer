@@ -167,12 +167,14 @@ def main() -> int:
         "Compile Android Player guarded branches",
         "error CS\\d{4}",
         "phraselayer/unity-preflight",
-        "target_url:",
+        "phraselayer/unity-run-${process.env.GITHUB_RUN_ID}",
         "GITHUB_RUN_ID",
         "unity-environment.txt",
         "validate_build_environment.py",
     ):
         require(marker in workflow, f"Core CI missing MCP-readable Unity compiler/environment diagnostic marker: {marker}")
+    require("target_url:" not in workflow,
+            "Core CI diagnostics must expose run ids without depending on target_url publication")
 
     require('"version": "8.0.423"' in global_json, "global.json must pin the reviewed .NET 8 SDK")
     require('"api_compatibility": "netstandard2.1"' in environment_lock, "environment lock must pin netstandard2.1 compatibility")
@@ -185,7 +187,7 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
 
-    print("PASS: Unity preflight pins C# 9 + netstandard2.1, isolates Editor/Android sources, mirrors reviewed Inference 2.2.1 signatures, and publishes exact compiler/environment diagnostics before UBA")
+    print("PASS: Unity preflight pins C# 9 + netstandard2.1, isolates Editor/Android sources, mirrors reviewed Inference 2.2.1 signatures, and exposes bounded MCP-readable compiler diagnostics before UBA")
     return 0
 
 

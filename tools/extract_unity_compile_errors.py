@@ -8,10 +8,6 @@ import re
 import sys
 from typing import Iterable
 
-# Unity/Roslyn commonly emits one of these shapes:
-#   Assets/Foo.cs(12,34): error CS0246: ...
-#   Packages/com.foo/Bar.cs(8,2): error CS0103: ...
-#   error CS2001: Source file '...' could not be found.
 CS_DIAGNOSTIC = re.compile(
     r"^(?P<prefix>.*?)(?P<severity>error|warning)\s+(?P<code>CS\d{4})\s*:\s*(?P<message>.+?)\s*$",
     re.IGNORECASE,
@@ -112,7 +108,10 @@ def find_generic_summary_lines(lines: Iterable[str]) -> list[tuple[int, str]]:
 def load_lines(path: str | None) -> list[str]:
     if path is None or path == "-":
         return sys.stdin.read().splitlines()
-    return Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    log_path = Path(path)
+    if not log_path.is_file():
+        return []
+    return log_path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
 def main() -> int:

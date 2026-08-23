@@ -13,9 +13,6 @@ spec = importlib.util.spec_from_file_location("extract_unity_compile_errors", MO
 if spec is None or spec.loader is None:
     raise SystemExit("failed to load extract_unity_compile_errors.py")
 module = importlib.util.module_from_spec(spec)
-# Python 3.12 dataclasses resolve annotations through sys.modules while the class is
-# being created. Register the dynamically loaded module before executing it so this
-# test exercises the production extractor rather than failing in import machinery.
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
@@ -96,6 +93,12 @@ def test_cli_file_loading_preserves_invalid_bytes_as_replacement() -> None:
         assert_equal(diagnostics[0].line, 4, "replacement-decoded source line")
 
 
+def test_missing_log_is_treated_as_empty() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        missing = Path(directory) / "not-created.log"
+        assert_equal(module.load_lines(str(missing)), [], "missing preflight log")
+
+
 def main() -> int:
     test_unity_file_diagnostic()
     test_package_cache_diagnostic_and_duplicate_collapse()
@@ -103,7 +106,8 @@ def main() -> int:
     test_warning_is_not_promoted_to_error()
     test_generic_summaries_are_not_concrete_causes()
     test_cli_file_loading_preserves_invalid_bytes_as_replacement()
-    print("PASS: Unity compiler log extractor isolates concrete CS errors from generic UBA failure summaries")
+    test_missing_log_is_treated_as_empty()
+    print("PASS: Unity compiler log extractor isolates concrete CS errors and tolerates skipped compile logs")
     return 0
 
 
