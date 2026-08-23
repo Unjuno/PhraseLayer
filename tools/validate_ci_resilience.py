@@ -3,9 +3,10 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE_CI = ROOT / ".github" / "workflows" / "core-ci.yml"
-CORE_STATUS = ROOT / ".github" / "workflows" / "core-ci-status.yml"
-UBA_FEEDBACK = ROOT / ".github" / "workflows" / "uba-feedback.yml"
+WORKFLOWS = ROOT / ".github" / "workflows"
+CORE_CI = WORKFLOWS / "core-ci.yml"
+CORE_STATUS = WORKFLOWS / "core-ci-status.yml"
+UBA_FEEDBACK = WORKFLOWS / "uba-feedback.yml"
 
 
 def require(condition: bool, message: str, errors: list[str]) -> None:
@@ -15,6 +16,8 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
+    if not WORKFLOWS.is_dir():
+        errors.append("missing .github/workflows")
     if not CORE_CI.is_file():
         errors.append("missing .github/workflows/core-ci.yml")
     if not CORE_STATUS.is_file():
@@ -39,8 +42,6 @@ def main() -> int:
             "compiler status publishing must be non-blocking and capped at one minute", errors)
     require("publish-unity-preflight-status:" not in core,
             "duplicate preflight status publisher job must not be reintroduced", errors)
-    require("target_url:" not in core,
-            "Core CI diagnostic statuses must not depend on run URL publication", errors)
     require("phraselayer/unity-run-${process.env.GITHUB_RUN_ID}" in core,
             "Core CI must expose the run id through a status context for MCP diagnostics", errors)
 
@@ -48,10 +49,6 @@ def main() -> int:
             "Core CI status bridge must remain driven by workflow_run completion", errors)
     require("phraselayer/core-ci-run-${run.id}" in core_status,
             "Core CI status bridge must expose the run id in the status context", errors)
-    require("target_url:" not in core_status,
-            "Core CI status bridge must not depend on execution URL publication", errors)
-    require("run.html_url" not in core_status,
-            "Core CI status bridge must not reintroduce run URL handling", errors)
 
     uba_trigger = uba.split("permissions:", 1)[0]
     require("workflow_dispatch:" in uba_trigger,
@@ -62,15 +59,28 @@ def main() -> int:
             "manual UBA polling must remain bounded to ten minutes", errors)
     require("timeout-minutes: 15" in uba,
             "manual UBA feedback job must have a short hard timeout", errors)
-    require("target_url:" not in uba,
-            "UBA feedback statuses must not depend on execution URL publication", errors)
+
+    # Diagnostic correlation is ID-based, not URL-based. Scan every workflow so a future helper
+    # cannot silently reintroduce the execution-URL publication path that previously stalled CI.
+    workflow_files = sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+    require(bool(workflow_files), "at least one GitHub Actions workflow must exist", errors)
+    for workflow in workflow_files:
+        text = workflow.read_text(encoding="utf-8")
+        relative = workflow.relative_to(ROOT)
+        if "target_url:" in text:
+            errors.append(f"{relative} must not publish target_url; expose an MCP-readable run id instead")
+        if "run.html_url" in text:
+            errors.append(f"{relative} must not depend on run.html_url; MCP resolves runs by id")
 
     if errors:
         for error in errors:
             print("ERROR: " + error)
         return 1
 
-    print("PASS: CI diagnostics are bounded, URL-independent, stale runs cancel, and UBA polling is manual-only")
+    print(
+        "PASS: CI diagnostics are bounded and URL-independent across all workflows; "
+        "run IDs remain MCP-readable, stale runs cancel, and UBA polling is manual-only"
+    )
     return 0
 
 
