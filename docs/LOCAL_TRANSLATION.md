@@ -18,6 +18,28 @@ The correctness-first reference runtime set is:
 
 This proves export reproducibility for those fixtures. It **does not prove translation quality**. The two fixed probe sentences produced weak Japanese, including semantic errors, so the model remains `quality_status=candidate-quality-review-required`. Export parity means the ONNX path reproduces the pinned upstream model; it does not mean the upstream model is good enough for PhraseLayer.
 
+## Quality-review harness
+
+The promotion gate is now implemented as an explicit human-review contract rather than an automatic metric claim.
+
+- Core: `TranslationQualityGate` records review completeness, severity, failed semantic dimensions, critical failures, and major-or-worse rate.
+- Promotion baseline: complete review required, zero critical failures, major-or-worse rate <= 5%.
+- Corpus: `benchmarks/translation-quality-corpus.json` currently contains 24 fixed English→Japanese semantic-unit cases.
+- Covered failure dimensions include adequacy, negation/polarity, named entities, MWEs/phrasal verbs, modality, temporal/aspect relations, quantities, and Japanese readability.
+- Critical conditions are declared per case so a reviewer cannot silently downgrade polarity reversal, route/identifier corruption, time/quantity corruption, or other decision-changing errors.
+- Tests copy the corpus into the test runtime, validate unique IDs/category coverage/policy metadata, and exercise the Core gate.
+
+This harness does **not** grade translations automatically. A human reviewer still has to produce the candidate outputs and assign structured severity/dimensions. Therefore the model's quality status remains blocking until the full corpus has review evidence.
+
+Implementation commits:
+
+- quality gate Core implementation: `ebd4946db5abfe0aec753ada9549176ed47607a0`;
+- gate regression tests: `bce82abde973339b23ac5080781a80b4ec19dfa4`;
+- fixed quality corpus: `d6151f0aedc69c5b842e66ef29d9f5e1d482fb7e`;
+- corpus coverage test: `f586fe91005e9fbbff224c54ec3dad5eec48cae4`.
+
+Core CI run `32643686242` passed the full Core test job plus Unity Editor and Android host compile preflight after these additions.
+
 ## Promotion sequence
 
 1. **Pinned source** — `Helsinki-NLP/opus-mt-en-jap` at revision `a863894cdd2b80f3bc1c5966734aee9ffec207d1`, Apache-2.0 metadata, Marian architecture, and SentencePiece inputs are locked.
@@ -27,7 +49,7 @@ This proves export reproducibility for those fixtures. It **does not prove trans
 5. **Local Unity staging** — when the exact export files are available locally, `tools/prepare_unity_translation_assets.py --report <probe.json> --export-root <export-dir>` verifies every recorded size/SHA-256, requires exact parity, and atomically stages the measured files under `Assets/LocalTranslationAssets/OpusMtEnJap`. The entire `LocalTranslationAssets` directory is git-ignored. This staging step **does not prove Unity compatibility**.
 6. **Real Unity import** — PENDING. Separately import staged ONNX artifacts with `com.unity.ai.inference@2.2.1`. PyTorch↔ORT parity and successful byte staging are not evidence of Unity compatibility.
 7. **Unity runtime parity** — PENDING. Run fixed fixtures through the PhraseLayer `ITranslationTokenizer` + `IAutoregressiveTranslationBackend` implementation and compare with the reference token sequence.
-8. **Translation quality gate** — PENDING and currently blocking adoption. Evaluate a representative semantic-unit corpus rather than the two export fixtures. At minimum track adequacy failures, named-entity corruption, negation/polarity errors, MWE handling, and Japanese readability. Do not treat token-exact ONNX parity as quality evidence.
+8. **Translation quality gate** — HARNESS PASS / REVIEW PENDING. The structured promotion policy and fixed corpus are implemented and CI-covered, but the candidate has not yet been reviewed across the full corpus. Do not treat token-exact ONNX parity as quality evidence.
 9. **Quest execution** — PENDING. Measure cold load, per-segment latency, memory, thermal behavior, and output parity on Quest 3. The 441.963 MiB reference runtime is a measured storage-size fact, not evidence that it is practical on-device.
 10. **Distribution review** — PENDING. Only reviewed, reproducible artifacts may be copied into release assets. The source candidate remains `bundled=false` until this gate is intentionally changed with artifact hashes and license review.
 
