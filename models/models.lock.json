@@ -83,13 +83,116 @@
         "vocab.json"
       ],
       "upstream_weight_artifact": "pytorch_model.bin",
-      "export_format": "onnx-required-not-yet-produced",
-      "export_status": "not-produced",
+      "export_format": "onnx",
+      "export_status": "measured-token-exact-parity",
       "required_export_components": [
         "encoder",
         "decoder"
       ],
-      "export_filenames": "unverified-until-export",
+      "export_filenames": [
+        "encoder_model.onnx",
+        "decoder_model.onnx",
+        "decoder_model_merged.onnx",
+        "decoder_with_past_model.onnx"
+      ],
+      "export_probe": {
+        "schema_version": 4,
+        "task": "text2text-generation-with-past",
+        "first_measured_commit": "792055c78981de4dfaf2a4b38865793005a546cb",
+        "repeat_verified_commit": "8be5cc2ec258aec314cc9deb5a76485415e608b0",
+        "tokenizer_parity_exact": true,
+        "generation_parity_exact": true,
+        "sample_count": 2,
+        "toolchain": {
+          "python": "3.11.16",
+          "torch": "2.13.0",
+          "transformers": "4.57.6",
+          "optimum": "2.1.0",
+          "optimum_onnx": "0.1.0",
+          "onnx": "1.22.0",
+          "onnxruntime": "1.29.0",
+          "sentencepiece": "0.2.2"
+        }
+      },
+      "export_artifacts": [
+        {
+          "role": "encoder-reference",
+          "artifact": "encoder_model.onnx",
+          "artifact_size_bytes": 171553398,
+          "artifact_sha256": "bb0d8d22053062bbd3695a468c88d1f84367eb195fa5f9fb75aa6c9548f57c59",
+          "ir_version": 8,
+          "opset": 18
+        },
+        {
+          "role": "decoder-reference",
+          "artifact": "decoder_model.onnx",
+          "artifact_size_bytes": 291878261,
+          "artifact_sha256": "513bbf05f48da69847ce247e3245a5e84a814a7e591e8f544dea4854d202dc00",
+          "ir_version": 8,
+          "opset": 18
+        },
+        {
+          "role": "decoder-merged-experimental",
+          "artifact": "decoder_model_merged.onnx",
+          "artifact_size_bytes": 292059873,
+          "artifact_sha256": "88014b5ab5e7c32062a6d2146eb3cd96ce2ee060ea2c3df5f936b2505e52f141",
+          "ir_version": 8,
+          "opset": 18
+        },
+        {
+          "role": "decoder-with-past-experimental",
+          "artifact": "decoder_with_past_model.onnx",
+          "artifact_size_bytes": 279248654,
+          "artifact_sha256": "0e1692385e64eaedd256d31a6ee5dd3ee630c79126bd97d6d982ba6eca919ae3",
+          "ir_version": 8,
+          "opset": 18
+        }
+      ],
+      "export_support_artifacts": [
+        {
+          "artifact": "config.json",
+          "artifact_size_bytes": 1298,
+          "artifact_sha256": "19571fb6bcab20ef65689b694e3c0284a5f7d0e4c93fcfa59467aedd66c4bfef"
+        },
+        {
+          "artifact": "generation_config.json",
+          "artifact_size_bytes": 288,
+          "artifact_sha256": "1e8464ebcd1ca238b32d9701bd045f51e90a46cd0a3adb5bb7dafa21251d50fc"
+        },
+        {
+          "artifact": "source.spm",
+          "artifact_size_bytes": 508602,
+          "artifact_sha256": "375cbed8885a6d369e0493acfc69a066010a86f98f9bac02430cbeb1726934a6"
+        },
+        {
+          "artifact": "special_tokens_map.json",
+          "artifact_size_bytes": 74,
+          "artifact_sha256": "5e4d1f5e759d74cb1c2fe1d165cfc62b5237aa904de759380cd6f43042eec723"
+        },
+        {
+          "artifact": "target.spm",
+          "artifact_size_bytes": 1021944,
+          "artifact_sha256": "7d5ec21daca7dccb7a9df371b699def40ddd9d0c24cef855e44e31a39b96af55"
+        },
+        {
+          "artifact": "tokenizer_config.json",
+          "artifact_size_bytes": 848,
+          "artifact_sha256": "a6688b81aff2f95033ea8da0552e4198d737dfaedee9fc645fbcd0d9d81f81e5"
+        },
+        {
+          "artifact": "vocab.json",
+          "artifact_size_bytes": 1734978,
+          "artifact_sha256": "62f7857585e3cd6150bb420830076edede27caac6304778d8d81be41164e469d"
+        }
+      ],
+      "reference_runtime": {
+        "artifacts": [
+          "encoder_model.onnx",
+          "decoder_model.onnx"
+        ],
+        "total_size_bytes": 463431659,
+        "total_size_mib": 441.963
+      },
       "generation_contract": {
         "bos_token_id": 0,
         "decoder_start_token_id": 46275,
@@ -100,10 +203,12 @@
         "num_beams": 4,
         "renormalize_logits": true
       },
+      "quality_status": "candidate-quality-review-required",
+      "quality_note": "Token-exact export parity proves implementation equivalence only; fixed probe translations are not yet acceptable evidence of product translation quality.",
       "runtime_target": "com.unity.ai.inference@2.2.1",
-      "runtime_compatibility": "unverified-reviewed-onnx-export-required",
+      "runtime_compatibility": "unverified-real-unity-import-required",
       "license": "Apache-2.0",
-      "license_status": "full-upstream-revision-and-license-metadata-verified; export-redistribution-review-pending",
+      "license_status": "full-upstream-revision-and-license-metadata-verified; exported-artifact-redistribution-review-pending",
       "bundled": false
     },
     {
