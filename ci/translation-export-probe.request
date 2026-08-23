@@ -1,7 +1,7 @@
 model=Helsinki-NLP/opus-mt-en-jap
 revision=a863894cdd2b80f3bc1c5966734aee9ffec207d1
 task=text2text-generation-with-past
-probe_version=4
+probe_version=5
 requested_at=2026-08-23
 policy=metadata-only-no-weight-artifact
 require_token_exact_reference_parity=true
