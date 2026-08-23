@@ -28,6 +28,7 @@ jobs:
       - run: python tools/validate_build_environment.py
       - run: python tools/validate_repo.py
       - run: python tools/validate_ci_references.py
+      - run: python tools/validate_ci_resilience.py
       - run: python tools/validate_local_only.py
       - run: python tools/test_validate_local_only.py
       - run: python tools/validate_unity_build_automation.py
@@ -200,4 +201,9 @@ jobs:
               'phraselayer/unity-preflight',
               allPassed,
               allPassed ? 'Unity Editor and Android C# preflight passed' : aggregateError
+            );
+            await publish(
+              `phraselayer/unity-run-${process.env.GITHUB_RUN_ID}`,
+              allPassed,
+              allPassed ? 'Unity preflight run passed' : aggregateError
             );
