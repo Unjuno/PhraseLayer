@@ -156,7 +156,7 @@ namespace PhraseLayer.Unity.Editor
             if (property == null)
                 throw new InvalidOperationException(target.GetType().Name + " serialized field missing: " + fieldName);
             property.objectReferenceValue = value;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
+            serialized.ApplyModifiedProperties();
             EditorUtility.SetDirty(target);
         }
 #endif
