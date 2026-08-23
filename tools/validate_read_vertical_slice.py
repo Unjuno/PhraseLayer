@@ -62,6 +62,11 @@ require(
     SCRIPTS / "QuestReadAssistanceDebugBehaviour.cs",
     (
         "ReadEncounterPipeline pipeline",
+        "ITranslationEngine configuredTranslationEngine",
+        "ConfigureTranslationEngine(ITranslationEngine engine)",
+        "pipeline.Reset();",
+        "translationEngine = configuredTranslationEngine",
+        "new DictionaryTranslationEngine(translations)",
         "learnerProfile.Model",
         "ocrPresenter.ObservationPresented += HandleObservationPresented",
         "pendingObservation = observation",
@@ -103,6 +108,6 @@ if violations:
     raise SystemExit("\n".join(violations))
 
 print(
-    "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; "
-    "language plans are frozen per encounter with switch hysteresis and stale-frame rejection"
+    "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; language plans are frozen "
+    "per encounter, translation engines are replaceable only at an encounter reset boundary, and stale/noisy frames cannot flicker the overlay"
 )
