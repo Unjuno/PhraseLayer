@@ -9,9 +9,14 @@ permissions:
   contents: read
   statuses: write
 
+concurrency:
+  group: core-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -48,6 +53,7 @@ jobs:
   unity-compile-preflight:
     name: Unity compile preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -56,11 +62,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Validate preflight contract
+        timeout-minutes: 3
         run: |
           python tools/validate_build_environment.py
           python tools/validate_unity_compile_preflight.py
           python tools/validate_unity_csharp9.py
+
       - name: Capture preflight environment
         shell: bash
         run: |
@@ -85,7 +94,9 @@ jobs:
               echo "<not committed yet>"
             fi
           } > .ci/unity-environment.txt
+
       - name: Compile Unity Editor guarded branches
+        timeout-minutes: 6
         shell: bash
         run: |
           mkdir -p .ci
@@ -94,7 +105,9 @@ jobs:
           code=${PIPESTATUS[0]}
           echo "$code" > .ci/unity-editor-preflight.exit
           exit 0
+
       - name: Compile Android Player guarded branches
+        timeout-minutes: 6
         shell: bash
         run: |
           mkdir -p .ci
@@ -103,16 +116,22 @@ jobs:
           code=${PIPESTATUS[0]}
           echo "$code" > .ci/unity-android-preflight.exit
           exit 0
+
       - name: Summarize compiler diagnostics
         if: always()
         shell: bash
         run: |
-          echo "## Unity Editor diagnostics"
-          python tools/extract_unity_compile_errors.py .ci/unity-editor-preflight.log || true
-          echo "## Android Player diagnostics"
-          python tools/extract_unity_compile_errors.py .ci/unity-android-preflight.log || true
+          {
+            echo "## Unity Editor diagnostics"
+            python tools/extract_unity_compile_errors.py .ci/unity-editor-preflight.log || true
+            echo "## Android Player diagnostics"
+            python tools/extract_unity_compile_errors.py .ci/unity-android-preflight.log || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Upload compile preflight logs and environment
         if: always()
+        continue-on-error: true
+        timeout-minutes: 2
         uses: actions/upload-artifact@v4
         with:
           name: unity-compile-preflight-logs
@@ -122,9 +141,24 @@ jobs:
             .ci/unity-android-preflight.log
             .ci/unity-editor-preflight.exit
             .ci/unity-android-preflight.exit
-          if-no-files-found: error
-      - name: Publish exact compiler diagnostic statuses
+          if-no-files-found: warn
+
+      - name: Enforce compile preflight result
+        if: always()
+        shell: bash
+        run: |
+          editor=$(cat .ci/unity-editor-preflight.exit 2>/dev/null || echo missing)
+          android=$(cat .ci/unity-android-preflight.exit 2>/dev/null || echo missing)
+          if [ "$editor" != "0" ] || [ "$android" != "0" ]; then
+            echo "::error::Unity compile preflight failed (Editor=$editor, Android=$android). See the compiler diagnostics and unity-compile-preflight-logs artifact."
+            exit 1
+          fi
+          echo "Unity compile preflight PASS (Editor=0, Android=0)."
+
+      - name: Publish compiler diagnostic statuses best-effort
         if: ${{ always() && github.event_name == 'push' }}
+        continue-on-error: true
+        timeout-minutes: 1
         uses: actions/github-script@v7
         with:
           script: |
@@ -140,7 +174,6 @@ jobs:
             const androidPassed = androidExit === '0';
             const editorError = firstCompilerError('.ci/unity-editor-preflight.log');
             const androidError = firstCompilerError('.ci/unity-android-preflight.log');
-            const targetUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const publish = async (contextName, passed, description) => {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
@@ -148,7 +181,6 @@ jobs:
                 sha: context.sha,
                 state: passed ? 'success' : 'failure',
                 context: contextName,
-                target_url: targetUrl,
                 description: description.slice(0, 140)
               });
             };
@@ -169,37 +201,3 @@ jobs:
               allPassed,
               allPassed ? 'Unity Editor and Android C# preflight passed' : aggregateError
             );
-      - name: Enforce compile preflight result
-        if: always()
-        shell: bash
-        run: |
-          editor=$(cat .ci/unity-editor-preflight.exit)
-          android=$(cat .ci/unity-android-preflight.exit)
-          if [ "$editor" -ne 0 ] || [ "$android" -ne 0 ]; then
-            echo "::error::Unity compile preflight failed (Editor=$editor, Android=$android). See the compiler diagnostics above and the unity-compile-preflight-logs artifact."
-            exit 1
-          fi
-          echo "Unity compile preflight PASS (Editor=0, Android=0)."
-
-  publish-unity-preflight-status:
-    name: Publish Unity preflight status
-    if: ${{ always() && github.event_name == 'push' }}
-    needs: [unity-compile-preflight]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Preserve final preflight status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const passed = '${{ needs.unity-compile-preflight.result }}' === 'success';
-            if (passed) {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: context.sha,
-                state: 'success',
-                context: 'phraselayer/unity-preflight',
-                target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
-                description: 'Unity Editor and Android C# preflight passed'
-              });
-            }
