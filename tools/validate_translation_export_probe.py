@@ -5,12 +5,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tools" / "probe_translation_export.py"
+SENTENCEPIECE_INSPECTOR = ROOT / "tools" / "inspect_translation_sentencepiece.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "translation-export-probe.yml"
 REQUEST = ROOT / "ci" / "translation-export-probe.request"
 DOC = ROOT / "docs" / "LOCAL_TRANSLATION.md"
 
 errors: list[str] = []
-for path in (PROBE, WORKFLOW, REQUEST, DOC):
+for path in (PROBE, SENTENCEPIECE_INSPECTOR, WORKFLOW, REQUEST, DOC):
     if not path.is_file():
         errors.append(f"missing translation probe contract file: {path.relative_to(ROOT)}")
 
@@ -42,6 +43,26 @@ if PROBE.is_file():
         if marker not in text:
             errors.append(f"translation parity probe missing reviewed marker: {marker}")
 
+if SENTENCEPIECE_INSPECTOR.is_file():
+    text = SENTENCEPIECE_INSPECTOR.read_text(encoding="utf-8")
+    for marker in (
+        'MODEL_FILES = ("source.spm", "target.spm")',
+        "SentencePieceProcessor(model_file=str(path))",
+        "processor.serialized_model_proto()",
+        "pb.ModelProto()",
+        '"model_type"',
+        '"processor_ids"',
+        '"byte_fallback"',
+        '"split_by_whitespace"',
+        '"normalizer"',
+        '"precompiled_charsmap_sha256"',
+        '"piece_type_counts"',
+        '"runtime_compatibility": "unverified-managed-unity-tokenizer-required"',
+        "verify_report_identity(report, item)",
+    ):
+        if marker not in text:
+            errors.append(f"SentencePiece contract inspector missing reviewed marker: {marker}")
+
 if WORKFLOW.is_file():
     text = WORKFLOW.read_text(encoding="utf-8")
     for marker in (
@@ -56,6 +77,9 @@ if WORKFLOW.is_file():
         '"onnxruntime==1.29.0"',
         '"sentencepiece==0.2.2"',
         "python tools/probe_translation_export.py",
+        "python tools/inspect_translation_sentencepiece.py",
+        "SENTENCEPIECE_EXIT_CODE",
+        "sentencepiece_contract",
         "translation-export-probe.json",
         "phraselayer/translation-export-probe",
     ):
@@ -70,6 +94,7 @@ if REQUEST.is_file():
         "revision=a863894cdd2b80f3bc1c5966734aee9ffec207d1",
         "policy=metadata-only-no-weight-artifact",
         "require_token_exact_reference_parity=true",
+        "require_tokenizer_encode_decode_parity=true",
     ):
         if marker not in text:
             errors.append(f"translation probe request missing reviewed marker: {marker}")
@@ -85,6 +110,7 @@ if DOC.is_file():
         "quest",
         "bundled=false",
         "metadata-only",
+        "translation quality gate",
     ):
         if marker.casefold() not in folded:
             errors.append(f"local translation doc missing gate marker: {marker}")
@@ -94,5 +120,5 @@ if errors:
 
 print(
     "PASS: OPUS-MT export/parity probe preserves metadata-only weights policy, exact tokenizer fixtures, "
-    "generation parity, and real-Unity/Quest promotion gates"
+    "measured SentencePiece internals, generation parity, quality separation, and real-Unity/Quest promotion gates"
 )
