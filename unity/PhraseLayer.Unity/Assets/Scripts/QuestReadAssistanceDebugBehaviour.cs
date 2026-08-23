@@ -15,11 +15,13 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Device/debug vertical slice from an already-presented Quest OCR observation to viewport-aligned
-    /// PhraseLayer assistance. It intentionally uses a tiny local dictionary until the reviewed local NMT
-    /// runtime is integrated; camera/OCR is never repeated here.
+    /// PhraseLayer assistance. A tiny local dictionary remains the safe bootstrap fallback, while the actual
+    /// translation engine is injectable through ITranslationEngine so the reviewed local NMT runtime can replace
+    /// it without changing the OCR/semantic/spatial pipeline.
     ///
     /// The visible language plan is frozen per Read encounter. OCR geometry may refresh, but a transient OCR
-    /// mutation cannot cause the displayed source/translation mix to oscillate frame by frame.
+    /// mutation cannot cause the displayed source/translation mix to oscillate frame by frame. Replacing the
+    /// translation engine explicitly resets the encounter so one encounter can never mix outputs from two engines.
     /// </summary>
     public sealed class QuestReadAssistanceDebugBehaviour : MonoBehaviour
     {
@@ -50,6 +52,7 @@ namespace PhraseLayer.Unity
         };
 
         private ReadEncounterPipeline pipeline;
+        private ITranslationEngine configuredTranslationEngine;
         private CancellationTokenSource lifetime;
         private Task worker;
         private OcrObservation pendingObservation;
@@ -62,6 +65,28 @@ namespace PhraseLayer.Unity
         public ReadModeSpatialResult LastResult => lastResult;
         public string CurrentEncounterId => currentEncounterId;
         public string Status => status;
+        public bool HasConfiguredTranslationEngine => configuredTranslationEngine != null;
+
+        /// <summary>
+        /// Replaces the translation implementation used for future Read encounters.
+        /// Ownership remains with the caller; this behaviour does not dispose the injected engine.
+        /// If an encounter pipeline already exists it is reset before rebuilding, so an existing frozen plan is
+        /// never partially recomputed with a different translation engine.
+        /// </summary>
+        public void ConfigureTranslationEngine(ITranslationEngine engine)
+        {
+            if (engine == null) throw new ArgumentNullException(nameof(engine));
+            configuredTranslationEngine = engine;
+
+            if (pipeline != null)
+            {
+                pipeline.Reset();
+                pipeline = BuildPipeline();
+                lastResult = null;
+                currentEncounterId = string.Empty;
+                status = "Translation engine changed; waiting for a new Read encounter: " + engine.GetType().Name;
+            }
+        }
 
         private void OnEnable()
         {
@@ -112,11 +137,15 @@ namespace PhraseLayer.Unity
                 }
             }
 
+            ITranslationEngine translationEngine = configuredTranslationEngine;
+            if (translationEngine == null)
+                translationEngine = new DictionaryTranslationEngine(translations);
+
             var language = new LanguagePipeline(
                 new RuleBasedSemanticSegmenter(multiwordExpressions),
                 learnerProfile.Model,
                 new AssistancePlanner(),
-                new DictionaryTranslationEngine(translations));
+                translationEngine);
             return new ReadEncounterPipeline(language);
         }
 
