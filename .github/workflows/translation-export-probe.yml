@@ -66,6 +66,26 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: Inspect measured SentencePiece contract
+        id: sentencepiece
+        if: always()
+        shell: bash
+        env:
+          EXPORT_EXIT_CODE: ${{ steps.export.outputs.exit_code }}
+        run: |
+          set +e
+          if [ "$EXPORT_EXIT_CODE" != "0" ]; then
+            echo "Skipping SentencePiece inspection because export/parity failed first."
+            code=99
+          else
+            python tools/inspect_translation_sentencepiece.py \
+              --export-root "$RUNNER_TEMP/opus-mt-en-jap-onnx" \
+              --report ".ci/translation-export-probe.json"
+            code=$?
+          fi
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
       - name: Upload probe metadata only
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,6 +101,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           EXPORT_EXIT_CODE: ${{ steps.export.outputs.exit_code }}
+          SENTENCEPIECE_EXIT_CODE: ${{ steps.sentencepiece.outputs.exit_code }}
         with:
           script: |
             const fs = require('fs');
@@ -93,14 +114,26 @@ jobs:
                 core.warning(`Could not parse translation export report: ${error}`);
               }
             }
-            const exitCode = process.env.EXPORT_EXIT_CODE || 'missing';
-            const passed = exitCode === '0' && report && report.status === 'pass' && report.parity && report.parity.exact;
+            const exportExitCode = process.env.EXPORT_EXIT_CODE || 'missing';
+            const sentencePieceExitCode = process.env.SENTENCEPIECE_EXIT_CODE || 'missing';
+            const sp = report && report.sentencepiece_contract;
+            const spMeasured = sp && sp.status === 'measured-export-artifacts' && Array.isArray(sp.models) && sp.models.length === 2;
+            const passed = exportExitCode === '0'
+              && sentencePieceExitCode === '0'
+              && report
+              && report.status === 'pass'
+              && report.parity
+              && report.parity.exact
+              && report.tokenizer_parity
+              && report.tokenizer_parity.exact
+              && spMeasured;
             const mergedSize = report && report.runtime_sets && report.runtime_sets.encoder_plus_merged_decoder
               ? report.runtime_sets.encoder_plus_merged_decoder.total_size_mib
               : null;
+            const modelTypes = spMeasured ? sp.models.map(item => item.model_type).join('/') : 'unmeasured';
             const detail = passed
-              ? `OPUS-MT ONNX token parity exact; merged runtime ${mergedSize} MiB`
-              : `OPUS-MT export/parity probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
+              ? `OPUS-MT parity exact; SentencePiece ${modelTypes}; merged runtime ${mergedSize} MiB`
+              : `OPUS-MT probe failed (${report && report.error_type ? report.error_type : `export=${exportExitCode},sp=${sentencePieceExitCode}`})`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
