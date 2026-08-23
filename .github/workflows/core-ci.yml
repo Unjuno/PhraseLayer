@@ -33,6 +33,7 @@ jobs:
       - run: python tools/test_validate_local_only.py
       - run: python tools/validate_unity_build_automation.py
       - run: python tools/validate_unity_compile_preflight.py
+      - run: python tools/validate_unity_reference_baseline.py
       - run: python tools/validate_unity_csharp9.py
       - run: python tools/test_extract_unity_compile_errors.py
       - run: python tools/validate_learner_persistence.py
@@ -70,6 +71,7 @@ jobs:
         run: |
           python tools/validate_build_environment.py
           python tools/validate_unity_compile_preflight.py
+          python tools/validate_unity_reference_baseline.py
           python tools/validate_unity_csharp9.py
 
       - name: Capture preflight environment
