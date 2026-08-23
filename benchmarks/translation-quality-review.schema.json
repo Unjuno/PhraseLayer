@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Unjuno/PhraseLayer/benchmarks/translation-quality-review.schema.json",
+  "title": "PhraseLayer translation quality review evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "candidate_revision",
+    "corpus_schema_version",
+    "language_pair",
+    "reviewer_mode",
+    "reviews"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "candidate_revision": { "type": "string", "minLength": 1 },
+    "corpus_schema_version": { "const": 1 },
+    "language_pair": { "const": "en-ja" },
+    "reviewer_mode": { "const": "human-structured" },
+    "notes": { "type": "string" },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "source",
+          "candidate",
+          "severity",
+          "failed_dimensions",
+          "notes"
+        ],
+        "properties": {
+          "case_id": { "type": "string", "minLength": 1 },
+          "source": { "type": "string" },
+          "candidate": { "type": "string" },
+          "severity": {
+            "enum": ["None", "Minor", "Major", "Critical"]
+          },
+          "failed_dimensions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "Adequacy",
+                "NegationPolarity",
+                "NamedEntity",
+                "MultiwordExpression",
+                "Modality",
+                "TemporalAspect",
+                "Quantity",
+                "JapaneseReadability"
+              ]
+            }
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}
