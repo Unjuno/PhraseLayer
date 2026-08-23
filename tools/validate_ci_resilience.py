@@ -4,6 +4,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE_CI = ROOT / ".github" / "workflows" / "core-ci.yml"
+CORE_STATUS = ROOT / ".github" / "workflows" / "core-ci-status.yml"
 UBA_FEEDBACK = ROOT / ".github" / "workflows" / "uba-feedback.yml"
 
 
@@ -16,6 +17,8 @@ def main() -> int:
     errors: list[str] = []
     if not CORE_CI.is_file():
         errors.append("missing .github/workflows/core-ci.yml")
+    if not CORE_STATUS.is_file():
+        errors.append("missing .github/workflows/core-ci-status.yml")
     if not UBA_FEEDBACK.is_file():
         errors.append("missing .github/workflows/uba-feedback.yml")
     if errors:
@@ -24,6 +27,7 @@ def main() -> int:
         return 1
 
     core = CORE_CI.read_text(encoding="utf-8")
+    core_status = CORE_STATUS.read_text(encoding="utf-8")
     uba = UBA_FEEDBACK.read_text(encoding="utf-8")
 
     require("concurrency:" in core, "Core CI must define concurrency", errors)
@@ -39,6 +43,15 @@ def main() -> int:
             "Core CI diagnostic statuses must not depend on run URL publication", errors)
     require("phraselayer/unity-run-${process.env.GITHUB_RUN_ID}" in core,
             "Core CI must expose the run id through a status context for MCP diagnostics", errors)
+
+    require("workflow_run:" in core_status,
+            "Core CI status bridge must remain driven by workflow_run completion", errors)
+    require("phraselayer/core-ci-run-${run.id}" in core_status,
+            "Core CI status bridge must expose the run id in the status context", errors)
+    require("target_url:" not in core_status,
+            "Core CI status bridge must not depend on execution URL publication", errors)
+    require("run.html_url" not in core_status,
+            "Core CI status bridge must not reintroduce run URL handling", errors)
 
     uba_trigger = uba.split("permissions:", 1)[0]
     require("workflow_dispatch:" in uba_trigger,
@@ -57,7 +70,7 @@ def main() -> int:
             print("ERROR: " + error)
         return 1
 
-    print("PASS: CI diagnostics are bounded, stale runs cancel, and UBA polling is manual-only")
+    print("PASS: CI diagnostics are bounded, URL-independent, stale runs cancel, and UBA polling is manual-only")
     return 0
 
 
