@@ -35,6 +35,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.423"
+
       - name: Validate probe contract
         run: |
           python tools/validate_translation_model_candidate.py
@@ -86,6 +90,49 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: Prepare ephemeral managed tokenizer manifest
+        id: managed_manifest
+        if: always()
+        shell: bash
+        env:
+          SENTENCEPIECE_EXIT_CODE: ${{ steps.sentencepiece.outputs.exit_code }}
+        run: |
+          set +e
+          if [ "$SENTENCEPIECE_EXIT_CODE" != "0" ]; then
+            echo "Skipping managed manifest because SentencePiece inspection failed first."
+            code=99
+          else
+            python tools/prepare_managed_sentencepiece_manifest.py \
+              --export-root "$RUNNER_TEMP/opus-mt-en-jap-onnx" \
+              --report ".ci/translation-export-probe.json" \
+              --output "$RUNNER_TEMP/phraselayer-sentencepiece-unigram-v1.txt"
+            code=$?
+          fi
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Verify PhraseLayer managed tokenizer parity
+        id: managed_parity
+        if: always()
+        shell: bash
+        env:
+          MANAGED_MANIFEST_EXIT_CODE: ${{ steps.managed_manifest.outputs.exit_code }}
+        run: |
+          set +e
+          if [ "$MANAGED_MANIFEST_EXIT_CODE" != "0" ]; then
+            echo "Skipping managed tokenizer parity because manifest preparation failed first."
+            code=99
+          else
+            dotnet run \
+              --project tools/PhraseLayer.TokenizerParityProbe/PhraseLayer.TokenizerParityProbe.csproj \
+              -c Release -- \
+              "$RUNNER_TEMP/phraselayer-sentencepiece-unigram-v1.txt" \
+              ".ci/translation-export-probe.json"
+            code=$?
+          fi
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
       - name: Upload probe metadata only
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,6 +149,8 @@ jobs:
         env:
           EXPORT_EXIT_CODE: ${{ steps.export.outputs.exit_code }}
           SENTENCEPIECE_EXIT_CODE: ${{ steps.sentencepiece.outputs.exit_code }}
+          MANAGED_MANIFEST_EXIT_CODE: ${{ steps.managed_manifest.outputs.exit_code }}
+          MANAGED_PARITY_EXIT_CODE: ${{ steps.managed_parity.outputs.exit_code }}
         with:
           script: |
             const fs = require('fs');
@@ -116,24 +165,36 @@ jobs:
             }
             const exportExitCode = process.env.EXPORT_EXIT_CODE || 'missing';
             const sentencePieceExitCode = process.env.SENTENCEPIECE_EXIT_CODE || 'missing';
+            const managedManifestExitCode = process.env.MANAGED_MANIFEST_EXIT_CODE || 'missing';
+            const managedParityExitCode = process.env.MANAGED_PARITY_EXIT_CODE || 'missing';
             const sp = report && report.sentencepiece_contract;
             const spMeasured = sp && sp.status === 'measured-export-artifacts' && Array.isArray(sp.models) && sp.models.length === 2;
+            const managedManifest = report && report.managed_tokenizer_manifest;
+            const managedParity = report && report.managed_tokenizer_parity;
+            const managedVerified = managedManifest
+              && managedManifest.status === 'ephemeral-local-runtime-artifact'
+              && managedManifest.uploaded === false
+              && managedParity
+              && managedParity.exact === true;
             const passed = exportExitCode === '0'
               && sentencePieceExitCode === '0'
+              && managedManifestExitCode === '0'
+              && managedParityExitCode === '0'
               && report
               && report.status === 'pass'
               && report.parity
               && report.parity.exact
               && report.tokenizer_parity
               && report.tokenizer_parity.exact
-              && spMeasured;
-            const mergedSize = report && report.runtime_sets && report.runtime_sets.encoder_plus_merged_decoder
-              ? report.runtime_sets.encoder_plus_merged_decoder.total_size_mib
+              && spMeasured
+              && managedVerified;
+            const runtimeSize = report && report.runtime_sets && report.runtime_sets.encoder_plus_decoder
+              ? report.runtime_sets.encoder_plus_decoder.total_size_mib
               : null;
             const modelTypes = spMeasured ? sp.models.map(item => item.model_type).join('/') : 'unmeasured';
             const detail = passed
-              ? `OPUS-MT parity exact; SentencePiece ${modelTypes}; merged runtime ${mergedSize} MiB`
-              : `OPUS-MT probe failed (${report && report.error_type ? report.error_type : `export=${exportExitCode},sp=${sentencePieceExitCode}`})`;
+              ? `OPUS-MT parity exact; managed tokenizer exact; SentencePiece ${modelTypes}; runtime ${runtimeSize} MiB`
+              : `OPUS-MT probe failed (export=${exportExitCode},sp=${sentencePieceExitCode},manifest=${managedManifestExitCode},managed=${managedParityExitCode})`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
