@@ -6,4 +6,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <None Include="../../benchmarks/translation-quality-corpus.json" Link="translation-quality-corpus.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
