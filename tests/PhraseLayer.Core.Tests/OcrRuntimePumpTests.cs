@@ -10,7 +10,7 @@ namespace PhraseLayer.Core.Tests
     public sealed class OcrRuntimePumpTests
     {
         [Fact]
-        public async Task SuccessfulRunCapturesRecognizesAndPresentsExactFrame()
+        public async Task SuccessfulRunUsesExactCaptureForOcrAndMetadataOnlyFrameForPresentation()
         {
             var frame = Frame(1_000_000);
             var stream = new QueueCameraStream(frame);
@@ -26,8 +26,30 @@ namespace PhraseLayer.Core.Tests
             Assert.Equal(OcrScheduleStatus.Processed, result.ScheduleStatus);
             Assert.True(result.Presented);
             Assert.Same(frame, engine.LastFrame);
-            Assert.Same(frame, sink.Frame);
+            Assert.NotSame(frame, sink.Frame);
+            Assert.Equal(frame.Width, sink.Frame?.Width);
+            Assert.Equal(frame.Height, sink.Frame?.Height);
+            Assert.Equal(frame.TimestampMicroseconds, sink.Frame?.TimestampMicroseconds);
+            Assert.False(sink.Frame?.HasImageData);
             Assert.Equal("exit", sink.Observation?.Text);
+        }
+
+        [Fact]
+        public async Task DisposableNativePayloadIsReleasedAfterProcessedInference()
+        {
+            var payload = new DisposablePayload();
+            var frame = NativeFrame(payload, 1_000_000);
+            var stream = new QueueCameraStream(frame);
+            var engine = new RecordingOcrEngine(new OcrObservation("exit", 0.9));
+            var sink = new RecordingSink();
+            var pump = CreatePump(stream, engine, sink, maxInferencesPerSecond: 5.0);
+
+            var result = await pump.TryRunOnceAsync();
+
+            Assert.Equal(OcrPumpStatus.Presented, result.Status);
+            Assert.True(payload.IsDisposed);
+            Assert.Same(frame, engine.LastFrame);
+            Assert.False(sink.Frame?.HasImageData);
         }
 
         [Fact]
@@ -47,16 +69,18 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public async Task RateLimitedFrameDoesNotReplaceLastPresentation()
+        public async Task RateLimitedFrameDoesNotReplaceLastPresentationAndReleasesSkippedPayload()
         {
             var first = Frame(1_000_000);
-            var second = Frame(1_100_000);
+            var skippedPayload = new DisposablePayload();
+            var second = NativeFrame(skippedPayload, 1_100_000);
             var stream = new QueueCameraStream(first, second);
             var engine = new RecordingOcrEngine(new OcrObservation("stable", 0.9));
             var sink = new RecordingSink();
             var pump = CreatePump(stream, engine, sink, maxInferencesPerSecond: 1.0);
 
             var firstResult = await pump.TryRunOnceAsync();
+            var firstPresentation = sink.Frame;
             var secondResult = await pump.TryRunOnceAsync();
 
             Assert.Equal(OcrPumpStatus.Presented, firstResult.Status);
@@ -65,7 +89,10 @@ namespace PhraseLayer.Core.Tests
             Assert.False(secondResult.Presented);
             Assert.Equal(1, engine.CallCount);
             Assert.Equal(1, sink.CallCount);
-            Assert.Same(first, sink.Frame);
+            Assert.Same(firstPresentation, sink.Frame);
+            Assert.Equal(first.TimestampMicroseconds, sink.Frame?.TimestampMicroseconds);
+            Assert.False(sink.Frame?.HasImageData);
+            Assert.True(skippedPayload.IsDisposed);
         }
 
         [Fact]
@@ -93,9 +120,10 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public async Task CancellationReleasesPumpAndSchedulerForNextRun()
+        public async Task CancellationReleasesPumpSchedulerAndNativePayloadForNextRun()
         {
-            var first = Frame(1_000_000);
+            var cancelledPayload = new DisposablePayload();
+            var first = NativeFrame(cancelledPayload, 1_000_000);
             var second = Frame(2_000_000);
             var stream = new QueueCameraStream(first, second);
             var engine = new CancelFirstOcrEngine(new OcrObservation("recovered", 0.95));
@@ -108,13 +136,16 @@ namespace PhraseLayer.Core.Tests
             cancellation.Cancel();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelledRun);
+            Assert.True(cancelledPayload.IsDisposed);
 
             var recovered = await pump.TryRunOnceAsync();
             Assert.Equal(OcrPumpStatus.Presented, recovered.Status);
             Assert.Equal(2, stream.CaptureCount);
             Assert.Equal(2, engine.CallCount);
             Assert.Equal(1, sink.CallCount);
-            Assert.Same(second, sink.Frame);
+            Assert.NotSame(second, sink.Frame);
+            Assert.Equal(second.TimestampMicroseconds, sink.Frame?.TimestampMicroseconds);
+            Assert.False(sink.Frame?.HasImageData);
         }
 
         private static OcrRuntimePump CreatePump(
@@ -132,6 +163,22 @@ namespace PhraseLayer.Core.Tests
         private static ImageFrame Frame(long timestamp)
         {
             return new ImageFrame(new byte[4], 10, 10, timestamp);
+        }
+
+        private static ImageFrame NativeFrame(IImageFramePayload payload, long timestamp)
+        {
+            return new ImageFrame(payload, 10, 10, timestamp);
+        }
+
+        private sealed class DisposablePayload : IImageFramePayload, IDisposable
+        {
+            public bool IsDisposed { get; private set; }
+
+            public void Dispose()
+            {
+                if (IsDisposed) throw new InvalidOperationException("Payload was disposed more than once.");
+                IsDisposed = true;
+            }
         }
 
         private sealed class GrantedPermission : ICameraPermissionService
