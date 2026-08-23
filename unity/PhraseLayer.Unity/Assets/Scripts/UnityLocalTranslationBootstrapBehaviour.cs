@@ -11,10 +11,10 @@ namespace PhraseLayer.Unity
     /// <summary>
     /// Fail-closed bridge from locally staged OPUS-MT assets to the Quest Read pipeline.
     ///
-    /// No network or remote fallback exists. Initialization validates the staged asset contract, parses the
-    /// managed tokenizer, replays token-exact parity fixtures, validates Unity-visible ONNX model signatures,
-    /// creates the local autoregressive backend, then injects the resulting translation engine into future Read
-    /// encounters. A current frozen encounter is reset by QuestReadAssistanceDebugBehaviour before the engine swap.
+    /// No network or remote fallback exists. Initialization verifies the generated tokenizer/fixture bytes against
+    /// the local staging manifest, parses the managed tokenizer, replays token-exact parity fixtures, validates
+    /// Unity-visible ONNX model signatures, creates the local autoregressive backend, then injects the resulting
+    /// translation engine into future Read encounters.
     /// </summary>
     public sealed class UnityLocalTranslationBootstrapBehaviour : MonoBehaviour
     {
@@ -50,7 +50,9 @@ namespace PhraseLayer.Unity
             UnityOpusMtAutoregressiveBackend candidateBackend = null;
             try
             {
-                var stagingReport = assetGate.ValidateAssets();
+                var bootstrapArtifacts = assetGate.ValidateBootstrapAssets(
+                    managedTokenizerManifest,
+                    tokenizerFixtureManifest);
                 var tokenizer = ManagedSentencePieceManifest.ParseTokenizer(managedTokenizerManifest.text);
                 var fixtures = TranslationTokenizerFixtureManifest.Parse(tokenizerFixtureManifest.text);
                 var modelReport = UnityOpusMtModelProbe.ValidateAndBuildReport(encoderModel, decoderModel);
@@ -69,8 +71,9 @@ namespace PhraseLayer.Unity
                 candidateBackend = null;
                 configuredEngine = engine;
                 lastReport =
-                    "local translation bootstrap=ready | " +
-                    stagingReport.Encoder.Path + "+" + stagingReport.Decoder.Path +
+                    "local translation bootstrap=ready" +
+                    " tokenizer=" + bootstrapArtifacts.ManagedTokenizerManifest.Path +
+                    " fixtures=" + bootstrapArtifacts.TokenizerFixtureManifest.Path +
                     " | " + modelReport;
                 Debug.Log("PhraseLayer local translation bootstrap PASS: " + lastReport, this);
                 return lastReport;

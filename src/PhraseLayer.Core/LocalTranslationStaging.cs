@@ -65,12 +65,6 @@ namespace PhraseLayer.Core.Translation
         public IReadOnlyList<StagedTranslationAsset> Files { get; }
     }
 
-    /// <summary>
-    /// Canonical correctness-first runtime set selected from a parity-verified local OPUS-MT export.
-    /// The first Quest implementation intentionally uses the non-cached decoder and reruns the complete
-    /// generated prefix at each step. The measured merged decoder needs KV-cache tensors plus a branch flag;
-    /// that larger state-management surface is deferred until real-device profiling justifies it.
-    /// </summary>
     public sealed class LocalTranslationRuntimeSet
     {
         public LocalTranslationRuntimeSet(
@@ -97,6 +91,25 @@ namespace PhraseLayer.Core.Translation
         public StagedTranslationAsset GenerationConfig { get; }
     }
 
+    /// <summary>
+    /// Generated, parity-gated runtime support that is derived locally from the pinned tokenizer/probe metadata.
+    /// These files contain no remote endpoint and are hash-locked in the local staging manifest just like model
+    /// artifacts. The bootstrap refuses to construct the official local translation engine without both files.
+    /// </summary>
+    public sealed class LocalTranslationBootstrapArtifacts
+    {
+        public LocalTranslationBootstrapArtifacts(
+            StagedTranslationAsset managedTokenizerManifest,
+            StagedTranslationAsset tokenizerFixtureManifest)
+        {
+            ManagedTokenizerManifest = managedTokenizerManifest ?? throw new ArgumentNullException(nameof(managedTokenizerManifest));
+            TokenizerFixtureManifest = tokenizerFixtureManifest ?? throw new ArgumentNullException(nameof(tokenizerFixtureManifest));
+        }
+
+        public StagedTranslationAsset ManagedTokenizerManifest { get; }
+        public StagedTranslationAsset TokenizerFixtureManifest { get; }
+    }
+
     public static class LocalTranslationStagingContract
     {
         public const string ExpectedModelId = "Helsinki-NLP/opus-mt-en-jap";
@@ -109,8 +122,43 @@ namespace PhraseLayer.Core.Translation
         public const string TargetSentencePiecePath = "target.spm";
         public const string VocabularyPath = "vocab.json";
         public const string GenerationConfigPath = "generation_config.json";
+        public const string ManagedTokenizerManifestPath = "phraselayer-sentencepiece-unigram-v1.txt";
+        public const string TokenizerFixtureManifestPath = "phraselayer-tokenizer-fixtures-v1.txt";
 
         public static LocalTranslationRuntimeSet ValidateAndResolve(StagedTranslationManifest manifest)
+        {
+            var byPath = ValidateManifestAndIndex(manifest);
+            return new LocalTranslationRuntimeSet(
+                Require(byPath, EncoderPath, "onnx"),
+                Require(byPath, DecoderPath, "onnx"),
+                Require(byPath, SourceSentencePiecePath, "support"),
+                Require(byPath, TargetSentencePiecePath, "support"),
+                Require(byPath, VocabularyPath, "support"),
+                Require(byPath, GenerationConfigPath, "support"));
+        }
+
+        public static LocalTranslationBootstrapArtifacts ValidateAndResolveBootstrapArtifacts(StagedTranslationManifest manifest)
+        {
+            var byPath = ValidateManifestAndIndex(manifest);
+            return new LocalTranslationBootstrapArtifacts(
+                Require(byPath, ManagedTokenizerManifestPath, "generated"),
+                Require(byPath, TokenizerFixtureManifestPath, "generated"));
+        }
+
+        public static string ValidateAndBuildReport(StagedTranslationManifest manifest)
+        {
+            var runtime = ValidateAndResolve(manifest);
+            return
+                "translation staging model=" + manifest.ModelId +
+                " revision=" + manifest.Revision +
+                " parity=exact" +
+                " runtime_status=" + manifest.RuntimeStatus +
+                " encoder=" + runtime.Encoder.Path +
+                " decoder=" + runtime.Decoder.Path +
+                " files=" + manifest.Files.Count;
+        }
+
+        private static Dictionary<string, StagedTranslationAsset> ValidateManifestAndIndex(StagedTranslationManifest manifest)
         {
             if (manifest == null) throw new ArgumentNullException(nameof(manifest));
             if (manifest.SchemaVersion != StagedTranslationManifest.CurrentSchemaVersion)
@@ -136,27 +184,7 @@ namespace PhraseLayer.Core.Translation
                     throw new InvalidOperationException("Duplicate staged translation asset path: " + asset.Path);
                 byPath.Add(asset.Path, asset);
             }
-
-            return new LocalTranslationRuntimeSet(
-                Require(byPath, EncoderPath, "onnx"),
-                Require(byPath, DecoderPath, "onnx"),
-                Require(byPath, SourceSentencePiecePath, "support"),
-                Require(byPath, TargetSentencePiecePath, "support"),
-                Require(byPath, VocabularyPath, "support"),
-                Require(byPath, GenerationConfigPath, "support"));
-        }
-
-        public static string ValidateAndBuildReport(StagedTranslationManifest manifest)
-        {
-            var runtime = ValidateAndResolve(manifest);
-            return
-                "translation staging model=" + manifest.ModelId +
-                " revision=" + manifest.Revision +
-                " parity=exact" +
-                " runtime_status=" + manifest.RuntimeStatus +
-                " encoder=" + runtime.Encoder.Path +
-                " decoder=" + runtime.Decoder.Path +
-                " files=" + manifest.Files.Count;
+            return byPath;
         }
 
         private static StagedTranslationAsset Require(
@@ -175,7 +203,8 @@ namespace PhraseLayer.Core.Translation
         private static void ValidateKind(StagedTranslationAsset asset)
         {
             if (!string.Equals(asset.Kind, "onnx", StringComparison.Ordinal) &&
-                !string.Equals(asset.Kind, "support", StringComparison.Ordinal))
+                !string.Equals(asset.Kind, "support", StringComparison.Ordinal) &&
+                !string.Equals(asset.Kind, "generated", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("Unknown staged translation asset kind: " + asset.Kind);
             }
