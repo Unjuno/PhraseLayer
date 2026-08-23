@@ -17,6 +17,7 @@ namespace PhraseLayer.Core.Inputs
     /// <summary>
     /// Marker interface for platform-native image resources such as a Unity Texture.
     /// Core never inspects the payload; an OCR adapter that understands the concrete payload type may consume it without a mandatory CPU readback.
+    /// A platform payload may also implement IDisposable when it owns a capture snapshot that must be released after inference.
     /// </summary>
     public interface IImageFramePayload { }
 
@@ -56,10 +57,26 @@ namespace PhraseLayer.Core.Inputs
         public bool HasCpuPixels => Pixels.Length > 0;
         public IImageFramePayload? NativePayload { get; }
         public bool HasNativePayload => NativePayload != null;
+        public bool HasImageData => HasCpuPixels || HasNativePayload;
         public int Width { get; }
         public int Height { get; }
         public long TimestampMicroseconds { get; }
         public ImagePixelFormat PixelFormat { get; }
+
+        /// <summary>
+        /// Creates an image-data-free frame that preserves the identity and geometry of this capture.
+        /// Presentation/spatial stages need width, height and timestamp, but must not retain GPU/CPU pixel resources
+        /// after OCR inference has completed.
+        /// </summary>
+        public ImageFrame ToPresentationMetadata()
+        {
+            return new ImageFrame(
+                Array.Empty<byte>(),
+                Width,
+                Height,
+                TimestampMicroseconds,
+                PixelFormat);
+        }
     }
 
     public sealed class AudioChunk
@@ -128,7 +145,6 @@ namespace PhraseLayer.Core.Inputs
     public sealed class FakeOcrEngine : IOcrEngine
     {
         private readonly OcrObservation observation;
-
         public FakeOcrEngine(string text, double confidence = 1.0)
             : this(new OcrObservation(text, confidence)) { }
 
