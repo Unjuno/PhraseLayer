@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "language_pair": "en-ja",
+  "review_mode": "human-structured",
+  "policy": {
+    "critical_failures_allowed": 0,
+    "max_major_or_worse_rate": 0.05,
+    "complete_review_required": true,
+    "note": "Token parity, BLEU, runtime success, or fluency alone are not adequacy evidence. Reviewers assign severity and failed dimensions explicitly."
+  },
+  "cases": [
+    {
+      "id": "negation-do-not-enter",
+      "source": "Do not enter.",
+      "source_type": "sign",
+      "dimensions": ["Adequacy", "NegationPolarity", "JapaneseReadability"],
+      "rationale": "A polarity reversal changes a prohibition into permission or instruction.",
+      "critical_if": ["negation is dropped or reversed"]
+    },
+    {
+      "id": "negation-not-open-yet",
+      "source": "The store is not open yet.",
+      "source_type": "environment",
+      "dimensions": ["Adequacy", "NegationPolarity", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Both negation and the not-yet temporal relation must survive.",
+      "critical_if": ["output states that the store is open"]
+    },
+    {
+      "id": "negation-did-not-mean",
+      "source": "I didn't mean to interrupt you.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "NegationPolarity", "Modality", "JapaneseReadability"],
+      "rationale": "Intentionality and negation are semantically coupled.",
+      "critical_if": ["output claims intentional interruption"]
+    },
+    {
+      "id": "mwe-keep-off",
+      "source": "Please keep off the grass.",
+      "source_type": "sign",
+      "dimensions": ["Adequacy", "MultiwordExpression", "JapaneseReadability"],
+      "rationale": "keep off must be interpreted as a unit rather than literal keep + off.",
+      "critical_if": ["output permits entering the grass"]
+    },
+    {
+      "id": "mwe-run-into",
+      "source": "I ran into an old friend yesterday.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "MultiwordExpression", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "run into means encounter here, not physical collision.",
+      "critical_if": ["output describes a collision instead of meeting"]
+    },
+    {
+      "id": "mwe-give-up",
+      "source": "Don't give up yet.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "MultiwordExpression", "NegationPolarity", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Phrasal-verb meaning, negation, and yet all contribute to the instruction.",
+      "critical_if": ["output tells the listener to give up"]
+    },
+    {
+      "id": "mwe-supposed-to",
+      "source": "You are supposed to wear a helmet.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "MultiwordExpression", "Modality", "JapaneseReadability"],
+      "rationale": "be supposed to expresses an expectation or requirement, not simple futurity.",
+      "critical_if": ["requirement or expectation is lost"]
+    },
+    {
+      "id": "mwe-in-spite-of",
+      "source": "In spite of the rain, the event will continue.",
+      "source_type": "announcement",
+      "dimensions": ["Adequacy", "MultiwordExpression", "Modality", "JapaneseReadability"],
+      "rationale": "Concessive relation must remain intact across the phrase boundary.",
+      "critical_if": ["output states that rain cancels the event"]
+    },
+    {
+      "id": "entity-shibuya-station",
+      "source": "Meet me at Shibuya Station at seven.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "NamedEntity", "Quantity", "JapaneseReadability"],
+      "rationale": "Location identity and meeting time must both be retained.",
+      "critical_if": ["station identity changes", "meeting time changes"]
+    },
+    {
+      "id": "entity-openai-demo",
+      "source": "The OpenAI demo starts at 3 PM.",
+      "source_type": "announcement",
+      "dimensions": ["Adequacy", "NamedEntity", "Quantity", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Named entity and exact start time are separately important.",
+      "critical_if": ["named entity changes", "start time changes"]
+    },
+    {
+      "id": "entity-yamanote-line",
+      "source": "Take the Yamanote Line to Tokyo Station.",
+      "source_type": "navigation",
+      "dimensions": ["Adequacy", "NamedEntity", "JapaneseReadability"],
+      "rationale": "Transit line and destination names must not be substituted.",
+      "critical_if": ["route or destination identity changes"]
+    },
+    {
+      "id": "modality-must-submit",
+      "source": "You must submit the form today.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "Modality", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Obligation and deadline are both decision-relevant.",
+      "critical_if": ["obligation becomes optional", "deadline changes"]
+    },
+    {
+      "id": "modality-might-need",
+      "source": "You might need an umbrella later.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "Modality", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Possibility must not be strengthened into certainty.",
+      "critical_if": ["possibility becomes certainty with materially different advice"]
+    },
+    {
+      "id": "modality-can-leave",
+      "source": "You can leave after the meeting ends.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "Modality", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Permission and the after-event constraint must both remain.",
+      "critical_if": ["permission becomes prohibition", "temporal ordering reverses"]
+    },
+    {
+      "id": "temporal-have-been-waiting",
+      "source": "I have been waiting for twenty minutes.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "TemporalAspect", "Quantity", "JapaneseReadability"],
+      "rationale": "Ongoing duration and quantity are both part of the complaint.",
+      "critical_if": ["duration changes materially", "waiting is described as completed long ago"]
+    },
+    {
+      "id": "temporal-used-to-live",
+      "source": "I used to live near here.",
+      "source_type": "conversation",
+      "dimensions": ["Adequacy", "TemporalAspect", "MultiwordExpression", "JapaneseReadability"],
+      "rationale": "used to encodes a past habitual/state relation that is no longer asserted as current.",
+      "critical_if": ["output states that the speaker currently lives there"]
+    },
+    {
+      "id": "temporal-before-closing",
+      "source": "Please return the key before closing time.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "before must not be reversed into after.",
+      "critical_if": ["deadline ordering is reversed"]
+    },
+    {
+      "id": "quantity-two-stops",
+      "source": "Get off after two stops.",
+      "source_type": "navigation",
+      "dimensions": ["Adequacy", "Quantity", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "A numeric navigation instruction must remain exact.",
+      "critical_if": ["number of stops changes", "before/after relation reverses"]
+    },
+    {
+      "id": "quantity-room-305",
+      "source": "Your room is 305 on the third floor.",
+      "source_type": "environment",
+      "dimensions": ["Adequacy", "Quantity", "JapaneseReadability"],
+      "rationale": "Room number and floor number are identifiers, not approximate quantities.",
+      "critical_if": ["room number changes", "floor changes"]
+    },
+    {
+      "id": "quantity-half-price",
+      "source": "Tickets are half price after six.",
+      "source_type": "sign",
+      "dimensions": ["Adequacy", "Quantity", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Price relation and time condition must remain coupled.",
+      "critical_if": ["discount relation changes", "time condition changes"]
+    },
+    {
+      "id": "conditional-red-light",
+      "source": "If the light turns red, stop here.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "Modality", "TemporalAspect", "JapaneseReadability"],
+      "rationale": "Conditional trigger and required action must remain linked.",
+      "critical_if": ["condition is dropped", "required action reverses"]
+    },
+    {
+      "id": "contrast-not-a-but-b",
+      "source": "Use the left door, not the right one.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "NegationPolarity", "JapaneseReadability"],
+      "rationale": "Contrastive negation must preserve which option is selected.",
+      "critical_if": ["left/right choice reverses"]
+    },
+    {
+      "id": "pronoun-it-refers-package",
+      "source": "The package is fragile, so put it on the table carefully.",
+      "source_type": "instruction",
+      "dimensions": ["Adequacy", "JapaneseReadability"],
+      "rationale": "Reference resolution and causal relation must remain understandable in Japanese.",
+      "critical_if": ["action target changes to a different object"]
+    },
+    {
+      "id": "readability-short-sign",
+      "source": "Staff only beyond this point.",
+      "source_type": "sign",
+      "dimensions": ["Adequacy", "Modality", "JapaneseReadability"],
+      "rationale": "Short signage must remain concise enough for MR reading while preserving restriction.",
+      "critical_if": ["restriction is lost or reversed"]
+    }
+  ]
+}
