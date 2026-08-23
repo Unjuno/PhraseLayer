@@ -41,6 +41,10 @@ namespace PhraseLayer.Core.Inputs
     /// Executes one end-to-end camera → OCR scheduler → presentation cycle.
     /// The pump itself is single-flight so an overlapping caller cannot start another camera capture
     /// while the current frame is still being captured or inferred.
+    ///
+    /// Pixel/native payload lifetime ends immediately after the OCR scheduler has finished with the capture.
+    /// Presentation receives a metadata-only frame with the same dimensions/timestamp, preventing downstream
+    /// assistance code from retaining GPU camera snapshots or accidentally performing a second OCR pass.
     /// </summary>
     public sealed class OcrRuntimePump
     {
@@ -86,10 +90,20 @@ namespace PhraseLayer.Core.Inputs
                         false);
                 }
 
-                var scheduleResult = await scheduler.TryProcessAsync(frame, cancellationToken).ConfigureAwait(false);
+                OcrScheduleResult scheduleResult;
+                try
+                {
+                    scheduleResult = await scheduler.TryProcessAsync(frame, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    DisposeNativePayload(frame);
+                }
+
                 if (scheduleResult.WasProcessed)
                 {
-                    var presented = presenter.PresentIfProcessed(scheduleResult, frame);
+                    var presentationFrame = frame.ToPresentationMetadata();
+                    var presented = presenter.PresentIfProcessed(scheduleResult, presentationFrame);
                     return new OcrPumpResult(
                         OcrPumpStatus.Presented,
                         camera.State,
@@ -109,6 +123,12 @@ namespace PhraseLayer.Core.Inputs
             {
                 singleFlight.Release();
             }
+        }
+
+        private static void DisposeNativePayload(ImageFrame frame)
+        {
+            if (frame.NativePayload is IDisposable disposable)
+                disposable.Dispose();
         }
 
         private static OcrPumpStatus MapSkippedStatus(OcrScheduleStatus status)
