@@ -45,6 +45,22 @@ Interpretation:
 - host preflight is green but UBA still reports Script Compiler Error: the residual defect is specific to real Unity/package assembly resolution and should be isolated there;
 - status contains a run URL: GitHub MCP can traverse run -> job -> log directly, eliminating manual screenshot diagnosis for future experiments.
 
+## Experiment C — exact status transport verification
+
+Hypothesis: the current Core CI status bridge can expose the first concrete Editor/Android `error CSxxxx` for the exact branch head through GitHub commit statuses alone.
+
+Controlled change:
+
+- documentation-only trigger commit on 2026-08-23;
+- no Unity source, package, asmdef, model, or build-setting change;
+- preserve the Meta v85 dependency baseline and current Inference/translation implementation unchanged.
+
+Interpretation:
+
+- Editor/Android statuses are green: host preflight no longer explains the UBA failure; isolate real-Unity assembly/package compilation next;
+- either status is red with `CSxxxx`: fix that exact host-reproducible compiler defect first;
+- red status without `CSxxxx`: treat the preflight harness/environment itself as the failing boundary and inspect the linked Actions run.
+
 ## Preflight observability contract
 
 GitHub Core CI publishes `phraselayer/unity-preflight` on every push. The status must contain a link to the exact Actions run and, on failure, the first `error CSxxxx` diagnostic when one is available. The associated artifact preserves Editor and Android compile logs plus the pinned environment snapshot.
