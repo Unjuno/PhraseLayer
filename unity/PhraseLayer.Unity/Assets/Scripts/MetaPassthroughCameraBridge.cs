@@ -157,19 +157,31 @@ namespace PhraseLayer.Unity
             EnsureApi();
             if (!IsPlaying) return Task.FromResult<ImageFrame>(null);
 
-            var texture = getTextureMethod.Invoke(passthroughCameraAccess, null) as Texture;
-            if (texture == null) return Task.FromResult<ImageFrame>(null);
+            var liveTexture = getTextureMethod.Invoke(passthroughCameraAccess, null) as Texture;
+            if (liveTexture == null) return Task.FromResult<ImageFrame>(null);
 
-            // This is the local observation time, not yet the camera hardware timestamp.
-            // Hardware timestamp alignment will be added only after the exact PCA timestamp contract is verified in a real Unity/Quest build.
-            var localTimestampMicroseconds = checked((long)(Time.realtimeSinceStartupAsDouble * 1_000_000.0));
-            var frame = new ImageFrame(
-                new UnityTextureFramePayload(texture),
-                texture.width,
-                texture.height,
-                localTimestampMicroseconds,
-                ImagePixelFormat.Unknown);
-            return Task.FromResult(frame);
+            // PassthroughCameraAccess.GetTexture() is a streaming surface whose contents continue changing after
+            // this method returns. Freeze the observed image immediately with a GPU-to-GPU copy; otherwise a slow
+            // OCR pass can combine the timestamp/geometry of one capture with pixels from a later camera frame.
+            var payload = UnityTextureFramePayload.CreateSnapshot(liveTexture);
+            try
+            {
+                // This is the local observation time, not yet the camera hardware timestamp.
+                // Hardware timestamp alignment will be added only after the exact PCA timestamp contract is verified in a real Unity/Quest build.
+                var localTimestampMicroseconds = checked((long)(Time.realtimeSinceStartupAsDouble * 1_000_000.0));
+                var frame = new ImageFrame(
+                    payload,
+                    liveTexture.width,
+                    liveTexture.height,
+                    localTimestampMicroseconds,
+                    ImagePixelFormat.Unknown);
+                return Task.FromResult(frame);
+            }
+            catch
+            {
+                payload.Dispose();
+                throw;
+            }
         }
 
         public bool TryCreateRay(ViewportPoint point, out SpatialRay ray)
