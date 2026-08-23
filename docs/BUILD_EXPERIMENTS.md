@@ -15,7 +15,7 @@ A UBA `Player Export Failure` following a `Script Compiler Error` is not counted
 
 Hypothesis: the minimal MRUK-only manifest under-specifies the reviewed Quest/OpenXR dependency surface for Unity 6000.0.
 
-Controlled change:
+Initial controlled change:
 
 - keep `com.meta.xr.mrutilitykit` at `85.0.0`;
 - explicitly pin `com.meta.xr.sdk.core` at `85.0.0`;
@@ -23,11 +23,17 @@ Controlled change:
 - keep generic `com.unity.xr.openxr` at `1.15.1`;
 - do not change PhraseLayer runtime logic in this experiment.
 
+Result: **hypothesis not supported; explicit additions reverted.**
+
+The reviewed Meta Passthrough Camera API sample at `9105be64da8690b41154baf5629cb82dc2dbe4a7` does not explicitly declare either `com.meta.xr.sdk.core` or `com.unity.xr.meta-openxr`. PhraseLayer now follows that proven direct-package surface, with only the local `com.unjuno.phraselayer.core` addition and deliberate removal of Unity analytics / UnityWebRequest built-in modules for the official local-only distribution.
+
+The experiment also exposed a CI-environment-lock drift. `Packages/manifest.json` had moved to the reviewed Meta reference baseline while `ci/unity-environment.lock.json` still described the earlier experimental package set. Commit `84b6096b0aff3588a69303e466579466eceb51b8` synchronized the lock to the reviewed manifest.
+
 Interpretation:
 
-- real Unity compile improves/passes: keep the dependency baseline and investigate the next gate;
-- the same script compiler failure remains: Meta dependency under-specification is not sufficient to explain the failure; continue isolation in PhraseLayer/Inference/Editor surfaces;
-- package resolution fails earlier: revert only the experimental dependency addition and record the exact package error.
+- do not re-add explicit Meta Core / Meta OpenXR dependencies merely to address a generic UBA compiler error;
+- use the exact Meta PCA direct-package baseline first;
+- treat future package divergence as an explicit migration with evidence.
 
 ## Experiment B — diagnostic transport control
 
@@ -35,34 +41,40 @@ Hypothesis: the GitHub preflight can surface the exact compiler family and Actio
 
 Controlled change:
 
-- documentation-only commit;
-- no Unity source, package, asmdef, model, or build-setting change;
-- allow both GitHub CI and Unity Build Automation to run from the same commit.
+- no product-behavior dependency on the transport mechanism;
+- publish Editor and Android host-preflight statuses for each push;
+- preserve exact Actions run identity in a status context;
+- store compiler logs and the pinned environment snapshot as CI artifacts.
 
-Interpretation:
+Result: **PASS.**
 
-- `phraselayer/unity-editor-preflight` / `phraselayer/unity-android-preflight` expose a `CSxxxx` diagnostic: fix that host-reproducible defect before interpreting UBA;
-- host preflight is green but UBA still reports Script Compiler Error: the residual defect is specific to real Unity/package assembly resolution and should be isolated there;
-- status contains a run URL: GitHub MCP can traverse run -> job -> log directly, eliminating manual screenshot diagnosis for future experiments.
+GitHub MCP can now traverse the status context to the exact Core CI run ID, then fetch run jobs and decoded job logs. This removed the need to diagnose ordinary host-preflight failures from Unity Dashboard screenshots.
 
 ## Experiment C — exact status transport verification
 
-Hypothesis: the current Core CI status bridge can expose the first concrete Editor/Android `error CSxxxx` for the exact branch head through GitHub commit statuses alone.
+Hypothesis: the current Core CI status bridge can expose whether the exact branch head failed in Editor preflight, Android preflight, or before compilation.
 
-Controlled change:
+Observed sequence:
 
-- documentation-only trigger commit on 2026-08-23;
-- no Unity source, package, asmdef, model, or build-setting change;
-- preserve the Meta v85 dependency baseline and current Inference/translation implementation unchanged.
+1. Run `32643258977` failed before compilation in `validate_build_environment.py` with:
+   `Packages/manifest.json direct dependencies drifted from ci/unity-environment.lock.json`.
+2. The environment lock was synchronized with the reviewed manifest at `84b6096b0aff3588a69303e466579466eceb51b8`.
+3. Run `32643368243` then passed both Unity Editor and Android host C# preflight, and the complete Core job passed.
+4. After the translation-quality gate additions, run `32643686242` again passed Core, Unity Editor preflight, and Unity Android preflight.
 
-Interpretation:
+Result: **PASS.**
 
-- Editor/Android statuses are green: host preflight no longer explains the UBA failure; isolate real-Unity assembly/package compilation next;
-- either status is red with `CSxxxx`: fix that exact host-reproducible compiler defect first;
-- red status without `CSxxxx`: treat the preflight harness/environment itself as the failing boundary and inspect the linked Actions run.
+The current host-reproducible boundary is green. A subsequent UBA `Script Compiler Error` therefore belongs to real Unity/package assembly resolution or another Unity-only surface until contrary evidence appears.
 
 ## Preflight observability contract
 
-GitHub Core CI publishes `phraselayer/unity-preflight` on every push. The status must contain a link to the exact Actions run and, on failure, the first `error CSxxxx` diagnostic when one is available. The associated artifact preserves Editor and Android compile logs plus the pinned environment snapshot.
+GitHub Core CI publishes:
 
-This status is a host preflight only. A green status cannot replace a real Unity 6000.0.66f2 compile, but a red status should normally be fixed before spending another UBA build.
+- `phraselayer/unity-editor-preflight`;
+- `phraselayer/unity-android-preflight`;
+- `phraselayer/unity-preflight`;
+- `phraselayer/unity-run-<run-id>`.
+
+On failure, the workflow extracts the first concrete `error CSxxxx` diagnostic when one exists. It also uploads Editor/Android compile logs and a pinned environment snapshot.
+
+This status is a host preflight only. A green status cannot replace a real Unity 6000.0.66f2 compile, but a red status must normally be fixed before spending another UBA build.
