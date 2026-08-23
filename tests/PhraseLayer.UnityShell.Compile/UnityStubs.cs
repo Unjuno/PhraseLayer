@@ -219,6 +219,8 @@ namespace UnityEngine
     {
         public static void Log(object message) { }
         public static void Log(object message, Object context) { }
+        public static void LogWarning(object message) { }
+        public static void LogWarning(object message, Object context) { }
         public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
     }

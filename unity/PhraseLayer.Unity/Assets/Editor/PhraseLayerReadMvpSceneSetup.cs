@@ -4,6 +4,7 @@ using PhraseLayer.Core.Translation;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
 using Unity.InferenceEngine;
