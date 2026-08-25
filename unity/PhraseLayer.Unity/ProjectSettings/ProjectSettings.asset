@@ -30,7 +30,7 @@ PlayerSettings:
   AndroidBuildApkPerCpuArchitecture: 0
   AndroidIsGame: 1
   androidGamepadSupportLevel: 0
-  useCustomMainManifest: 0
+  useCustomMainManifest: 1
   useCustomLauncherManifest: 0
   useCustomMainGradleTemplate: 0
   useCustomLauncherGradleManifest: 0
