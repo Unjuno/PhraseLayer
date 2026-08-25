@@ -21,6 +21,7 @@ EXPECTED_XR_CONFIG_GUIDS = {
     "com.unity.xr.openxr.settings4": "9165b3c3dec8d446f9b11d1a99b6e245",
 }
 EXPECTED_OPENXR_LOADER_GUID = "648a3ff285e714febbecf3bc8c29aba6"
+FORBIDDEN_SAMPLE_ANDROID_LOADER_GUID = "e5cef9052281a4476b932f9b74dcf466"
 REFERENCE_XR_BLOBS = {
     "Assets/XR.meta": "96fec2d44c6d916e63d30f405fbf6684d722ee6a",
     "Assets/XR/Loaders.meta": "505c4e4076928dfd90b1d4add0c383cc4035a8c0",
@@ -31,9 +32,9 @@ REFERENCE_XR_BLOBS = {
     "Assets/XR/Settings/OpenXR Editor Settings.asset.meta": "cf674877838856fadeea1ba8b1dc7b4ee8e16118",
     "Assets/XR/Settings/OpenXR Package Settings.asset": "f375d5e0144d19890c49e01f3a27dc972995c688",
     "Assets/XR/Settings/OpenXR Package Settings.asset.meta": "4cf701491150c48c84c58271916420cf349161fd",
-    "Assets/XR/XRGeneralSettingsPerBuildTarget.asset": "c71d926018d36d31ebb26ebcc01cf84b38afe939",
     "Assets/XR/XRGeneralSettingsPerBuildTarget.asset.meta": "c30b95fa04b45f50c5f84c476348825e30bf8852",
 }
+PHRASELAYER_XR_GENERAL_BLOB = "c02fc87a6a3d115a88194ab20589a57943a38dbb"
 
 errors = []
 
@@ -176,16 +177,48 @@ for relative, expected_sha in REFERENCE_XR_BLOBS.items():
         )
 
 xr_general_path = UNITY / "Assets" / "XR" / "XRGeneralSettingsPerBuildTarget.asset"
-if xr_general_path.is_file():
+if not xr_general_path.is_file():
+    errors.append("missing PhraseLayer XRGeneralSettingsPerBuildTarget.asset")
+else:
+    actual_sha = git_blob_sha(xr_general_path)
+    if actual_sha != PHRASELAYER_XR_GENERAL_BLOB:
+        errors.append(
+            "PhraseLayer XR provider baseline drift: Assets/XR/XRGeneralSettingsPerBuildTarget.asset "
+            f"expected {PHRASELAYER_XR_GENERAL_BLOB}, found {actual_sha}"
+        )
+
     xr_general = xr_general_path.read_text(encoding="utf-8")
     for marker in (
         "m_Name: Android Providers",
         "m_Name: Android Settings",
         "m_InitManagerOnStart: 1",
+        "m_AutomaticLoading: 1",
+        "m_AutomaticRunning: 1",
         f"guid: {EXPECTED_OPENXR_LOADER_GUID}",
     ):
         if marker not in xr_general:
             errors.append(f"XRGeneralSettingsPerBuildTarget.asset missing Android/OpenXR marker: {marker!r}")
+
+    if FORBIDDEN_SAMPLE_ANDROID_LOADER_GUID in xr_general:
+        errors.append(
+            "PhraseLayer Android XR providers must not retain the Meta sample's extra provider loader; "
+            "the official runtime is OpenXR-only"
+        )
+
+    android_block = re.search(
+        r"m_Name: Android Providers\s+.*?m_Loaders:\s*\n(?P<loaders>(?:\s+- \{[^\n]+\}\s*\n)*)--- !u!114",
+        xr_general,
+        re.DOTALL,
+    )
+    if android_block is None:
+        errors.append("Unable to parse Android XR provider loader list")
+    else:
+        loader_guids = re.findall(r"guid: ([0-9a-f]{32})", android_block.group("loaders"))
+        if loader_guids != [EXPECTED_OPENXR_LOADER_GUID]:
+            errors.append(
+                "Android XR provider list must contain exactly the reviewed OpenXR loader; found: "
+                + ", ".join(loader_guids)
+            )
 
 openxr_path = UNITY / "Assets" / "XR" / "Settings" / "OpenXR Package Settings.asset"
 if openxr_path.is_file():
@@ -241,7 +274,7 @@ if errors:
     raise SystemExit("\n".join(errors))
 
 print(
-    "Unity reference baseline PASS: exact reviewed Meta XR serialized assets, Android XR config links, "
-    "Meta/OpenXR feature markers, deterministic PhraseLayer project settings, committed Read MVP scene, "
-    "local-only permissions, and sample-identity isolation validated"
+    "Unity reference baseline PASS: reviewed Meta XR serialized assets plus PhraseLayer's OpenXR-only Android "
+    "provider lifecycle, deterministic project settings, committed Read MVP scene, local-only permissions, "
+    "and sample-identity isolation validated"
 )

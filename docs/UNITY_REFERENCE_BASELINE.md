@@ -34,17 +34,18 @@ PhraseLayer intentionally does **not** adopt the reference project's runtime net
 
 ## Serialized XR baseline
 
-Because the Unity/MRUK/XR package pins above are identical, PhraseLayer commits the reviewed sample's generated XR configuration assets byte-for-byte rather than reconstructing undocumented YAML by hand:
+Because the Unity/MRUK/XR package pins above are identical, PhraseLayer commits the reviewed sample's generated OpenXR loader and feature settings instead of reconstructing undocumented YAML by hand:
 
 - `Assets/XR/Loaders/OpenXRLoader.asset`;
-- `Assets/XR/XRGeneralSettingsPerBuildTarget.asset`;
 - `Assets/XR/Settings/OpenXR Editor Settings.asset`;
 - `Assets/XR/Settings/OpenXR Package Settings.asset`;
 - their folder/asset `.meta` files.
 
-`tools/validate_unity_reference_baseline.py` computes each file's Git blob SHA and requires it to equal the reviewed Meta-reference blob. This is an integrity/equality check, not a cryptographic trust claim.
+`Assets/XR/XRGeneralSettingsPerBuildTarget.asset` is an intentional PhraseLayer-specific divergence. The Meta sample carries an additional Android provider reference and disables automatic provider loading/running. PhraseLayer does not implement that sample-specific provider lifecycle. Its Android provider list therefore contains exactly the reviewed OpenXR loader, with automatic loading and running enabled so `Initialize XR on Startup` has the normal XR Plug-in Management behavior.
 
-`ProjectSettings/EditorBuildSettings.asset` keeps PhraseLayer's own Read MVP scene, but its XR config-object entries use the reviewed settings GUIDs:
+`tools/validate_unity_reference_baseline.py` computes Git blob SHAs for the unchanged Meta-reference assets and separately pins the PhraseLayer XR-general-settings blob. It also rejects the sample's extra Android loader GUID and requires exactly one Android loader: OpenXR. These are integrity/equality checks, not cryptographic trust claims.
+
+`ProjectSettings/EditorBuildSettings.asset` keeps PhraseLayer's own Read MVP scene, while its XR config-object entries use the reviewed settings GUIDs:
 
 - `Unity.XR.Oculus.Settings` -> `f2bf97b3acdb64248a707c407c9fc54e`;
 - `com.unity.xr.management.loader_settings` -> `a971eac5e950046e586c5e153e32d05c`;
@@ -84,18 +85,18 @@ Use this order:
 When PhraseLayer differs from the primary reference, the difference must be either:
 
 - required by PhraseLayer's product behavior; or
-- an explicit local-only/privacy constraint.
+- an explicit local-only/privacy/runtime-lifecycle constraint.
 
 Avoid architecture-only differences until the reference-equivalent vertical slice builds successfully.
 
 ## Current structural baseline
 
-The earlier skeletal-project gap is now materially reduced. PhraseLayer commits deterministic `ProjectSettings`, the reviewed XR loader/settings assets, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene remains model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load.
+The earlier skeletal-project gap is now materially reduced. PhraseLayer commits deterministic `ProjectSettings`, the reviewed OpenXR loader/feature settings, its explicit OpenXR-only Android provider lifecycle, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene remains model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load. The camera has a Unity-XR head-pose driver, but device correctness remains a separate gate.
 
 This is a build/import baseline, not evidence of Quest device correctness. The following remain separate gates:
 
 - real Unity/UBA import and Android player build of the committed scene;
-- explicit head-tracked camera behavior;
+- Quest 3 validation of head-tracked camera behavior;
 - Quest 3 passthrough camera startup and permission behavior;
 - locally staged PP-OCR execution;
 - local OPUS-MT execution;
