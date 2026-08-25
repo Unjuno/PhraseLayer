@@ -3,7 +3,8 @@
 
 This validator intentionally does not ban replaceable engine interfaces. It bans concrete runtime
 network dependencies in the official Core/Quest implementation so future community/provider adapters
-can live outside the reference distribution without changing the product contract.
+can live outside the reference distribution without changing the product contract. It also pins the
+Quest Android manifest boundary because camera access is allowed while network access is not.
 """
 
 from __future__ import annotations
@@ -36,6 +37,26 @@ FORBIDDEN_DIRECT_PACKAGES = (
 FORBIDDEN_MANIFEST_PERMISSIONS = (
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
+)
+
+QUEST_MANIFEST_MARKERS = (
+    'android:name="android.permission.CAMERA"',
+    'android:name="horizonos.permission.HEADSET_CAMERA"',
+    'android:name="com.oculus.feature.PASSTHROUGH"',
+    'android:name="android.hardware.vr.headtracking"',
+    'android:name="com.oculus.supportedDevices"',
+    'android:value="quest3|quest3s"',
+    'android:name="com.unity3d.player.UnityPlayerGameActivity"',
+)
+
+PLAYER_SETTINGS_MARKERS = (
+    "AndroidMinSdkVersion: 32",
+    "AndroidTargetSdkVersion: 36",
+    "AndroidTargetArchitectures: 2",
+    "androidApplicationEntry: 2",
+    "useCustomMainManifest: 1",
+    "ForceInternetPermission: 0",
+    "ForceSDCardPermission: 0",
 )
 
 violations: list[str] = []
@@ -87,6 +108,25 @@ if assets_root.is_dir():
                     f"{path.relative_to(ROOT)} requests forbidden network permission {permission}"
                 )
 
+quest_manifest = require_file(UNITY / "Assets" / "Plugins" / "Android" / "AndroidManifest.xml")
+if quest_manifest:
+    for marker in QUEST_MANIFEST_MARKERS:
+        if marker not in quest_manifest:
+            violations.append(f"Quest Android manifest missing reviewed marker: {marker}")
+    if "com.oculus.telemetry.project_guid" in quest_manifest:
+        violations.append("Quest Android manifest must not copy the Meta sample telemetry project GUID")
+    for permission in ("com.oculus.permission.USE_SCENE", "com.oculus.permission.USE_ANCHOR_API"):
+        if permission in quest_manifest:
+            violations.append(
+                f"committed model-free Read baseline must not request unused Meta permission {permission}"
+            )
+
+player_settings = require_file(UNITY / "ProjectSettings" / "ProjectSettings.asset")
+if player_settings:
+    for marker in PLAYER_SETTINGS_MARKERS:
+        if marker not in player_settings:
+            violations.append(f"Android PlayerSettings missing reviewed Quest build marker: {marker}")
+
 build_guard = require_file(UNITY / "Assets" / "Editor" / "PhraseLayerLocalOnlyBuildGuard.cs")
 for marker in (
     "PlayerSettings.Android.forceInternetPermission",
@@ -126,5 +166,6 @@ if violations:
 
 print(
     "PASS: official PhraseLayer runtime contains no reviewed network APIs/permissions/service packages; "
-    "Quest build guard is present and OCR/ASR/translation interfaces remain replaceable"
+    "Quest build manifest declares only reviewed camera/MR capabilities, Android build settings are pinned, "
+    "and OCR/ASR/translation interfaces remain replaceable"
 )
