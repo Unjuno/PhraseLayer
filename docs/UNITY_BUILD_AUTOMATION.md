@@ -50,6 +50,18 @@ dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile
 dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityAndroid.Compile.csproj -c Release
 ```
 
+## Committed Read MVP scene
+
+`Assets/Scenes/PhraseLayerReadMvp.unity` is the enabled repository scene. It deliberately contains no PP-OCR or translation model weights.
+
+The committed baseline serializes the MRUK `Meta.XR.PassthroughCameraAccess` component from the pinned `com.meta.xr.mrutilitykit@85.0.0` package and a normal Unity camera. `PhraseLayerReadMvpRuntimeInstaller` creates the PhraseLayer Read graph after scene load with the synthetic OCR fixture and dictionary translation fallback. This gives cloud builds a deterministic, model-free scene while keeping the shipped architecture local-only.
+
+For Quest device work, stage the reviewed local PP-OCR assets and run:
+
+`PhraseLayer -> Read MVP -> Create or Reset Local Read Scene`
+
+That command replaces the baseline scene locally with the real camera bridge, PP-OCR bootstrap, learner profile, Read assistance, and—when the complete verified bundle is present—the local OPUS-MT bootstrap. Those model assets remain git-ignored and are never downloaded by the Editor command.
+
 ## Required Pre-Export hook
 
 Set **Advanced Settings -> Pre-Export Method** to exactly:
@@ -59,7 +71,7 @@ Set **Advanced Settings -> Pre-Export Method** to exactly:
 UBA runs this method after Unity script compilation and before the player build. PhraseLayer uses that boundary to:
 
 1. apply local-only Android defaults,
-2. create the deterministic shell scene if the repository does not yet have an enabled production scene,
+2. retain the committed Read MVP scene (or recover a deterministic shell only if no enabled scene exists),
 3. run the local-only contract,
 4. run the Unity language/OCR/runtime verification.
 
@@ -72,7 +84,7 @@ Git push
   -> UBA checkout/import
   -> real Unity C# compile
   -> PhraseLayerCloudBuildVerification.PreExport
-       -> establish shell/build scene
+       -> retain committed Read MVP build scene
        -> local-only verification
        -> PhraseLayer Unity verification
   -> IPreprocessBuildWithReport fail-closed gate
@@ -90,7 +102,7 @@ Using `file:../../src/PhraseLayer.Core` incorrectly resolves to `unity/src/Phras
 
 ## Meta package resolution in cloud CI
 
-`Packages/manifest.json` pins Meta MRUK `85.0.0` and uses the **standard Unity Package Manager resolution path**. Do not add a custom Meta scoped registry for this package unless an upstream Meta/Unity requirement explicitly changes.
+`Packages/manifest.json` pins Meta MRUK `85.0.0` and uses the **standard Unity Package Manager resolution** path. Do not add a custom Meta scoped registry for this package unless an upstream Meta/Unity requirement explicitly changes.
 
 Meta's current Passthrough Camera API sample also declares `com.meta.xr.mrutilitykit` directly in `Packages/manifest.json` without a custom `scopedRegistries` entry. Keeping PhraseLayer aligned with that package-resolution shape avoids introducing an unnecessary alternate registry/authentication failure mode in unattended UBA builds.
 

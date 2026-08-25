@@ -18,12 +18,14 @@ namespace PhraseLayer.Unity.Editor
     /// during development: if its complete hash-locked bootstrap bundle is present it is wired automatically;
     /// otherwise the Read debug component keeps its explicit tiny dictionary fallback.
     ///
-    /// This menu is local-development tooling only. UBA does not invoke it and git-ignored model weights are never
-    /// manufactured or downloaded by the Editor script.
+    /// This menu is local-development tooling only. UBA builds the committed model-free Read scene; this command
+    /// replaces that baseline with a device-test scene whose PP-OCR/translation references point only at locally
+    /// staged, git-ignored assets.
     /// </summary>
     public static class PhraseLayerReadMvpSceneSetup
     {
         public const string ScenePath = "Assets/Scenes/PhraseLayerReadMvp.unity";
+        private const string PassthroughCameraAccessTypeName = "Meta.XR.PassthroughCameraAccess";
 
         [MenuItem("PhraseLayer/Read MVP/Create or Reset Local Read Scene")]
         public static void CreateOrResetLocalReadScene()
@@ -36,6 +38,7 @@ namespace PhraseLayer.Unity.Editor
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Read MVP");
 
+            var passthroughCameraAccess = AddRequiredPassthroughCameraAccess(root);
             var cameraBridge = root.AddComponent<MetaPassthroughCameraBridge>();
             var presenter = root.AddComponent<OcrViewportDebugBehaviour>();
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
@@ -43,6 +46,8 @@ namespace PhraseLayer.Unity.Editor
             var learnerProfile = root.AddComponent<UnityLearnerProfileBehaviour>();
             var readAssistance = root.AddComponent<QuestReadAssistanceDebugBehaviour>();
 
+            cameraBridge.SetPassthroughCameraAccess(passthroughCameraAccess);
+            presenter.LoadSyntheticFixtureOnStart = false;
             AssignReference(runtimeDriver, "cameraBridge", cameraBridge);
             AssignReference(runtimeDriver, "presenter", presenter);
             AssignReference(ocrBootstrap, "runtimeDriver", runtimeDriver);
@@ -63,6 +68,7 @@ namespace PhraseLayer.Unity.Editor
             AssetDatabase.SaveAssets();
             Debug.Log(
                 "PhraseLayer Read MVP scene ready: " + ScenePath +
+                " camera=Meta.XR.PassthroughCameraAccess" +
                 " OCR=local-PP-OCR translation=" + (translationWired ? "local-OPUS-MT" : "debug-dictionary"));
 #else
             throw new InvalidOperationException(
@@ -71,6 +77,30 @@ namespace PhraseLayer.Unity.Editor
         }
 
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+        private static Component AddRequiredPassthroughCameraAccess(GameObject root)
+        {
+            var type = ResolvePassthroughCameraAccessType();
+            var component = root.AddComponent(type) as Component;
+            if (component == null)
+                throw new InvalidOperationException(PassthroughCameraAccessTypeName + " did not create a Unity Component.");
+            return component;
+        }
+
+        private static Type ResolvePassthroughCameraAccessType()
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (var index = 0; index < assemblies.Length; index++)
+            {
+                var type = assemblies[index].GetType(PassthroughCameraAccessTypeName, false);
+                if (type != null && typeof(Component).IsAssignableFrom(type))
+                    return type;
+            }
+
+            throw new InvalidOperationException(
+                "Required Meta camera type is unavailable: " + PassthroughCameraAccessTypeName +
+                ". PhraseLayer pins com.meta.xr.mrutilitykit@85.0.0; resolve that package before creating the local Read scene.");
+        }
+
         private static bool TryWireLocalTranslation(GameObject root, QuestReadAssistanceDebugBehaviour readAssistance)
         {
             var manifestPath = PhraseLayerLocalTranslationAssets.ManifestAssetPath;

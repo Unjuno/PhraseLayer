@@ -4,6 +4,8 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/PhraseLayerReadMvp.unity
+    guid: 7dc921b4703c4b5295c8de272308f789
   m_configObjects: {}
-  m_UseUCBPForAssetBundles: 0

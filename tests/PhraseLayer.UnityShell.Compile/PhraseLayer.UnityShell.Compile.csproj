@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
     <Compile Include="UnityStubs.cs" />
+    <Compile Include="RuntimeInitializeStubs.cs" />
     <Compile Include="UnityInferenceStubs.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs" LinkBase="UnityRuntime" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs" LinkBase="UnityEditor" />
