@@ -68,8 +68,16 @@ When PhraseLayer differs from the primary reference, the difference must be eith
 
 Avoid architecture-only differences until the reference-equivalent vertical slice builds successfully.
 
-## Known structural gap
+## Current structural baseline
 
-The Meta reference is a complete Unity project with committed ProjectSettings, XR loader/settings assets, Meta/Oculus project configuration assets, scenes, and Android configuration. PhraseLayer historically committed only `ProjectVersion.txt` under `ProjectSettings` and generated a shell scene during build.
+The earlier skeletal-project gap is now partially closed. PhraseLayer commits deterministic `ProjectSettings`, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene is intentionally model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and a normal Unity camera, while PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load.
 
-That skeletal-project approach is no longer the reference architecture. The Unity project will be reconstructed toward the known-good Meta project structure while keeping PhraseLayer-specific source code and local-only constraints.
+This is a build/import baseline, not evidence of Quest device correctness. The following remain separate gates:
+
+- real Unity/UBA import and Android player build of the committed scene;
+- Quest 3 passthrough camera startup and permission behavior;
+- locally staged PP-OCR execution;
+- local OPUS-MT execution;
+- head-tracked MR presentation and device performance measurements.
+
+Local PP-OCR and translation model files remain git-ignored. A device-test scene with those local assets is generated explicitly through `PhraseLayer -> Read MVP -> Create or Reset Local Read Scene`; cloud CI must not manufacture or download model weights.

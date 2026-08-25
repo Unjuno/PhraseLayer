@@ -9,6 +9,11 @@ manifest_path = UNITY / "Packages" / "manifest.json"
 settings_dir = UNITY / "ProjectSettings"
 version_path = settings_dir / "ProjectVersion.txt"
 reference_doc = ROOT / "docs" / "UNITY_REFERENCE_BASELINE.md"
+scene_path = UNITY / "Assets" / "Scenes" / "PhraseLayerReadMvp.unity"
+scene_meta_path = UNITY / "Assets" / "Scenes" / "PhraseLayerReadMvp.unity.meta"
+EXPECTED_SCENE_ASSET_PATH = "Assets/Scenes/PhraseLayerReadMvp.unity"
+EXPECTED_SCENE_GUID = "7dc921b4703c4b5295c8de272308f789"
+EXPECTED_PCA_SCRIPT_GUID = "ef9a7893e57c04c0db4114c70954b915"
 
 errors = []
 
@@ -108,12 +113,40 @@ if player_path.is_file():
 build_path = settings_dir / "EditorBuildSettings.asset"
 if build_path.is_file():
     build = build_path.read_text(encoding="utf-8")
-    if "m_Scenes: []" not in build:
-        errors.append("EditorBuildSettings.asset must keep scenes empty until the committed PhraseLayer shell scene lands")
+    expected_scene_entry = (
+        "  - enabled: 1\n"
+        f"    path: {EXPECTED_SCENE_ASSET_PATH}\n"
+        f"    guid: {EXPECTED_SCENE_GUID}"
+    )
+    if expected_scene_entry not in build:
+        errors.append("EditorBuildSettings.asset must enable only the committed PhraseLayer Read MVP scene baseline")
     if "m_configObjects: {}" not in build:
         errors.append("EditorBuildSettings.asset must not reference copied Meta XR config GUIDs before those assets are intentionally imported")
-    if "PassthroughCameraApiSamples" in build or re.search(r"guid: [0-9a-f]{32}", build):
-        errors.append("EditorBuildSettings.asset must not reference Meta sample scenes/config GUIDs")
+    if "PassthroughCameraApiSamples" in build:
+        errors.append("EditorBuildSettings.asset must not reference Meta sample scene paths")
+
+    referenced_guids = re.findall(r"guid: ([0-9a-f]{32})", build)
+    unexpected_guids = [guid for guid in referenced_guids if guid != EXPECTED_SCENE_GUID]
+    if unexpected_guids:
+        errors.append(
+            "EditorBuildSettings.asset contains non-PhraseLayer scene/config GUIDs: " + ", ".join(unexpected_guids)
+        )
+
+if not scene_path.is_file():
+    errors.append("missing committed PhraseLayer Read MVP scene")
+else:
+    scene = scene_path.read_text(encoding="utf-8")
+    if EXPECTED_PCA_SCRIPT_GUID not in scene:
+        errors.append("committed Read MVP scene must serialize the reviewed MRUK 85 PassthroughCameraAccess script")
+    if "PassthroughCameraApiSamples" in scene:
+        errors.append("committed Read MVP scene must not copy Meta sample scene identities")
+
+if not scene_meta_path.is_file():
+    errors.append("missing committed PhraseLayer Read MVP scene meta")
+else:
+    scene_meta = scene_meta_path.read_text(encoding="utf-8")
+    if f"guid: {EXPECTED_SCENE_GUID}" not in scene_meta:
+        errors.append("PhraseLayer Read MVP scene meta GUID drifted from EditorBuildSettings.asset")
 
 if not version_path.is_file():
     errors.append("missing Unity ProjectVersion.txt")
@@ -130,5 +163,5 @@ if errors:
 
 print(
     "Unity reference baseline PASS: Meta PCA-compatible package pins, deterministic Unity project settings, "
-    "PhraseLayer Android identity/local-only permissions, and sample-GUID isolation validated"
+    "PhraseLayer Android identity/local-only permissions, committed Read MVP scene identity, and sample-GUID isolation validated"
 )
