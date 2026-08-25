@@ -1,9 +1,6 @@
 name: Unity Build Automation Feedback
 
 on:
-  push:
-    branches:
-      - agent/multi-sentence-segmentation
   workflow_dispatch:
 
 permissions:
@@ -40,15 +37,10 @@ jobs:
         run: |
           if [ -n "$UNITY_UBA_API_KEY" ] && [ -n "$UNITY_UBA_PROJECT_ID" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "UBA feedback is optional and manual. Configure UNITY_UBA_API_KEY and UNITY_UBA_PROJECT_ID only when GitHub-side synchronization is needed."
           fi
-
-          echo "configured=false" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "::error::Automatic UBA feedback requires UNITY_UBA_API_KEY and UNITY_UBA_PROJECT_ID."
-            exit 2
-          fi
-          echo "UBA feedback configuration is absent; manual diagnostic invocation cannot query Unity Build Automation."
 
       - name: Publish pending UBA status
         if: steps.config.outputs.configured == 'true'
@@ -63,7 +55,7 @@ jobs:
               sha: context.sha,
               state: 'pending',
               context: 'phraselayer/uba',
-              description: 'Waiting for the matching Unity Build Automation build'
+              description: 'Manual UBA synchronization is waiting for a matching build'
             });
 
       - name: Mirror UBA build result and diagnostics
@@ -110,7 +102,7 @@ jobs:
               description
             });
 
-      - name: Enforce UBA synchronization result
+      - name: Enforce manual UBA synchronization result
         if: ${{ always() && steps.config.outputs.configured == 'true' }}
         shell: bash
         run: |
