@@ -32,6 +32,26 @@ PhraseLayer intentionally keeps one additional package:
 
 PhraseLayer intentionally does **not** adopt the reference project's runtime networking / analytics built-in modules. The official PhraseLayer distribution remains local-only.
 
+## Serialized XR baseline
+
+Because the Unity/MRUK/XR package pins above are identical, PhraseLayer commits the reviewed sample's generated XR configuration assets byte-for-byte rather than reconstructing undocumented YAML by hand:
+
+- `Assets/XR/Loaders/OpenXRLoader.asset`;
+- `Assets/XR/XRGeneralSettingsPerBuildTarget.asset`;
+- `Assets/XR/Settings/OpenXR Editor Settings.asset`;
+- `Assets/XR/Settings/OpenXR Package Settings.asset`;
+- their folder/asset `.meta` files.
+
+`tools/validate_unity_reference_baseline.py` computes each file's Git blob SHA and requires it to equal the reviewed Meta-reference blob. This is an integrity/equality check, not a cryptographic trust claim.
+
+`ProjectSettings/EditorBuildSettings.asset` keeps PhraseLayer's own Read MVP scene, but its XR config-object entries use the reviewed settings GUIDs:
+
+- `Unity.XR.Oculus.Settings` -> `f2bf97b3acdb64248a707c407c9fc54e`;
+- `com.unity.xr.management.loader_settings` -> `a971eac5e950046e586c5e153e32d05c`;
+- `com.unity.xr.openxr.settings4` -> `9165b3c3dec8d446f9b11d1a99b6e245`.
+
+The validator still rejects arbitrary additional scene/config GUIDs and Meta sample scene identities. The Android OpenXR settings must retain the enabled Meta XR feature and Oculus Touch controller profile.
+
 ## Secondary release-engineering reference
 
 Repository: `Uralstech/UXR.QuestCamera`
@@ -70,14 +90,15 @@ Avoid architecture-only differences until the reference-equivalent vertical slic
 
 ## Current structural baseline
 
-The earlier skeletal-project gap is now partially closed. PhraseLayer commits deterministic `ProjectSettings`, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene is intentionally model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and a normal Unity camera, while PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load.
+The earlier skeletal-project gap is now materially reduced. PhraseLayer commits deterministic `ProjectSettings`, the reviewed XR loader/settings assets, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene remains model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load.
 
 This is a build/import baseline, not evidence of Quest device correctness. The following remain separate gates:
 
 - real Unity/UBA import and Android player build of the committed scene;
+- explicit head-tracked camera behavior;
 - Quest 3 passthrough camera startup and permission behavior;
 - locally staged PP-OCR execution;
 - local OPUS-MT execution;
-- head-tracked MR presentation and device performance measurements.
+- device performance and thermal measurements.
 
 Local PP-OCR and translation model files remain git-ignored. A device-test scene with those local assets is generated explicitly through `PhraseLayer -> Read MVP -> Create or Reset Local Read Scene`; cloud CI must not manufacture or download model weights.
