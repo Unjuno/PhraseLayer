@@ -51,7 +51,7 @@ QUEST_MANIFEST_MARKERS = (
 
 PLAYER_SETTINGS_MARKERS = (
     "AndroidMinSdkVersion: 32",
-    "AndroidTargetSdkVersion: 36",
+    "AndroidTargetSdkVersion: 32",
     "AndroidTargetArchitectures: 2",
     "androidApplicationEntry: 2",
     "useCustomMainManifest: 1",
