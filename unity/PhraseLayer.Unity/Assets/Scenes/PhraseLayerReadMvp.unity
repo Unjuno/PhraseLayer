@@ -84,12 +84,9 @@ LightmapSettings:
     m_PVRFilterTypeAO: 0
     m_PVREnvironmentMIS: 0
     m_PVRCulling: 1
-    m_PVRFilteringGaussRadiusDirect: 1
-    m_PVRFilteringGaussRadiusIndirect: 5
-    m_PVRFilteringGaussRadiusAO: 2
-    m_PVRFilteringAtrousPositionSigmaDirect: 0.5
-    m_PVRFilteringAtrousPositionSigmaIndirect: 2
-    m_PVRFilteringAtrousPositionSigmaAO: 1
+    m_PVRFilteringGaussRadiusDirect: 0.5
+    m_PVRFilteringGaussRadiusIndirect: 2
+    m_PVRFilteringGaussRadiusAO: 1
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
@@ -146,7 +143,7 @@ Transform:
   m_GameObject: {fileID: 100000}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -10}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -258,4 +255,3 @@ MonoBehaviour:
   CameraPosition: 0
   RequestedResolution: {x: 1280, y: 960}
   TargetMaterial: {fileID: 0}
-  _texturePropertyName:

@@ -84,6 +84,40 @@ require(
 )
 
 require(
+    SCRIPTS / "UnityXrHeadPoseBehaviour.cs",
+    (
+        "InputDevices.GetDeviceAtXRNode(XRNode.Head)",
+        "CommonUsages.devicePosition",
+        "CommonUsages.deviceRotation",
+        "transform.localPosition = position",
+        "transform.localRotation = rotation",
+    ),
+    "Unity XR head-pose driver",
+)
+
+require(
+    SCRIPTS / "PhraseLayerReadMvpRuntimeInstaller.cs",
+    (
+        "InstallHeadTracking();",
+        'MainCameraObjectName = "Main Camera"',
+        "camera.transform.localPosition = Vector3.zero",
+        "camera.transform.localRotation = Quaternion.identity",
+        "camera.gameObject.AddComponent<UnityXrHeadPoseBehaviour>()",
+    ),
+    "Committed Read MVP runtime installer head tracking",
+)
+
+require(
+    UNITY / "Scenes" / "PhraseLayerReadMvp.unity",
+    (
+        "m_Name: Main Camera",
+        "m_LocalPosition: {x: 0, y: 0, z: 0}",
+        "m_TagString: MainCamera",
+    ),
+    "Committed Read MVP camera origin",
+)
+
+require(
     EDITOR / "PhraseLayerReadMvpSceneSetup.cs",
     (
         'ScenePath = "Assets/Scenes/PhraseLayerReadMvp.unity"',
@@ -155,6 +189,7 @@ if violations:
 
 print(
     "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; language plans are frozen "
-    "per encounter, the deterministic local Read scene wires camera/OCR/learner/assistance, local OPUS-MT is injected "
-    "only after staged asset/tokenizer/model validation, and stale/noisy frames cannot flicker the overlay"
+    "per encounter; the committed camera starts at XR origin and receives Unity XR head pose; the deterministic local "
+    "Read scene wires camera/OCR/learner/assistance; local OPUS-MT is injected only after staged asset/tokenizer/model "
+    "validation; and stale/noisy frames cannot flicker the overlay"
 )

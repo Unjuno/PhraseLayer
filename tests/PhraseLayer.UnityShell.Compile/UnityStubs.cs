@@ -18,10 +18,17 @@ namespace UnityEngine
         public static void DestroyImmediate(Object obj) { }
     }
 
+    public sealed class Transform : Object
+    {
+        public Vector3 localPosition { get; set; }
+        public Quaternion localRotation { get; set; }
+    }
+
     public class Component : Object
     {
         private readonly GameObject _gameObject = new GameObject("stub-component-owner");
         public GameObject gameObject => _gameObject;
+        public Transform transform => _gameObject.transform;
     }
 
     public class Behaviour : Component { public bool enabled { get; set; } }
@@ -49,6 +56,18 @@ namespace UnityEngine
         public float x;
         public float y;
         public float z;
+        public static Vector3 zero => new Vector3(0f, 0f, 0f);
+    }
+
+    public struct Quaternion
+    {
+        public Quaternion(float x, float y, float z, float w)
+        { this.x = x; this.y = y; this.z = z; this.w = w; }
+        public float x;
+        public float y;
+        public float z;
+        public float w;
+        public static Quaternion identity => new Quaternion(0f, 0f, 0f, 1f);
     }
 
     public struct Vector4
@@ -130,6 +149,8 @@ namespace UnityEngine
         public void SetFloat(string name, float value) { }
     }
 
+    public sealed class Camera : Behaviour { }
+
     public static class Graphics
     {
         public static void Blit(Texture source, RenderTexture dest) { }
@@ -210,8 +231,10 @@ namespace UnityEngine
 
     public sealed class GameObject : Object
     {
+        private readonly Transform _transform = new Transform();
         public GameObject(string name) { this.name = name; scene = new SceneManagement.Scene(); }
         public SceneManagement.Scene scene { get; set; }
+        public Transform transform => _transform;
         public T AddComponent<T>() where T : new() => new T();
     }
 
@@ -235,6 +258,35 @@ namespace UnityEngine
     {
         public static string ToJson(object obj, bool prettyPrint = false) => "{}";
         public static T FromJson<T>(string json) => default(T);
+    }
+}
+
+namespace UnityEngine.XR
+{
+    public enum XRNode { Head = 3 }
+
+    public struct InputFeatureUsage<T> { }
+
+    public struct InputDevice
+    {
+        public bool isValid => true;
+
+        public bool TryGetFeatureValue<T>(InputFeatureUsage<T> usage, out T value)
+        {
+            value = default(T);
+            return false;
+        }
+    }
+
+    public static class InputDevices
+    {
+        public static InputDevice GetDeviceAtXRNode(XRNode node) => new InputDevice();
+    }
+
+    public static class CommonUsages
+    {
+        public static readonly InputFeatureUsage<UnityEngine.Vector3> devicePosition = new InputFeatureUsage<UnityEngine.Vector3>();
+        public static readonly InputFeatureUsage<UnityEngine.Quaternion> deviceRotation = new InputFeatureUsage<UnityEngine.Quaternion>();
     }
 }
 

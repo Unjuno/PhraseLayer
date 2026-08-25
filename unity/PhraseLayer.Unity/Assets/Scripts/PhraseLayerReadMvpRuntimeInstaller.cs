@@ -12,12 +12,15 @@ namespace PhraseLayer.Unity
     /// </summary>
     public static class PhraseLayerReadMvpRuntimeInstaller
     {
+        public const string MainCameraObjectName = "Main Camera";
         public const string PassthroughCameraObjectName = "PassthroughCameraAccess";
         public const string PassthroughCameraAccessTypeName = "Meta.XR.PassthroughCameraAccess";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InstallAfterSceneLoad()
         {
+            InstallHeadTracking();
+
             if (HasPhraseLayerRuntime())
                 return;
 
@@ -55,7 +58,36 @@ namespace PhraseLayer.Unity
             SetGameObjectActive(root, true);
             Debug.Log(
                 "PhraseLayer committed Read MVP runtime installed. " +
-                "OCR=synthetic-fixture; stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
+                "HeadPose=UnityXR; OCR=synthetic-fixture; stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
+        }
+
+        private static void InstallHeadTracking()
+        {
+            var cameras = Resources.FindObjectsOfTypeAll<Camera>();
+            for (var index = 0; index < cameras.Length; index++)
+            {
+                var camera = cameras[index];
+                if (camera == null || camera.gameObject == null || !camera.gameObject.scene.IsValid())
+                    continue;
+                if (!string.Equals(camera.gameObject.name, MainCameraObjectName, StringComparison.Ordinal))
+                    continue;
+
+                camera.transform.localPosition = Vector3.zero;
+                camera.transform.localRotation = Quaternion.identity;
+
+                var drivers = Resources.FindObjectsOfTypeAll<UnityXrHeadPoseBehaviour>();
+                for (var driverIndex = 0; driverIndex < drivers.Length; driverIndex++)
+                {
+                    var driver = drivers[driverIndex];
+                    if (driver != null && ReferenceEquals(driver.gameObject, camera.gameObject))
+                        return;
+                }
+
+                camera.gameObject.AddComponent<UnityXrHeadPoseBehaviour>();
+                return;
+            }
+
+            Debug.LogWarning("PhraseLayer Read MVP could not find the scene Main Camera; XR head-pose tracking was not installed.");
         }
 
         private static bool HasPhraseLayerRuntime()
