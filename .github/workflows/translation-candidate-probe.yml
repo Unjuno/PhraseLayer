@@ -19,14 +19,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const statusContext = `phraselayer/translation-candidate-run-${process.env.GITHUB_RUN_ID}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
               state: 'pending',
-              context: 'phraselayer/translation-candidate-probe',
-              description: 'English-Japanese local model screening is running',
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+              context: statusContext,
+              description: 'English-Japanese local model screening is running'
             });
 
       - uses: actions/checkout@v4
@@ -92,14 +92,14 @@ jobs:
             const detail = passed
               ? `${completed} English-Japanese candidates measured on sentence+fragment smoke cases`
               : `Translation candidate probe failed (${report && report.error_type ? report.error_type : `exit=${exitCode}`})`;
+            const statusContext = `phraselayer/translation-candidate-run-${process.env.GITHUB_RUN_ID}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
               state: passed ? 'success' : 'failure',
-              context: 'phraselayer/translation-candidate-probe',
-              description: detail.slice(0, 140),
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+              context: statusContext,
+              description: detail.slice(0, 140)
             });
             if (!passed) {
               core.setFailed(detail);

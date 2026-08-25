@@ -19,14 +19,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const statusContext = `phraselayer/translation-export-run-${process.env.GITHUB_RUN_ID}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
               state: 'pending',
-              context: 'phraselayer/translation-export-probe',
-              description: 'Pinned OPUS-MT export/parity probe is running',
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+              context: statusContext,
+              description: 'Pinned OPUS-MT export/parity probe is running'
             });
 
       - uses: actions/checkout@v4
@@ -195,14 +195,14 @@ jobs:
             const detail = passed
               ? `OPUS-MT parity exact; managed tokenizer exact; SentencePiece ${modelTypes}; runtime ${runtimeSize} MiB`
               : `OPUS-MT probe failed (export=${exportExitCode},sp=${sentencePieceExitCode},manifest=${managedManifestExitCode},managed=${managedParityExitCode})`;
+            const statusContext = `phraselayer/translation-export-run-${process.env.GITHUB_RUN_ID}`;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
               state: passed ? 'success' : 'failure',
-              context: 'phraselayer/translation-export-probe',
-              description: detail.slice(0, 140),
-              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+              context: statusContext,
+              description: detail.slice(0, 140)
             });
             if (!passed) {
               core.setFailed(detail);
