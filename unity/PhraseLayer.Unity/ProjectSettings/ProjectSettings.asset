@@ -1,0 +1,46 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 28
+  productGUID: 5478d43c71ea931c1d804b3b764eb844
+  AndroidProfiler: 0
+  AndroidFilterTouchesWhenObscured: 0
+  AndroidEnableSustainedPerformanceMode: 0
+  defaultScreenOrientation: 3
+  targetDevice: 2
+  companyName: Unjuno
+  productName: PhraseLayer
+  m_ShowUnitySplashScreen: 0
+  runInBackground: 1
+  usePlayerLog: 1
+  bundleVersion: 0.1.0
+  applicationIdentifier:
+    Android: com.unjuno.phraselayer
+  overrideDefaultApplicationIdentifier: 0
+  AndroidBundleVersionCode: 1
+  AndroidMinSdkVersion: 32
+  AndroidTargetSdkVersion: 32
+  ForceInternetPermission: 0
+  ForceSDCardPermission: 0
+  androidSplitApplicationBinary: 0
+  AndroidTargetArchitectures: 2
+  androidUseCustomKeystore: 0
+  AndroidBuildApkPerCpuArchitecture: 0
+  AndroidIsGame: 1
+  androidGamepadSupportLevel: 0
+  useCustomMainManifest: 0
+  useCustomLauncherManifest: 0
+  useCustomMainGradleTemplate: 0
+  useCustomLauncherGradleManifest: 0
+  useCustomBaseGradleTemplate: 0
+  useCustomGradlePropertiesTemplate: 0
+  useCustomGradleSettingsTemplate: 0
+  useCustomProguardFile: 0
+  scriptingBackend:
+    Android: 1
+  il2cppCompilerConfiguration:
+    Android: 0
+  managedStrippingLevel:
+    Android: 1
