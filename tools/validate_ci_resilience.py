@@ -58,13 +58,21 @@ def main() -> int:
 
     uba_trigger = uba.split("permissions:", 1)[0]
     require("workflow_dispatch:" in uba_trigger,
-            "UBA feedback must remain manually invokable", errors)
-    require("\n  push:" not in uba_trigger,
-            "UBA feedback must not poll Unity Build Automation on every push", errors)
+            "UBA feedback must remain manually invokable for diagnosis", errors)
+    require("\n  push:" in uba_trigger,
+            "UBA feedback must run automatically on pushes to the active Quest build branch", errors)
+    require("agent/multi-sentence-segmentation" in uba_trigger,
+            "automatic UBA feedback must remain scoped to the active Quest build branch", errors)
     require('UNITY_UBA_POLL_TIMEOUT: "600"' in uba,
-            "manual UBA polling must remain bounded to ten minutes", errors)
+            "UBA polling must remain bounded to ten minutes", errors)
     require("timeout-minutes: 15" in uba,
-            "manual UBA feedback job must have a short hard timeout", errors)
+            "UBA feedback job must have a short hard timeout", errors)
+    require("Automatic UBA feedback requires UNITY_UBA_API_KEY and UNITY_UBA_PROJECT_ID" in uba,
+            "automatic UBA feedback must fail visibly when its GitHub-side API configuration is absent", errors)
+    require("phraselayer/uba" in uba,
+            "UBA feedback must publish a commit status that can be read without opening Unity Dashboard", errors)
+    require("tools/uba/sync_build_status.py" in uba,
+            "UBA feedback must mirror matching build status and compiler diagnostics", errors)
 
     unity_trigger = unity_cli.split("permissions:", 1)[0]
     require("workflow_dispatch:" in unity_trigger,
@@ -116,8 +124,8 @@ def main() -> int:
 
     print(
         "PASS: CI diagnostics are bounded and URL-independent; host compile runs on every push, "
-        "real Unity uses a hard subprocess timeout with compiler classification, stale runs cancel, "
-        "and offline self-hosted/UBA resources remain manual-only"
+        "UBA result/diagnostics synchronization runs automatically on the active Quest branch, "
+        "real Unity CLI uses a hard subprocess timeout when explicitly invoked, and stale runs cancel"
     )
     return 0
 
