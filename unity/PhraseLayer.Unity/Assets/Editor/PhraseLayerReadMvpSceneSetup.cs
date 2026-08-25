@@ -80,7 +80,16 @@ namespace PhraseLayer.Unity.Editor
         private static Component AddRequiredPassthroughCameraAccess(GameObject root)
         {
             var type = ResolvePassthroughCameraAccessType();
-            var component = root.AddComponent(type) as Component;
+            var addComponent = typeof(GameObject).GetMethod(
+                "AddComponent",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public,
+                null,
+                new[] { typeof(Type) },
+                null);
+            if (addComponent == null)
+                throw new MissingMethodException(typeof(GameObject).FullName, "AddComponent(Type)");
+
+            var component = addComponent.Invoke(root, new object[] { type }) as Component;
             if (component == null)
                 throw new InvalidOperationException(PassthroughCameraAccessTypeName + " did not create a Unity Component.");
             return component;
