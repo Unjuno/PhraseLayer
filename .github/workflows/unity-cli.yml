@@ -3,14 +3,61 @@ name: Unity CLI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: unity-cli-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: [self-hosted, unity, unity-6000-0-66f2]
     timeout-minutes: 20
+    env:
+      PHRASELAYER_UNITY_LOG: ${{ github.workspace }}/.ci/unity-real.log
+      PHRASELAYER_UNITY_TIMEOUT_SECONDS: "900"
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Unity editor shell
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify runner contract
+        shell: bash
+        run: |
+          if [ -z "${UNITY_EDITOR:-}" ]; then
+            echo "::error::UNITY_EDITOR is not configured on this Unity runner."
+            exit 2
+          fi
+          mkdir -p .ci
+          echo "commit=$GITHUB_SHA"
+          echo "runner=$RUNNER_NAME"
+          echo "unity_editor=$UNITY_EDITOR"
+
+      - name: Verify Unity editor and PhraseLayer project
         shell: bash
         run: |
           chmod +x tools/unity/verify.sh
           ./tools/unity/verify.sh
+
+      - name: Summarize real Unity compiler diagnostics
+        if: always()
+        shell: bash
+        run: |
+          if [ -f .ci/unity-real.log ]; then
+            python tools/extract_unity_compile_errors.py .ci/unity-real.log || true
+          else
+            echo "Unity log missing; runner/setup failed before Unity produced a log."
+          fi
+
+      - name: Upload real Unity log
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-real-${{ github.sha }}
+          path: .ci/unity-real.log
+          if-no-files-found: warn
+          retention-days: 14

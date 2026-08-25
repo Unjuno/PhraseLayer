@@ -36,6 +36,7 @@ jobs:
       - run: python tools/validate_unity_reference_baseline.py
       - run: python tools/validate_unity_csharp9.py
       - run: python tools/test_extract_unity_compile_errors.py
+      - run: python tools/unity/test_run_unity_batch.py
       - run: python tools/validate_learner_persistence.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
