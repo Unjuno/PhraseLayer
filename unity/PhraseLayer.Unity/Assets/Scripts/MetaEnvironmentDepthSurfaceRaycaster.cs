@@ -59,12 +59,19 @@ namespace PhraseLayer.Unity
             if (nativeFuncsType == null)
                 return;
 
-            hitInfoType = nativeFuncsType.GetNestedType(HitInfoTypeName, BindingFlags.Public | BindingFlags.NonPublic);
-            hitPointType = nativeFuncsType.GetNestedType(HitPointTypeName, BindingFlags.Public | BindingFlags.NonPublic);
-            createRaycasterField = GetNativeDelegateField("CreateEnvironmentRaycaster");
-            destroyRaycasterField = GetNativeDelegateField("DestroyEnvironmentRaycaster");
-            raycasterStatusField = GetNativeDelegateField("EnvironmentRaycasterStatus");
-            raycastEnvironmentField = GetNativeDelegateField("RaycastEnvironment");
+            try
+            {
+                hitInfoType = nativeFuncsType.GetNestedType(HitInfoTypeName, BindingFlags.Public | BindingFlags.NonPublic);
+                hitPointType = nativeFuncsType.GetNestedType(HitPointTypeName, BindingFlags.Public | BindingFlags.NonPublic);
+                createRaycasterField = GetNativeDelegateField("CreateEnvironmentRaycaster");
+                destroyRaycasterField = GetNativeDelegateField("DestroyEnvironmentRaycaster");
+                raycasterStatusField = GetNativeDelegateField("EnvironmentRaycasterStatus");
+                raycastEnvironmentField = GetNativeDelegateField("RaycastEnvironment");
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+            {
+                // A package/API mismatch disables only this optional surface source. Physics/viewport remain valid.
+            }
         }
 
         public bool IsApiAvailable =>
@@ -81,9 +88,7 @@ namespace PhraseLayer.Unity
             hit = default(SurfaceHit);
             if (disposed || !IsApiAvailable || !HasSpatialPermission() || !IsIdentityTrackingOrigin() || !TryEnsureRaycasterReady())
                 return false;
-
-            var raycast = GetDelegate(raycastEnvironmentField);
-            if (raycast == null)
+            if (!TryGetDelegate(raycastEnvironmentField, out var raycast))
                 return false;
 
             try
@@ -92,19 +97,22 @@ namespace PhraseLayer.Unity
                 var direction = Normalize(ToUnity(ray.Direction));
 
                 var hitInfo = Activator.CreateInstance(hitInfoType);
-                SetField(hitInfo, "startPoint", origin);
-                SetField(hitInfo, "direction", direction);
-                SetField(hitInfo, "filterCount", 0u);
-                SetField(hitInfo, "maxDistance", maxDistanceMeters);
+                if (!TrySetField(hitInfo, "startPoint", origin) ||
+                    !TrySetField(hitInfo, "direction", direction) ||
+                    !TrySetField(hitInfo, "filterCount", 0u) ||
+                    !TrySetField(hitInfo, "maxDistance", maxDistanceMeters))
+                    return false;
 
                 var hitPoint = Activator.CreateInstance(hitPointType);
                 var arguments = new[] { hitInfo, hitPoint };
-                var result = raycast.DynamicInvoke(arguments);
-                if (ToInt32(result) != ResultSuccess)
+                var invocationResult = raycast.DynamicInvoke(arguments);
+                if (!TryConvertToInt32(invocationResult, out var resultValue) || resultValue != ResultSuccess)
                     return false;
 
                 hitPoint = arguments[1];
-                if (ToInt32(ReadField(hitPoint, "status")) != RaycastStatusHit)
+                if (!TryReadField(hitPoint, "status", out var status) ||
+                    !TryConvertToInt32(status, out var hitStatus) ||
+                    hitStatus != RaycastStatusHit)
                     return false;
                 if (!TryReadVector3(hitPoint, "point", out var point) ||
                     !TryReadVector3(hitPoint, "normal", out var normal))
@@ -118,19 +126,7 @@ namespace PhraseLayer.Unity
                 hit = new SurfaceHit(ToSpatial(point), ToSpatial(normal), distance);
                 return true;
             }
-            catch (TargetInvocationException)
-            {
-                return false;
-            }
-            catch (ArgumentException)
-            {
-                return false;
-            }
-            catch (InvalidOperationException)
-            {
-                return false;
-            }
-            catch (MemberAccessException)
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
             {
                 return false;
             }
@@ -145,22 +141,18 @@ namespace PhraseLayer.Unity
             // Mirror MRUK's own shutdown discipline: the native destroy call is valid only for a Ready handle.
             // If creation is still asynchronous, leave the package-global handle alone rather than destroying an
             // in-flight resource. A later MRUK/Quest adapter can reuse that global handle.
-            if (ownsEnvironmentRaycaster && TryGetRaycasterStatus(out var statusValue) && statusValue == RaycasterReady)
+            if (ownsEnvironmentRaycaster &&
+                TryGetRaycasterStatus(out var statusValue) &&
+                statusValue == RaycasterReady &&
+                TryGetDelegate(destroyRaycasterField, out var destroy))
             {
-                var destroy = GetDelegate(destroyRaycasterField);
-                if (destroy != null)
+                try
                 {
-                    try
-                    {
-                        destroy.DynamicInvoke();
-                    }
-                    catch (TargetInvocationException)
-                    {
-                        // The native boundary is optional. Shutdown must not make the fallback renderer fail.
-                    }
-                    catch (ArgumentException)
-                    {
-                    }
+                    destroy.DynamicInvoke();
+                }
+                catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+                {
+                    // The native boundary is optional. Shutdown must not make the fallback renderer fail.
                 }
             }
 
@@ -182,26 +174,20 @@ namespace PhraseLayer.Unity
             }
             if (statusValue != RaycasterStopped || creationRequested)
                 return false;
-
-            var create = GetDelegate(createRaycasterField);
-            if (create == null)
+            if (!TryGetDelegate(createRaycasterField, out var create))
                 return false;
 
             try
             {
-                var result = create.DynamicInvoke();
-                if (ToInt32(result) != ResultSuccess)
+                var invocationResult = create.DynamicInvoke();
+                if (!TryConvertToInt32(invocationResult, out var resultValue) || resultValue != ResultSuccess)
                     return false;
                 creationRequested = true;
                 ownsEnvironmentRaycaster = true;
                 // Creation is asynchronous. A later observation will see Ready and perform the real raycast.
                 return false;
             }
-            catch (TargetInvocationException)
-            {
-                return false;
-            }
-            catch (ArgumentException)
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
             {
                 return false;
             }
@@ -210,21 +196,16 @@ namespace PhraseLayer.Unity
         private bool TryGetRaycasterStatus(out int statusValue)
         {
             statusValue = int.MinValue;
-            var status = GetDelegate(raycasterStatusField);
-            if (status == null)
+            if (!TryGetDelegate(raycasterStatusField, out var status))
                 return false;
 
             try
             {
-                statusValue = ToInt32(status.DynamicInvoke());
-                return statusValue != int.MinValue;
+                return TryConvertToInt32(status.DynamicInvoke(), out statusValue);
             }
-            catch (TargetInvocationException)
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
             {
-                return false;
-            }
-            catch (ArgumentException)
-            {
+                statusValue = int.MinValue;
                 return false;
             }
         }
@@ -246,12 +227,19 @@ namespace PhraseLayer.Unity
                 return false;
 
             // lossyScale is reflected so the host compile harness does not need to model the full Unity Transform API.
-            var scaleProperty = typeof(Transform).GetProperty("lossyScale", BindingFlags.Instance | BindingFlags.Public);
-            if (scaleProperty == null || !(scaleProperty.GetValue(trackingOrigin, null) is Vector3 scale))
+            try
+            {
+                var scaleProperty = typeof(Transform).GetProperty("lossyScale", BindingFlags.Instance | BindingFlags.Public);
+                if (scaleProperty == null || !(scaleProperty.GetValue(trackingOrigin, null) is Vector3 scale))
+                    return false;
+                return Math.Abs(scale.x - 1.0) <= TransformTolerance &&
+                       Math.Abs(scale.y - 1.0) <= TransformTolerance &&
+                       Math.Abs(scale.z - 1.0) <= TransformTolerance;
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+            {
                 return false;
-            return Math.Abs(scale.x - 1.0) <= TransformTolerance &&
-                   Math.Abs(scale.y - 1.0) <= TransformTolerance &&
-                   Math.Abs(scale.z - 1.0) <= TransformTolerance;
+            }
         }
 
         private FieldInfo GetNativeDelegateField(string fieldName)
@@ -259,29 +247,60 @@ namespace PhraseLayer.Unity
             return nativeFuncsType.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
         }
 
-        private static Delegate GetDelegate(FieldInfo field)
+        private static bool TryGetDelegate(FieldInfo field, out Delegate value)
         {
-            return field == null ? null : field.GetValue(null) as Delegate;
+            value = null;
+            if (field == null)
+                return false;
+
+            try
+            {
+                value = field.GetValue(null) as Delegate;
+                return value != null;
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+            {
+                return false;
+            }
         }
 
-        private static void SetField(object value, string fieldName, object fieldValue)
+        private static bool TrySetField(object value, string fieldName, object fieldValue)
         {
             if (value == null)
-                throw new InvalidOperationException("MRUK native raycast struct could not be created.");
-            var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (field == null)
-                throw new MissingFieldException(value.GetType().FullName, fieldName);
-            field.SetValue(value, fieldValue);
+                return false;
+
+            try
+            {
+                var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field == null)
+                    return false;
+                field.SetValue(value, fieldValue);
+                return true;
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+            {
+                return false;
+            }
         }
 
-        private static object ReadField(object value, string fieldName)
+        private static bool TryReadField(object value, string fieldName, out object fieldValue)
         {
+            fieldValue = null;
             if (value == null)
-                throw new InvalidOperationException("MRUK native raycast result was null.");
-            var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (field == null)
-                throw new MissingFieldException(value.GetType().FullName, fieldName);
-            return field.GetValue(value);
+                return false;
+
+            try
+            {
+                var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field == null)
+                    return false;
+                fieldValue = field.GetValue(value);
+                return true;
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+            {
+                return false;
+            }
         }
 
         private static bool HasSpatialPermission()
@@ -298,9 +317,16 @@ namespace PhraseLayer.Unity
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             for (var index = 0; index < assemblies.Length; index++)
             {
-                var type = assemblies[index].GetType(fullName, false);
-                if (type != null)
-                    return type;
+                try
+                {
+                    var type = assemblies[index].GetType(fullName, false);
+                    if (type != null)
+                        return type;
+                }
+                catch (Exception exception) when (IsRecoverableBoundaryException(exception))
+                {
+                    // Continue searching. An optional package boundary must not block the rest of Read Mode.
+                }
             }
             return null;
         }
@@ -311,27 +337,69 @@ namespace PhraseLayer.Unity
             if (value == null)
                 return false;
 
-            var type = value.GetType();
-            var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (field != null && field.GetValue(value) is Vector3 fieldValue)
+            try
             {
-                result = fieldValue;
-                return true;
-            }
+                var type = value.GetType();
+                var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field != null && field.GetValue(value) is Vector3 fieldValue)
+                {
+                    result = fieldValue;
+                    return true;
+                }
 
-            var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (property != null && property.GetValue(value, null) is Vector3 propertyValue)
+                var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (property != null && property.GetValue(value, null) is Vector3 propertyValue)
+                {
+                    result = propertyValue;
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception exception) when (IsRecoverableBoundaryException(exception))
             {
-                result = propertyValue;
-                return true;
+                return false;
             }
-
-            return false;
         }
 
-        private static int ToInt32(object value)
+        private static bool TryConvertToInt32(object value, out int result)
         {
-            return value == null ? int.MinValue : Convert.ToInt32(value);
+            result = int.MinValue;
+            if (value == null)
+                return false;
+
+            try
+            {
+                result = Convert.ToInt32(value);
+                return true;
+            }
+            catch (InvalidCastException)
+            {
+                return false;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsRecoverableBoundaryException(Exception exception)
+        {
+            return exception is TargetInvocationException ||
+                   exception is TargetException ||
+                   exception is AmbiguousMatchException ||
+                   exception is MemberAccessException ||
+                   exception is ArgumentException ||
+                   exception is InvalidOperationException ||
+                   exception is InvalidCastException ||
+                   exception is FormatException ||
+                   exception is OverflowException ||
+                   exception is TypeLoadException ||
+                   exception is NotSupportedException;
         }
 
         private static Vector3 Normalize(Vector3 value)
