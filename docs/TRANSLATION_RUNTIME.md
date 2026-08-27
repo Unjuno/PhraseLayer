@@ -20,11 +20,17 @@ IOfflineTranslationRuntime
 OfflineSeq2SeqTranslationRuntime
    ↙                         ↘
 ITranslationTokenizer   ISeq2SeqTranslationModel
+      ↓                         ↓
+MarianSentencePiece      GreedySeq2SeqTranslationModel
+Tokenizer                       ↓
+      ↓                  ISeq2SeqGenerationBackend
+ISentencePieceProcessor          ↓
+                         platform encoder/decoder + KV cache
 ```
 
 `OfflineSeq2SeqTranslationRuntime` translates the exact semantic span requested by `LanguagePipeline`. The surrounding sentence remains available as `OfflineTranslationRequest.Context`, but the baseline runtime does not silently concatenate context into the model input because doing so would change the span being translated.
 
-The tokenizer and model are separate contracts so a managed/native SentencePiece implementation and a Unity Inference encoder/decoder implementation can be validated independently.
+The SentencePiece processor and model backend remain separate contracts so normalization/segmentation and Unity Inference encoder/decoder execution can be validated independently.
 
 ## Candidate: Helsinki-NLP/opus-mt-en-jap
 
@@ -50,6 +56,54 @@ The upstream repository currently exposes a short latest revision id `a863894`. 
 
 The model candidate is Apache-2.0 according to upstream metadata, but redistribution remains a separate review gate.
 
+## Marian tokenizer boundary
+
+`MarianSentencePieceTokenizer` implements the model-facing `ITranslationTokenizer` contract without pretending to implement SentencePiece itself.
+
+The critical mapping is:
+
+```text
+source text
+  ↓ exact source.spm processor
+SentencePiece piece strings
+  ↓ external vocab.json lookup
+Marian model token ids
+  ↓ reserve one slot + append EOS
+encoder input ids
+```
+
+SentencePiece internal piece ids are deliberately **not** treated as Marian vocabulary ids. Unknown source pieces map to the external `<unk>` id. Source truncation reserves the final allowed input slot for EOS.
+
+Target decoding reverses the external vocabulary mapping, removes generation-only EOS/PAD (and optional `<eop>` / `<eod>`) tokens, and then delegates piece reconstruction to the exact `target.spm` processor.
+
+What remains is an `ISentencePieceProcessor` implementation that can execute the normalization and segmentation encoded in the exact `.spm` model and pass parity fixtures against a trusted MarianTokenizer reference. PhraseLayer must not replace that with whitespace splitting or an approximate Unicode normalizer.
+
+## Correctness-first generation
+
+`GreedySeq2SeqTranslationModel` now owns the platform-neutral generation loop:
+
+```text
+source ids
+  ↓
+ISeq2SeqGenerationBackend.StartAsync
+  ↓ encoder once
+ISeq2SeqGenerationSession
+  ↓ decoder_start_token
+DecodeNextAsync
+  ↓ logits[46,276]
+finite/shape validation → banned-token filter → argmax
+  ↓ selected token
+DecodeNextAsync again using backend-owned KV cache
+  ↓
+EOS or maximum target tokens
+```
+
+The backend owns encoder output and decoder past-key/value tensors. This keeps Unity tensor/runtime details outside Core while making token-selection behavior deterministic and testable.
+
+The baseline intentionally supports `beamWidth=1` only. The upstream configuration uses four beams, but PhraseLayer does not silently label greedy decoding as beam search. Beam search is a separate quality/performance implementation gate.
+
+At the maximum target length, the baseline can force EOS into the final slot rather than returning an unterminated sequence. Decoder vocabulary-size drift and non-finite logits fail loudly.
+
 ## Reproducible local preparation
 
 `tools/prepare_marian_translation.py` intentionally performs no network download. It consumes a locally available, revision-pinned upstream snapshot and validates:
@@ -57,7 +111,7 @@ The model candidate is Apache-2.0 according to upstream metadata, but redistribu
 - `config.json`;
 - `generation_config.json`;
 - `tokenizer_config.json`;
-- `vocab.json` and contiguous 0..46,275 ids;
+- `vocab.json` contains exactly 46,276 unique integer ids spanning 0..46,275;
 - `source.spm` and `target.spm` presence;
 - source weight presence;
 - exact Marian architecture/token ids/layer dimensions;
@@ -94,12 +148,13 @@ The preparation tool fingerprints these graphs if supplied. It does **not** pars
 A real Quest translation adapter must pass these gates in order:
 
 1. **Snapshot identity** — full upstream revision and all source artifact hashes fixed.
-2. **Tokenizer parity** — PhraseLayer SentencePiece output matches a trusted Transformers/Marian reference on an English fixture corpus, including punctuation, apostrophes, Unicode normalization, numbers, and out-of-vocabulary text.
+2. **SentencePiece parity** — `ISentencePieceProcessor` output matches a trusted Transformers/Marian reference on an English fixture corpus, including punctuation, apostrophes, Unicode normalization, numbers, whitespace, and out-of-vocabulary text. External-vocabulary mapping is already covered separately in Core tests.
 3. **Encoder/decoder contract** — imported ONNX input/output names, dtypes, dimensions, cache tensors, and vocabulary dimension are measured rather than assumed.
-4. **Generation parity** — greedy output first matches a trusted reference. Beam search is a later quality/performance choice, not a prerequisite for proving the model path.
-5. **Unity import** — all graphs import under the pinned `com.unity.ai.inference@2.2.1` API surface.
-6. **Quest execution** — real Quest 3 inference succeeds and records cold/warm latency, memory, frame impact, and thermal behavior.
-7. **Translation quality** — phrase-level fixtures relevant to signs, menus, instructions, labels, and ordinary prose are reviewed. Upstream benchmark scores alone do not establish PhraseLayer product quality.
+4. **Greedy generation parity** — Unity backend output first matches the trusted reference under greedy decoding. The Core argmax/cache-driving loop is already deterministic; graph execution parity remains.
+5. **Beam-search decision** — compare greedy quality/latency against the upstream four-beam configuration before deciding whether beam search is required on Quest.
+6. **Unity import** — all graphs import under the pinned `com.unity.ai.inference@2.2.1` API surface.
+7. **Quest execution** — real Quest 3 inference succeeds and records cold/warm latency, memory, frame impact, and thermal behavior.
+8. **Translation quality** — phrase-level fixtures relevant to signs, menus, instructions, labels, and ordinary prose are reviewed. Upstream benchmark scores alone do not establish PhraseLayer product quality.
 
 ## Current status
 
@@ -108,17 +163,19 @@ Implemented:
 - stable `ITranslationEngine` compatibility;
 - offline seq2seq orchestration contracts;
 - strict Marian candidate metadata contract;
+- Marian SentencePiece-piece ↔ external-vocabulary mapping, EOS insertion, truncation, and target reconstruction boundary;
+- cache-friendly correctness-first greedy generation loop with shape/finite-value guards;
 - cancellation and generation diagnostics;
-- local snapshot/ONNX fingerprint tooling;
+- local snapshot/ONNX fingerprint tooling with unique contiguous vocabulary validation;
 - deterministic Core and Python fixtures.
 
 Still required:
 
 - full 40-character upstream revision and revision-level artifact hash capture;
-- SentencePiece runtime with parity fixtures;
-- Unity Inference Marian encoder/decoder implementation;
-- decoder cache/generation loop;
-- real exported ONNX artifacts;
-- Quest 3 performance and quality validation.
+- actual `ISentencePieceProcessor` implementation plus reference parity fixtures;
+- real ONNX export and measured encoder/decoder/cache tensor contract;
+- Unity Inference `ISeq2SeqGenerationBackend` implementation;
+- optional beam search if quality evidence justifies its runtime cost;
+- Quest 3 performance and translation-quality validation.
 
 No model weights are bundled by this work.
