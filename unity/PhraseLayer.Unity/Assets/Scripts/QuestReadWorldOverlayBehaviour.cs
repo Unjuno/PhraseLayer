@@ -17,7 +17,8 @@ namespace PhraseLayer.Unity
     /// OCR target into a new world-space replacement. Verified surface hits are stabilized per semantic unit to reduce
     /// small depth/normal jitter. When four viewport-corner rays can intersect that same verified plane, the physical
     /// OCR width, height and vertical tangent drive the world label's size and orientation. A previously verified
-    /// surface may survive only a bounded raycast miss, and all world-surface state is discarded on encounter change.
+    /// surface may survive only a bounded raycast miss, and all world-surface state and label objects are discarded on
+    /// encounter change so stale real-world text cannot leak or accumulate across the session.
     /// </summary>
     public sealed class QuestReadWorldOverlayBehaviour : MonoBehaviour
     {
@@ -82,15 +83,7 @@ namespace PhraseLayer.Unity
             DisposeRaycaster();
             ResetSurfaceStability();
             surfaceStabilizer = null;
-
-            foreach (var pair in labels)
-            {
-                if (pair.Value != null && pair.Value.gameObject != null)
-                    Destroy(pair.Value.gameObject);
-            }
-
-            labels.Clear();
-            renderedUnitIds.Clear();
+            DestroyAllLabels();
             if (readAssistance != null)
                 readAssistance.SetWorldRenderedTargets(Array.Empty<string>());
         }
@@ -283,6 +276,7 @@ namespace PhraseLayer.Unity
                 return;
 
             surfaceStabilizer.Reset();
+            DestroyAllLabels();
             stabilizedSurfaceEncounterId = encounterId;
         }
 
@@ -299,6 +293,18 @@ namespace PhraseLayer.Unity
                 if (pair.Value != null && pair.Value.gameObject != null)
                     SetGameObjectActive(pair.Value.gameObject, false);
             }
+            renderedUnitIds.Clear();
+        }
+
+        private void DestroyAllLabels()
+        {
+            foreach (var pair in labels)
+            {
+                if (pair.Value != null && pair.Value.gameObject != null)
+                    Destroy(pair.Value.gameObject);
+            }
+
+            labels.Clear();
             renderedUnitIds.Clear();
         }
 
