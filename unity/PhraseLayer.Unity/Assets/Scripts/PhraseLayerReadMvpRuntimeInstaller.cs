@@ -7,8 +7,8 @@ namespace PhraseLayer.Unity
     /// <summary>
     /// Makes the committed Read MVP scene runnable without serializing local model binaries into source control.
     /// The scene pins Meta's PassthroughCameraAccess component; this installer creates the PhraseLayer runtime graph
-    /// after scene load. When a verified git-ignored local PP-OCR Resources config is present it starts real camera
-    /// OCR automatically. Otherwise it keeps the deterministic synthetic fixture as the safe development fallback.
+    /// after scene load. Verified git-ignored local OCR/translation Resources configs are preferred when present;
+    /// otherwise deterministic synthetic OCR and the explicit tiny translation dictionary remain safe fallbacks.
     /// </summary>
     public static class PhraseLayerReadMvpRuntimeInstaller
     {
@@ -30,6 +30,8 @@ namespace PhraseLayer.Unity
 
             var localOcrConfig = Resources.Load<UnityLocalOcrRuntimeConfig>(UnityLocalOcrRuntimeConfig.ResourcesName);
             var useLocalOcr = localOcrConfig != null && localOcrConfig.IsConfigured;
+            var localTranslationConfig = Resources.Load<UnityLocalTranslationRuntimeConfig>(UnityLocalTranslationRuntimeConfig.ResourcesName);
+            var useLocalTranslation = localTranslationConfig != null && localTranslationConfig.IsConfigured;
 
             var root = new GameObject("PhraseLayer Read MVP Runtime");
             SetGameObjectActive(root, false);
@@ -40,9 +42,18 @@ namespace PhraseLayer.Unity
             var learnerProfile = root.AddComponent<UnityLearnerProfileBehaviour>();
             var readAssistance = root.AddComponent<QuestReadAssistanceDebugBehaviour>();
             var worldOverlay = root.AddComponent<QuestReadWorldOverlayBehaviour>();
+
             UnityPaddleOcrBootstrapBehaviour ocrBootstrap = null;
             if (useLocalOcr)
                 ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
+
+            UnityLocalTranslationAssetGateBehaviour translationAssetGate = null;
+            UnityLocalTranslationBootstrapBehaviour translationBootstrap = null;
+            if (useLocalTranslation)
+            {
+                translationAssetGate = root.AddComponent<UnityLocalTranslationAssetGateBehaviour>();
+                translationBootstrap = root.AddComponent<UnityLocalTranslationBootstrapBehaviour>();
+            }
 
             presenter.LoadSyntheticFixtureOnStart = !useLocalOcr;
             runtimeDriver.AutoRun = useLocalOcr;
@@ -57,6 +68,20 @@ namespace PhraseLayer.Unity
                 localOcrConfig.ConfigureBootstrap(ocrBootstrap, runtimeDriver);
             else if (localOcrConfig != null)
                 Debug.LogWarning("PhraseLayer local OCR runtime config exists but is incomplete; using synthetic OCR fallback. " + localOcrConfig.Status);
+
+            if (translationBootstrap != null)
+            {
+                localTranslationConfig.ConfigureRuntime(
+                    translationAssetGate,
+                    translationBootstrap,
+                    readAssistance);
+            }
+            else if (localTranslationConfig != null)
+            {
+                Debug.LogWarning(
+                    "PhraseLayer local translation runtime config exists but is incomplete; using debug dictionary fallback. " +
+                    localTranslationConfig.Status);
+            }
 
             try
             {
@@ -73,10 +98,14 @@ namespace PhraseLayer.Unity
             Debug.Log(
                 "PhraseLayer committed Read MVP runtime installed. " +
                 "HeadPose=UnityXR; OCR=" + (useLocalOcr ? "local-ppocr-camera" : "synthetic-fixture") +
+                "; Translation=" + (useLocalTranslation ? "local-opus-mt" : "debug-dictionary") +
                 "; WorldOverlay=native-environment+physics+viewport-fallback." +
                 (useLocalOcr
                     ? " Verified local PP-OCR Resources config loaded; camera OCR auto-run enabled."
-                    : " Stage/prepare verified local PP-OCR assets to enable real camera OCR."));
+                    : " Stage/prepare verified local PP-OCR assets to enable real camera OCR.") +
+                (useLocalTranslation
+                    ? " Verified local OPUS-MT Resources config loaded; offline translation bootstrap enabled."
+                    : " Stage/prepare a parity-verified local OPUS-MT bundle to replace the debug dictionary."));
         }
 
         private static void InstallHeadTracking()
