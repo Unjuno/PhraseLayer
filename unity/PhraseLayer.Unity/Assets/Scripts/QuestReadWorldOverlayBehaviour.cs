@@ -255,26 +255,14 @@ namespace PhraseLayer.Unity
 
         private float ComputeFittedCharacterSize(string displayText, SurfaceTextLayout layout)
         {
-            var glyphCount = CountRenderableGlyphs(displayText);
             var heightFraction = Math.Max(0.05, Math.Min(1.0, fittedTextHeightFraction));
             var widthFraction = Math.Max(0.05, Math.Min(1.0, fittedTextWidthFraction));
-            var heightBound = layout.HeightMeters * heightFraction;
-            var widthBound = (layout.WidthMeters * widthFraction) / Math.Max(1, glyphCount);
-            return (float)Math.Max(0.001, Math.Min(heightBound, widthBound));
-        }
-
-        private static int CountRenderableGlyphs(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-                return 1;
-
-            var count = 0;
-            for (var index = 0; index < text.Length; index++)
-            {
-                if (!char.IsWhiteSpace(text[index]))
-                    count++;
-            }
-            return Math.Max(1, count);
+            return (float)SurfaceTextSizing.ComputeCharacterSizeMeters(
+                displayText,
+                layout,
+                heightFraction,
+                widthFraction,
+                minimumCharacterSizeMeters: 0.001);
         }
 
         private SurfaceHitStabilizer BuildSurfaceStabilizer()
