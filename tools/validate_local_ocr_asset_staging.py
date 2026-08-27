@@ -4,7 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GITIGNORE = ROOT / ".gitignore"
 TOOLS = ROOT / "tools"
-EDITOR = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor"
+UNITY_ASSETS = ROOT / "unity" / "PhraseLayer.Unity" / "Assets"
+EDITOR = UNITY_ASSETS / "Editor"
+SCRIPTS = UNITY_ASSETS / "Scripts"
 
 violations = []
 
@@ -78,7 +80,72 @@ for marker in (
     if marker not in editor:
         violations.append(f"Unity local PP-OCR Editor bridge missing reviewed marker: {marker}")
 
+runtime_config = require_file(SCRIPTS / "UnityLocalOcrRuntimeConfig.cs")
+for marker in (
+    'ResourcesName = "PhraseLayerLocalOcrRuntimeConfig"',
+    "public sealed class UnityLocalOcrRuntimeConfig : ScriptableObject",
+    "public bool IsConfigured =>",
+    "detectorModel != null",
+    "recognizerModel != null",
+    "characterDictionary != null",
+    "characterDictionaryManifest != null",
+    "bootstrap.Configure(",
+    "BackendType.GPUCompute",
+    "never downloads model weights",
+):
+    if marker not in runtime_config:
+        violations.append(f"local PP-OCR Player runtime config missing reviewed marker: {marker}")
+
+runtime_builder = require_file(EDITOR / "PhraseLayerLocalOcrRuntimeConfigBuilder.cs")
+for marker in (
+    'RuntimeResourcesDirectory = PhraseLayerLocalOcrAssets.Root + "/Resources"',
+    'RuntimeConfigAssetPath = RuntimeResourcesDirectory + "/PhraseLayerLocalOcrRuntimeConfig.asset"',
+    "PhraseLayerLocalOcrAssets.VerifyLocalAssets();",
+    "UnityPaddleOcrDictionaryManifest.Validate(",
+    "HasAnyStagedLocalOcrFile()",
+    "HasCompleteStagedLocalOcrBundle()",
+    "PhraseLayerLocalOcrRuntimeConfigBuildHook : IPreprocessBuildWithReport",
+    "public int callbackOrder => -1500",
+    "local PP-OCR assets are absent; Player will keep the synthetic OCR fallback",
+    "partial local PP-OCR bundle",
+    "PrepareRuntimeConfigAsset();",
+):
+    if marker not in runtime_builder:
+        violations.append(f"local PP-OCR Player config builder missing reviewed marker: {marker}")
+for forbidden in ("urllib", "urlopen", "requests.", "http://", "https://"):
+    if forbidden in runtime_builder:
+        violations.append(f"local PP-OCR Player config builder must not perform network access: {forbidden}")
+
+installer = require_file(SCRIPTS / "PhraseLayerReadMvpRuntimeInstaller.cs")
+for marker in (
+    "Resources.Load<UnityLocalOcrRuntimeConfig>(UnityLocalOcrRuntimeConfig.ResourcesName)",
+    "var useLocalOcr = localOcrConfig != null && localOcrConfig.IsConfigured",
+    "SetGameObjectActive(root, false);",
+    "root.AddComponent<UnityPaddleOcrBootstrapBehaviour>()",
+    "presenter.LoadSyntheticFixtureOnStart = !useLocalOcr",
+    "runtimeDriver.AutoRun = useLocalOcr",
+    "localOcrConfig.ConfigureBootstrap(ocrBootstrap, runtimeDriver)",
+    "SetGameObjectActive(root, true);",
+    'useLocalOcr ? "local-ppocr-camera" : "synthetic-fixture"',
+):
+    if marker not in installer:
+        violations.append(f"committed Read MVP local OCR startup missing reviewed marker: {marker}")
+
+bootstrap = require_file(SCRIPTS / "UnityPaddleOcrBootstrapBehaviour.cs")
+for marker in (
+    "public bool HasConfiguredAssets =>",
+    "public void Configure(",
+    "Cannot reconfigure PP-OCR assets after the engine has initialized",
+    "runtimeDriver.ConfigureEngine(created);",
+):
+    if marker not in bootstrap:
+        violations.append(f"PP-OCR bootstrap runtime configuration missing reviewed marker: {marker}")
+
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: local PP-OCR assets are git-ignored, offline-verified, batch-importable, synthetic-inference-probeable, and wired to idempotent Unity bootstrap assignment")
+print(
+    "PASS: local PP-OCR assets remain git-ignored and offline-verified; a complete staged bundle is packaged through "
+    "a local Resources config and auto-starts real camera OCR in the committed Read MVP, while absent assets retain "
+    "the deterministic synthetic fallback and partial bundles fail closed before Player build"
+)
