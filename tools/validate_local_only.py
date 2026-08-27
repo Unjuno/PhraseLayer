@@ -4,7 +4,8 @@
 This validator intentionally does not ban replaceable engine interfaces. It bans concrete runtime
 network dependencies in the official Core/Quest implementation so future community/provider adapters
 can live outside the reference distribution without changing the product contract. It also pins the
-Quest Android manifest boundary because camera access is allowed while network access is not.
+Quest Android manifest boundary: camera and Spatial Data access are allowed for local Read placement,
+while network access remains forbidden.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ FORBIDDEN_MANIFEST_PERMISSIONS = (
 QUEST_MANIFEST_MARKERS = (
     'android:name="android.permission.CAMERA"',
     'android:name="horizonos.permission.HEADSET_CAMERA"',
+    'android:name="com.oculus.permission.USE_SCENE"',
     'android:name="com.oculus.feature.PASSTHROUGH"',
     'android:name="android.hardware.vr.headtracking"',
     'android:name="com.oculus.supportedDevices"',
@@ -115,11 +117,10 @@ if quest_manifest:
             violations.append(f"Quest Android manifest missing reviewed marker: {marker}")
     if "com.oculus.telemetry.project_guid" in quest_manifest:
         violations.append("Quest Android manifest must not copy the Meta sample telemetry project GUID")
-    for permission in ("com.oculus.permission.USE_SCENE", "com.oculus.permission.USE_ANCHOR_API"):
-        if permission in quest_manifest:
-            violations.append(
-                f"committed model-free Read baseline must not request unused Meta permission {permission}"
-            )
+    if "com.oculus.permission.USE_ANCHOR_API" in quest_manifest:
+        violations.append(
+            "committed Read baseline must not request anchor persistence permission; Environment Depth placement needs USE_SCENE only"
+        )
 
 player_settings = require_file(UNITY / "ProjectSettings" / "ProjectSettings.asset")
 if player_settings:
@@ -166,6 +167,6 @@ if violations:
 
 print(
     "PASS: official PhraseLayer runtime contains no reviewed network APIs/permissions/service packages; "
-    "Quest build manifest declares only reviewed camera/MR capabilities, Android build settings are pinned, "
-    "and OCR/ASR/translation interfaces remain replaceable"
+    "Quest build manifest declares only reviewed camera/local Spatial Data/MR capabilities, Android build settings "
+    "are pinned, and OCR/ASR/translation interfaces remain replaceable"
 )
