@@ -127,6 +127,10 @@ surface_layout = require(
     CORE / "SurfacePlaneTextLayout.cs",
     (
         "enum SurfacePlaneLayoutFailure",
+        "ImplausibleExtent = 5",
+        "sealed class SurfacePlaneTextLayoutProjectorOptions",
+        "MaxCornerOffsetMultiplier = 2.0",
+        "MaxCornerOffsetPaddingMeters = 0.5",
         "readonly struct SurfaceTextLayout",
         "sealed class SurfacePlaneTextLayoutProjector",
         "IViewportRayProvider rayProvider",
@@ -136,6 +140,7 @@ surface_layout = require(
         "RayParallelToSurface",
         "SurfaceBehindRay",
         "DegenerateExtent",
+        "Distance(worldCorners[index], surface.Point) > maxCornerOffset",
         "Normalize(horizontal)",
         "Normalize(vertical)",
     ),
@@ -255,6 +260,6 @@ print(
     "origin, destroys only a ready raycaster it owns, avoids Meta telemetry/depth-manager coupling, canonicalizes each "
     "verified surface normal toward its camera ray origin, stabilizes only verified world hits with bounded miss "
     "retention reset per encounter, derives physical label extent/orientation only by intersecting viewport-corner "
-    "rays with that verified plane, falls back to Unity colliders, and keeps unresolved misses on the local-only "
-    "viewport path"
+    "rays with that verified plane, rejects implausibly distant corner intersections, falls back to Unity colliders, "
+    "and keeps unresolved misses on the local-only viewport path"
 )
