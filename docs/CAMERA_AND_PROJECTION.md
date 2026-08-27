@@ -58,11 +58,17 @@ ProjectedAssistanceTarget
 
 For Quest surface resolution, `QuestSurfaceRaycaster` uses this order:
 
-1. Meta `EnvironmentRaycastManager` / Environment Depth when the API exists, the device supports it, and `com.oculus.permission.USE_SCENE` has been granted;
+1. MRUK's native OpenXR environment raycaster when its native delegates are initialized and `com.oculus.permission.USE_SCENE` has been granted;
 2. ordinary Unity collider geometry through `Physics.Raycast`;
 3. no world hit, allowing the presentation layer to retain the viewport fallback.
 
-Environment Depth is resolved through a thin reflection adapter so the platform-neutral Core contract and PhraseLayer runtime assembly do not acquire a hard Meta XR type dependency. Permission denial, unsupported hardware/API, not-ready depth state, or invocation failure all fail closed into the next fallback rather than fabricating distance.
+The first path deliberately bypasses Meta's `EnvironmentRaycastManager` component. The reviewed MRUK implementation sends a telemetry event from that component's `Start()` method, which conflicts with PhraseLayer's reference-runtime boundary. PhraseLayer instead reflects the already-loaded internal `MRUKNativeFuncs` delegates (`CreateEnvironmentRaycaster`, `EnvironmentRaycasterStatus`, `RaycastEnvironment`, `DestroyEnvironmentRaycaster`) and never creates the manager component.
+
+PhraseLayer also does not instantiate `EnvironmentDepthManager` for this path. The reviewed Core SDK implementation expects an `OVRCameraRig` during its update loop, while the current PhraseLayer MVP intentionally uses Unity XR head pose with the OpenXR tracking origin at Unity world origin. Introducing an OVR rig solely for depth would create a second tracking-space authority.
+
+The native adapter therefore has a strict coordinate contract: the committed Read MVP's Unity world coordinates equal its OpenXR tracking-space coordinates. If a moved or scaled tracking origin is introduced later, the native adapter must be updated at the same time. It must not guess a transform.
+
+Permission denial, unavailable native delegates, creating/not-ready native state, unsupported calls, or invocation failure all fail closed into the next fallback rather than fabricating distance. If PhraseLayer created the global native environment raycaster itself, it tracks that ownership and releases it on overlay shutdown; a raycaster that was already ready is treated as externally owned and is not destroyed by PhraseLayer.
 
 ## Conservative overlay policy
 
@@ -84,7 +90,7 @@ This is deliberately conservative. A translation should not be painted over the 
 
 - Quest 3 confirmation of passthrough permission/startup and real frame capture;
 - locally staged PP-OCR execution on camera frames;
-- Environment Depth startup/permission behavior and hit accuracy on Quest 3;
+- native environment-raycaster startup/permission behavior and hit accuracy on Quest 3;
 - world-label orientation/readability and physical text-plane fitting on device;
 - longer-term world persistence/anchor strategy if needed;
 - local OPUS-MT execution and quality/latency validation;
