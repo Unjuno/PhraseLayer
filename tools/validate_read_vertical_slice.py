@@ -85,7 +85,7 @@ require(
         "overlayMaxMissingObservations = 2",
         "UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result)",
         "overlayStabilizer.TryHoldMissing(key, out var heldEnvelope)",
-        "stabilizedEnvelopes.TryGetValue(unit.Id, out var stabilized)",
+        "stabilizedEnvelopes.TryGetValue(unit.Id, out stabilized)",
         "isRetainedDropout",
         "ResetOverlayStability();",
         "ConfigureTranslationEngine(ITranslationEngine engine)",
