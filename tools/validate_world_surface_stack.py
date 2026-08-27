@@ -105,7 +105,32 @@ if surface_stabilizer:
                 f"Core surface stabilizer must stay platform/runtime independent: {forbidden}"
             )
 
-quest = require(
+surface_layout = require(
+    CORE / "SurfacePlaneTextLayout.cs",
+    (
+        "enum SurfacePlaneLayoutFailure",
+        "readonly struct SurfaceTextLayout",
+        "sealed class SurfacePlaneTextLayoutProjector",
+        "IViewportRayProvider rayProvider",
+        "new ViewportPoint(envelope.MinU, envelope.MinV)",
+        "new ViewportPoint(envelope.MaxU, envelope.MaxV)",
+        "TryIntersectPlane(",
+        "RayParallelToSurface",
+        "SurfaceBehindRay",
+        "DegenerateExtent",
+        "Normalize(horizontal)",
+        "Normalize(vertical)",
+    ),
+    "verified surface-plane text layout",
+)
+if surface_layout:
+    for forbidden in ("UnityEngine", "Meta.XR", "Oculus", "Android.Permission"):
+        if forbidden in surface_layout:
+            violations.append(
+                f"Core surface-plane layout must stay platform/runtime independent: {forbidden}"
+            )
+
+require(
     SCRIPTS / "QuestSurfaceRaycaster.cs",
     (
         "sealed class QuestSurfaceRaycaster : ISurfaceRaycaster, IDisposable",
@@ -118,7 +143,7 @@ quest = require(
     "Quest surface fallback chain",
 )
 
-overlay = require(
+require(
     SCRIPTS / "QuestReadWorldOverlayBehaviour.cs",
     (
         "ISurfaceRaycaster raycaster",
@@ -127,8 +152,15 @@ overlay = require(
         "surfaceResetPointDistanceMeters = 0.20f",
         "surfaceResetNormalAngleDegrees = 20f",
         "surfaceMaxMissingObservations = 1",
+        "fittedTextHeightFraction = 0.85f",
+        "fittedTextWidthFraction = 0.95f",
         "new QuestSurfaceRaycaster(gameObject, maxDistance, surfaceLayerMask)",
         "new SurfaceHitStabilizer(new SurfaceHitStabilizerOptions",
+        "new SurfacePlaneTextLayoutProjector(cameraBridge)",
+        "TryBuildSurfaceLayout(",
+        "ComputeFittedCharacterSize(",
+        "layout.Value.Up",
+        "BuildFallbackUp(normal)",
         "EnsureSurfaceEncounter();",
         "readAssistance.CurrentEncounterId",
         "surfaceStabilizer.Reset();",
@@ -145,6 +177,7 @@ overlay = require(
         "target.Coverage != SpatialAssistanceCoverage.Exact",
         "!projected.CanRenderInWorld",
         "retained-surface-misses",
+        "fitted-layouts",
     ),
     "Quest Read world overlay surface/permission contract",
 )
@@ -175,19 +208,13 @@ if openxr:
         if "m_Name: MetaXRFeature Android" in section
     ]
     if len(android_meta_sections) != 1:
-        violations.append(
-            "OpenXR settings must contain exactly one Android Meta XR Feature section"
-        )
+        violations.append("OpenXR settings must contain exactly one Android Meta XR Feature section")
     else:
         android_meta = android_meta_sections[0]
         if "m_enabled: 1" not in android_meta:
-            violations.append(
-                "Android Meta XR Feature must remain enabled for Quest native environment raycast"
-            )
+            violations.append("Android Meta XR Feature must remain enabled for Quest native environment raycast")
         if "XR_META_environment_raycast" not in android_meta:
-            violations.append(
-                "Android Meta XR Feature must expose XR_META_environment_raycast"
-            )
+            violations.append("Android Meta XR Feature must expose XR_META_environment_raycast")
 
 if not MANIFEST.is_file():
     violations.append(f"missing file: {MANIFEST.relative_to(ROOT)}")
@@ -207,7 +234,8 @@ if violations:
 print(
     "PASS: Read world placement keeps Android Meta XR environment-raycast support enabled, preserves reflected MRUK "
     "native interop for IL2CPP, fails closed across the optional reflection boundary, requires an identity tracking "
-    "origin, destroys only a ready raycaster it owns, avoids Meta's telemetry-emitting manager and OVRCameraRig-bound "
-    "depth manager, stabilizes only verified world hits with bounded miss retention reset per encounter, falls back to "
-    "Unity colliders, and keeps unresolved misses on the local-only viewport path"
+    "origin, destroys only a ready raycaster it owns, avoids Meta telemetry/depth-manager coupling, stabilizes only "
+    "verified world hits with bounded miss retention reset per encounter, derives physical label extent/orientation only "
+    "by intersecting viewport-corner rays with that verified plane, falls back to Unity colliders, and keeps unresolved "
+    "misses on the local-only viewport path"
 )

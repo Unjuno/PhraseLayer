@@ -15,8 +15,9 @@ namespace PhraseLayer.Unity
     ///
     /// This component is intentionally conservative: it never assumes a fixed depth and never turns an unresolved
     /// OCR target into a new world-space replacement. Verified surface hits are stabilized per semantic unit to reduce
-    /// small depth/normal jitter. A previously verified surface may survive only a bounded raycast miss, and all
-    /// world-surface state is discarded when the Read encounter changes.
+    /// small depth/normal jitter. When four viewport-corner rays can intersect that same verified plane, the physical
+    /// OCR width, height and vertical tangent drive the world label's size and orientation. A previously verified
+    /// surface may survive only a bounded raycast miss, and all world-surface state is discarded on encounter change.
     /// </summary>
     public sealed class QuestReadWorldOverlayBehaviour : MonoBehaviour
     {
@@ -31,6 +32,8 @@ namespace PhraseLayer.Unity
         [SerializeField] private float surfaceResetPointDistanceMeters = 0.20f;
         [SerializeField] private float surfaceResetNormalAngleDegrees = 20f;
         [SerializeField] private int surfaceMaxMissingObservations = 1;
+        [SerializeField] private float fittedTextHeightFraction = 0.85f;
+        [SerializeField] private float fittedTextWidthFraction = 0.95f;
 
         private readonly Dictionary<string, TextMesh> labels = new Dictionary<string, TextMesh>(StringComparer.Ordinal);
         private readonly HashSet<string> renderedUnitIds = new HashSet<string>(StringComparer.Ordinal);
@@ -112,11 +115,14 @@ namespace PhraseLayer.Unity
             HideAllLabels();
 
             var planner = new SpatialProjectionPlanner(cameraBridge, raycaster);
+            var layoutProjector = new SurfacePlaneTextLayoutProjector(cameraBridge);
             var targets = result.SpatialAssistance.Targets;
             var exactCandidates = 0;
             var surfaceMisses = 0;
             var retainedOcrDropouts = 0;
             var retainedSurfaceMisses = 0;
+            var fittedSurfaceLayouts = 0;
+            var surfaceLayoutFailures = 0;
 
             for (var index = 0; index < targets.Count; index++)
             {
@@ -164,7 +170,8 @@ namespace PhraseLayer.Unity
                         heldLabel != null &&
                         surfaceStabilizer.TryHoldMissing(unit.Id, out var heldSurface))
                     {
-                        ApplyWorldPlacement(heldLabel, target.Segment.DisplayText, heldSurface);
+                        var heldLayout = TryBuildSurfaceLayout(layoutProjector, envelope, heldSurface, ref fittedSurfaceLayouts, ref surfaceLayoutFailures);
+                        ApplyWorldPlacement(heldLabel, target.Segment.DisplayText, heldSurface, heldLayout);
                         SetGameObjectActive(heldLabel.gameObject, true);
                         renderedUnitIds.Add(unit.Id);
                         retainedSurfaceMisses++;
@@ -173,21 +180,41 @@ namespace PhraseLayer.Unity
                 }
 
                 var stabilizedSurface = surfaceStabilizer.Stabilize(unit.Id, projected.Surface.Value);
+                var surfaceLayout = TryBuildSurfaceLayout(layoutProjector, envelope, stabilizedSurface, ref fittedSurfaceLayouts, ref surfaceLayoutFailures);
                 var label = GetOrCreateLabel(unit.Id);
-                ApplyWorldPlacement(label, target.Segment.DisplayText, stabilizedSurface);
+                ApplyWorldPlacement(label, target.Segment.DisplayText, stabilizedSurface, surfaceLayout);
                 SetGameObjectActive(label.gameObject, true);
                 renderedUnitIds.Add(unit.Id);
             }
 
             readAssistance.SetWorldRenderedTargets(renderedUnitIds);
             status = string.Format(
-                "World overlay: candidates={0}, rendered={1}, retained-ocr-dropouts={2}, surface-misses={3}, retained-surface-misses={4}, environment-api={5}.",
+                "World overlay: candidates={0}, rendered={1}, retained-ocr-dropouts={2}, surface-misses={3}, retained-surface-misses={4}, fitted-layouts={5}, layout-failures={6}, environment-api={7}.",
                 exactCandidates,
                 renderedUnitIds.Count,
                 retainedOcrDropouts,
                 surfaceMisses,
                 retainedSurfaceMisses,
+                fittedSurfaceLayouts,
+                surfaceLayoutFailures,
                 questRaycaster != null && questRaycaster.HasEnvironmentDepthApi);
+        }
+
+        private static SurfaceTextLayout? TryBuildSurfaceLayout(
+            SurfacePlaneTextLayoutProjector projector,
+            ViewportEnvelope envelope,
+            SurfaceHit surface,
+            ref int successes,
+            ref int failures)
+        {
+            if (projector.TryProject(envelope, surface, out var layout, out _))
+            {
+                successes++;
+                return layout;
+            }
+
+            failures++;
+            return null;
         }
 
         private TextMesh GetOrCreateLabel(string unitId)
@@ -204,24 +231,50 @@ namespace PhraseLayer.Unity
             return textMesh;
         }
 
-        private void ApplyWorldPlacement(TextMesh label, string displayText, SurfaceHit surface)
+        private void ApplyWorldPlacement(TextMesh label, string displayText, SurfaceHit surface, SurfaceTextLayout? layout)
         {
-            var normal = Normalize(ToUnity(surface.Normal));
-            var point = ToUnity(surface.Point);
+            var normal = Normalize(ToUnity(layout.HasValue ? layout.Value.Normal : surface.Normal));
+            var point = ToUnity(layout.HasValue ? layout.Value.Center : surface.Point);
+            var up = layout.HasValue ? Normalize(ToUnity(layout.Value.Up)) : BuildFallbackUp(normal);
             var offset = (float)Math.Max(0.0, surfaceOffsetMeters);
-            var characterSize = (float)Math.Max(0.001, characterSizeMeters);
 
             label.text = displayText;
             label.fontSize = Math.Max(1, fontSize);
-            label.characterSize = characterSize;
+            label.characterSize = layout.HasValue
+                ? ComputeFittedCharacterSize(displayText, layout.Value)
+                : (float)Math.Max(0.001, characterSizeMeters);
             label.transform.localPosition = new Vector3(
                 point.x + (normal.x * offset),
                 point.y + (normal.y * offset),
                 point.z + (normal.z * offset));
 
-            // Unity TextMesh faces local -Z in the standard orientation. Align that front face with the outward
-            // surface normal so text is readable from the same side of the surface that the camera ray reached.
-            label.transform.localRotation = BuildSurfaceRotation(normal);
+            // Unity TextMesh faces local -Z in the standard orientation. The plane-derived vertical tangent is used
+            // as the up hint so wall, tilted and floor text do not silently inherit global-up orientation.
+            label.transform.localRotation = BuildSurfaceRotation(normal, up);
+        }
+
+        private float ComputeFittedCharacterSize(string displayText, SurfaceTextLayout layout)
+        {
+            var glyphCount = CountRenderableGlyphs(displayText);
+            var heightFraction = Math.Max(0.05, Math.Min(1.0, fittedTextHeightFraction));
+            var widthFraction = Math.Max(0.05, Math.Min(1.0, fittedTextWidthFraction));
+            var heightBound = layout.HeightMeters * heightFraction;
+            var widthBound = (layout.WidthMeters * widthFraction) / Math.Max(1, glyphCount);
+            return (float)Math.Max(0.001, Math.Min(heightBound, widthBound));
+        }
+
+        private static int CountRenderableGlyphs(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 1;
+
+            var count = 0;
+            for (var index = 0; index < text.Length; index++)
+            {
+                if (!char.IsWhiteSpace(text[index]))
+                    count++;
+            }
+            return Math.Max(1, count);
         }
 
         private SurfaceHitStabilizer BuildSurfaceStabilizer()
@@ -341,7 +394,7 @@ namespace PhraseLayer.Unity
                 throw new InvalidOperationException("Assign MetaPassthroughCameraBridge to QuestReadWorldOverlayBehaviour.");
         }
 
-        private static Quaternion BuildSurfaceRotation(Vector3 normal)
+        private static Quaternion BuildSurfaceRotation(Vector3 normal, Vector3 up)
         {
             var method = typeof(Quaternion).GetMethod(
                 "LookRotation",
@@ -353,10 +406,17 @@ namespace PhraseLayer.Unity
                 throw new MissingMethodException(typeof(Quaternion).FullName, "LookRotation(Vector3, Vector3)");
 
             var forward = new Vector3(-normal.x, -normal.y, -normal.z);
-            var value = method.Invoke(null, new object[] { forward, new Vector3(0f, 1f, 0f) });
+            var value = method.Invoke(null, new object[] { forward, up });
             if (value is Quaternion rotation)
                 return rotation;
             throw new InvalidOperationException("Quaternion.LookRotation did not return a Quaternion.");
+        }
+
+        private static Vector3 BuildFallbackUp(Vector3 normal)
+        {
+            var worldUp = new Vector3(0f, 1f, 0f);
+            var dot = Math.Abs((normal.x * worldUp.x) + (normal.y * worldUp.y) + (normal.z * worldUp.z));
+            return dot < 0.95 ? worldUp : new Vector3(0f, 0f, 1f);
         }
 
         private static void SetGameObjectActive(GameObject gameObject, bool active)
@@ -376,7 +436,7 @@ namespace PhraseLayer.Unity
         {
             var magnitude = Math.Sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
             if (magnitude <= 0.0)
-                throw new InvalidOperationException("Projected surface normal must be non-zero.");
+                throw new InvalidOperationException("Projected surface vector must be non-zero.");
             return new Vector3(
                 (float)(value.x / magnitude),
                 (float)(value.y / magnitude),

@@ -51,7 +51,8 @@ ISurfaceRaycaster
         ↓
 SurfaceHit
         ↓ verified-hit stabilizer
-ProjectedAssistanceTarget / world label
+        ↓ viewport corners intersect verified plane
+SurfaceTextLayout / world label
 ```
 
 `MetaPassthroughCameraBridge` implements `IViewportRayProvider` by delegating to the real Passthrough Camera API `ViewportPointToRay` call. PhraseLayer does not reconstruct a ray from an assumed symmetric field of view and does not assume viewport center is the optical axis.
@@ -85,6 +86,22 @@ Its default policy is intentionally bounded:
 
 This state is keyed by semantic unit ID. It cannot create a new world placement, cannot promote Partial/Unresolved OCR coverage to Exact, and cannot carry a hit from one encounter into another. The retained miss is therefore temporal continuity for previously verified geometry, not guessed depth.
 
+## Physical text-plane fitting
+
+A fixed character size cannot stay aligned as the same printed phrase moves nearer or farther from the headset. After a verified/stabilized center hit exists, `SurfacePlaneTextLayoutProjector` requests rays for the stabilized OCR envelope's four corners and intersects those rays with the plane defined by that hit.
+
+If all four intersections are valid, the resulting `SurfaceTextLayout` supplies:
+
+- a world-space center;
+- physical width and height in meters;
+- a left-to-right tangent derived from the viewport horizontal axis;
+- an up tangent derived from the viewport vertical axis;
+- the verified surface normal.
+
+The Quest renderer uses the plane-derived up tangent to orient `TextMesh`, including tilted/floor surfaces where global-up is ambiguous. Character size is bounded by both the measured physical height and measured physical width per non-whitespace display glyph. The current fit intentionally leaves small height/width margins (`0.85` and `0.95`) instead of overshooting the detected source text.
+
+Corner-ray failure, a ray parallel to the surface, an intersection behind the camera, or degenerate physical extent does not fabricate dimensions. The renderer keeps the already-verified center surface placement with its conservative fallback character size.
+
 ## Conservative overlay policy
 
 Physical text covering is confidence-sensitive:
@@ -106,8 +123,8 @@ This is deliberately conservative. A translation should not be painted over the 
 - Quest 3 confirmation of passthrough permission/startup and real frame capture;
 - locally staged PP-OCR execution on camera frames;
 - native environment-raycaster startup/permission behavior and hit accuracy on Quest 3;
-- tuning the world-hit smoothing thresholds from measured Quest 3 motion/latency rather than desktop assumptions;
-- world-label orientation/readability and physical text-plane fitting on device;
+- tuning the world-hit smoothing and physical-fit margins from measured Quest 3 motion/latency rather than desktop assumptions;
+- world-label glyph metrics/readability and physical text-plane fit validation on device;
 - longer-term world persistence/anchor strategy if needed;
 - local OPUS-MT execution and quality/latency validation;
 - device performance, memory, battery and thermal measurements.
