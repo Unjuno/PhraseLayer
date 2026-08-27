@@ -27,7 +27,7 @@ namespace PhraseLayer.Unity
 
         public bool TryRaycast(SpatialRay ray, out SurfaceHit hit)
         {
-            var direction = ToUnity(ray.Direction).normalized;
+            var direction = Normalize(ToUnity(ray.Direction));
             var unityRay = new Ray(ToUnity(ray.Origin), direction);
             RaycastHit unityHit;
             if (!Physics.Raycast(
@@ -46,6 +46,17 @@ namespace PhraseLayer.Unity
                 ToSpatial(unityHit.normal),
                 unityHit.distance);
             return true;
+        }
+
+        private static Vector3 Normalize(Vector3 value)
+        {
+            var magnitude = Math.Sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
+            if (magnitude <= 0.0)
+                throw new InvalidOperationException("Spatial ray direction must remain non-zero at the Unity boundary.");
+            return new Vector3(
+                (float)(value.x / magnitude),
+                (float)(value.y / magnitude),
+                (float)(value.z / magnitude));
         }
 
         private static Vector3 ToUnity(SpatialVector3 value)
