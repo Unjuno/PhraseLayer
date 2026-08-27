@@ -122,18 +122,19 @@ namespace PhraseLayer.Core.Pipeline
     }
 
     /// <summary>
-    /// Read-mode composition preserves the caller synchronization context between OCR and language adapters.
-    /// This is required by Unity adapters whose texture/model operations are owner-thread-bound.
+    /// Owns OCR only. Once a frame has been recognized, the exact observation is delegated to
+    /// ReadModeObservationProcessor so language planning and geometry alignment never need a second OCR inference.
     /// </summary>
     public sealed class ReadModePipeline
     {
         private readonly IOcrEngine _ocr;
-        private readonly LanguagePipeline _language;
+        private readonly ReadModeObservationProcessor _observations;
 
         public ReadModePipeline(IOcrEngine ocr, LanguagePipeline language)
         {
             _ocr = ocr ?? throw new ArgumentNullException(nameof(ocr));
-            _language = language ?? throw new ArgumentNullException(nameof(language));
+            _observations = new ReadModeObservationProcessor(
+                language ?? throw new ArgumentNullException(nameof(language)));
         }
 
         public async Task<MixedLanguagePlan> ProcessAsync(
@@ -154,11 +155,19 @@ namespace PhraseLayer.Core.Pipeline
             if (policy == null) throw new ArgumentNullException(nameof(policy));
 
             var observation = await _ocr.RecognizeAsync(frame, cancellationToken);
-            var languagePlan = await _language
-                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken);
-            var viewportRegions = OcrViewportMapper.Map(observation, frame);
+            return await _observations.ProcessSpatialAsync(frame, observation, policy, cancellationToken);
+        }
 
-            return new ReadModeSpatialResult(frame, observation, viewportRegions, languagePlan);
+        public async Task<ReadModeAlignedResult> ProcessAlignedAsync(
+            ImageFrame frame,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+
+            var observation = await _ocr.RecognizeAsync(frame, cancellationToken);
+            return await _observations.ProcessAlignedAsync(frame, observation, policy, cancellationToken);
         }
     }
 
