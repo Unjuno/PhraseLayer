@@ -120,6 +120,8 @@ namespace PhraseLayer.Core.Spatial
     /// <summary>
     /// Conservative placement policy: only Exact OCR coverage may replace source text.
     /// Partial coverage may render a nearby label. Unresolved geometry is never placed by guessing.
+    /// Verified surface normals are canonicalized to face back toward the camera ray origin so renderer behavior does
+    /// not depend on whether a particular geometry backend reports the same plane normal with the opposite sign.
     /// </summary>
     public sealed class SpatialProjectionPlanner
     {
@@ -177,6 +179,7 @@ namespace PhraseLayer.Core.Spatial
                     null);
             }
 
+            hit = OrientSurfaceTowardRayOrigin(ray, hit);
             var kind = target.Coverage == SpatialAssistanceCoverage.Exact
                 ? OverlayPlacementKind.InPlaceReplacement
                 : OverlayPlacementKind.AdjacentLabel;
@@ -188,6 +191,22 @@ namespace PhraseLayer.Core.Spatial
                 anchor,
                 ray,
                 hit);
+        }
+
+        private static SurfaceHit OrientSurfaceTowardRayOrigin(SpatialRay ray, SurfaceHit hit)
+        {
+            if (Dot(ray.Direction, hit.Normal) <= 0.0)
+                return hit;
+
+            return new SurfaceHit(
+                hit.Point,
+                new SpatialVector3(-hit.Normal.X, -hit.Normal.Y, -hit.Normal.Z),
+                hit.DistanceMeters);
+        }
+
+        private static double Dot(SpatialVector3 left, SpatialVector3 right)
+        {
+            return (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
         }
     }
 }
