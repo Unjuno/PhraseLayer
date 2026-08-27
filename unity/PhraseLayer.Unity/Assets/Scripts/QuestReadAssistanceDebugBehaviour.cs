@@ -22,6 +22,7 @@ namespace PhraseLayer.Unity
     /// The visible language plan is frozen per Read encounter. OCR geometry may refresh, but a transient OCR
     /// mutation cannot cause the displayed source/translation mix to oscillate frame by frame. Replacing the
     /// translation engine explicitly resets the encounter so one encounter can never mix outputs from two engines.
+    /// Small viewport-space OCR jitter is smoothed per semantic target; large movement is accepted immediately.
     /// </summary>
     public sealed class QuestReadAssistanceDebugBehaviour : MonoBehaviour
     {
@@ -43,6 +44,8 @@ namespace PhraseLayer.Unity
         [SerializeField] private UnityLearnerProfileBehaviour learnerProfile = default(UnityLearnerProfileBehaviour);
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
         [SerializeField] private bool showPartialCoverage = false;
+        [SerializeField] private float overlayBlendFactor = 0.35f;
+        [SerializeField] private float overlayResetCenterDistance = 0.10f;
         [SerializeField] private TranslationEntry[] localDebugTranslations =
         {
             new TranslationEntry("keep off", "立ち入らない"),
@@ -59,6 +62,10 @@ namespace PhraseLayer.Unity
         private ImageFrame pendingFrame;
         private long latestSequence;
         private ReadModeSpatialResult lastResult;
+        private ViewportEnvelopeStabilizer overlayStabilizer;
+        private readonly Dictionary<string, ViewportEnvelope> stabilizedEnvelopes =
+            new Dictionary<string, ViewportEnvelope>(StringComparer.Ordinal);
+        private string stabilizedEncounterId = string.Empty;
         private string currentEncounterId = string.Empty;
         private string status = "Waiting for real OCR observation.";
 
@@ -84,6 +91,7 @@ namespace PhraseLayer.Unity
                 pipeline = BuildPipeline();
                 lastResult = null;
                 currentEncounterId = string.Empty;
+                ResetOverlayStability();
                 status = "Translation engine changed; waiting for a new Read encounter: " + engine.GetType().Name;
             }
         }
@@ -93,6 +101,8 @@ namespace PhraseLayer.Unity
             EnsureReferences();
             learnerProfile.Initialize();
             pipeline = BuildPipeline();
+            overlayStabilizer = BuildOverlayStabilizer();
+            ResetOverlayStability();
             lifetime?.Dispose();
             lifetime = new CancellationTokenSource();
             ocrPresenter.ObservationPresented += HandleObservationPresented;
@@ -104,6 +114,7 @@ namespace PhraseLayer.Unity
                 ocrPresenter.ObservationPresented -= HandleObservationPresented;
             lifetime?.Cancel();
             pipeline?.Reset();
+            ResetOverlayStability();
         }
 
         private void OnDestroy()
@@ -115,6 +126,8 @@ namespace PhraseLayer.Unity
             lifetime = null;
             pipeline?.Reset();
             pipeline = null;
+            ResetOverlayStability();
+            overlayStabilizer = null;
         }
 
         private ReadEncounterPipeline BuildPipeline()
@@ -147,6 +160,17 @@ namespace PhraseLayer.Unity
                 new AssistancePlanner(),
                 translationEngine);
             return new ReadEncounterPipeline(language);
+        }
+
+        private ViewportEnvelopeStabilizer BuildOverlayStabilizer()
+        {
+            var blendFactor = Math.Max(0.01, Math.Min(1.0, overlayBlendFactor));
+            var resetDistance = Math.Max(0.0, overlayResetCenterDistance);
+            return new ViewportEnvelopeStabilizer(new ViewportEnvelopeStabilizerOptions
+            {
+                BlendFactor = blendFactor,
+                ResetCenterDistance = resetDistance,
+            });
         }
 
         private void HandleObservationPresented(OcrObservation observation, ImageFrame frame)
@@ -197,17 +221,21 @@ namespace PhraseLayer.Unity
                             (encounter.Decision.IsPendingSwitch || result.SpatialAssistance.ExactCount == 0);
 
                         if (!keepPreviousOverlay)
+                        {
                             lastResult = result;
+                            UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result);
+                        }
 
                         status = string.Format(
-                            "Read encounter {0} | {1} | targets={2}, exact={3}, partial={4}, unresolved={5}, held={6}.",
+                            "Read encounter {0} | {1} | targets={2}, exact={3}, partial={4}, unresolved={5}, held={6}, stabilized={7}.",
                             encounter.Decision.EncounterId,
                             encounter.Decision.Transition,
                             result.SpatialAssistance.Targets.Count,
                             result.SpatialAssistance.ExactCount,
                             result.SpatialAssistance.PartialCount,
                             result.SpatialAssistance.UnresolvedCount,
-                            keepPreviousOverlay);
+                            keepPreviousOverlay,
+                            stabilizedEnvelopes.Count);
                     }
 
                     if (pendingObservation == null)
@@ -225,6 +253,37 @@ namespace PhraseLayer.Unity
             }
         }
 
+        private void UpdateStabilizedEnvelopes(string encounterId, ReadModeSpatialResult result)
+        {
+            if (overlayStabilizer == null)
+                overlayStabilizer = BuildOverlayStabilizer();
+
+            if (!string.Equals(stabilizedEncounterId, encounterId, StringComparison.Ordinal))
+            {
+                overlayStabilizer.Reset();
+                stabilizedEncounterId = encounterId;
+            }
+
+            stabilizedEnvelopes.Clear();
+            var targets = result.SpatialAssistance.Targets;
+            for (var index = 0; index < targets.Count; index++)
+            {
+                var target = targets[index];
+                if (!target.Envelope.HasValue || target.Segment.Unit == null)
+                    continue;
+
+                var key = target.Segment.Unit.Id;
+                stabilizedEnvelopes[key] = overlayStabilizer.Stabilize(key, target.Envelope.Value);
+            }
+        }
+
+        private void ResetOverlayStability()
+        {
+            overlayStabilizer?.Reset();
+            stabilizedEnvelopes.Clear();
+            stabilizedEncounterId = string.Empty;
+        }
+
         private void OnGUI()
         {
             if (lastResult == null) return;
@@ -238,7 +297,14 @@ namespace PhraseLayer.Unity
                 if (target.Coverage == SpatialAssistanceCoverage.Partial && !showPartialCoverage) continue;
                 if (string.Equals(target.Segment.SourceText, target.Segment.DisplayText, StringComparison.Ordinal)) continue;
 
-                GUI.Box(ToScreenRect(target.Envelope.Value), target.Segment.DisplayText);
+                var envelope = target.Envelope.Value;
+                if (target.Segment.Unit != null &&
+                    stabilizedEnvelopes.TryGetValue(target.Segment.Unit.Id, out var stabilized))
+                {
+                    envelope = stabilized;
+                }
+
+                GUI.Box(ToScreenRect(envelope), target.Segment.DisplayText);
             }
         }
 

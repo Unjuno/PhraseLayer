@@ -50,6 +50,19 @@ require(
 )
 
 require(
+    CORE / "ViewportEnvelopeStabilizer.cs",
+    (
+        "sealed class ViewportEnvelopeStabilizerOptions",
+        "BlendFactor = 0.35",
+        "ResetCenterDistance = 0.10",
+        "sealed class ViewportEnvelopeStabilizer",
+        "centerDistance > options.ResetCenterDistance",
+        "states.Clear()",
+    ),
+    "Core viewport overlay stabilization",
+)
+
+require(
     SCRIPTS / "OcrViewportDebugBehaviour.cs",
     (
         "event Action<OcrObservation, ImageFrame> ObservationPresented",
@@ -65,6 +78,10 @@ require(
     (
         "ReadEncounterPipeline pipeline",
         "ITranslationEngine configuredTranslationEngine",
+        "ViewportEnvelopeStabilizer overlayStabilizer",
+        "UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result)",
+        "stabilizedEnvelopes.TryGetValue(target.Segment.Unit.Id",
+        "ResetOverlayStability();",
         "ConfigureTranslationEngine(ITranslationEngine engine)",
         "pipeline.Reset();",
         "translationEngine = configuredTranslationEngine",
@@ -78,7 +95,7 @@ require(
         "keepPreviousOverlay",
         "SpatialAssistanceCoverage.Unresolved",
         "SpatialAssistanceCoverage.Partial && !showPartialCoverage",
-        "GUI.Box(ToScreenRect(target.Envelope.Value), target.Segment.DisplayText)",
+        "GUI.Box(ToScreenRect(envelope), target.Segment.DisplayText)",
     ),
     "Quest Read assistance encounter slice",
 )
@@ -184,12 +201,25 @@ require(
     "Read encounter stability regression tests",
 )
 
+require(
+    TESTS / "ViewportEnvelopeStabilizerTests.cs",
+    (
+        "FirstObservationIsAcceptedWithoutLag",
+        "SmallOcrJitterIsExponentiallySmoothed",
+        "LargeViewportMotionResetsImmediately",
+        "TargetsHaveIndependentStateAndResetClearsEncounterGeometry",
+        "InvalidOptionsFailClosed",
+    ),
+    "Viewport overlay stabilization regression tests",
+)
+
 if violations:
     raise SystemExit("\n".join(violations))
 
 print(
     "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; language plans are frozen "
-    "per encounter; the committed camera starts at XR origin and receives Unity XR head pose; the deterministic local "
-    "Read scene wires camera/OCR/learner/assistance; local OPUS-MT is injected only after staged asset/tokenizer/model "
-    "validation; and stale/noisy frames cannot flicker the overlay"
+    "per encounter; small OCR viewport jitter is stabilized without delaying large motion; the committed camera starts "
+    "at XR origin and receives Unity XR head pose; the deterministic local Read scene wires camera/OCR/learner/assistance; "
+    "local OPUS-MT is injected only after staged asset/tokenizer/model validation; and stale/noisy frames cannot flicker "
+    "the overlay"
 )
