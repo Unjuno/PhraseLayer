@@ -10,7 +10,7 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Scene-facing bootstrap that owns the end-to-end PP-OCR engine and injects it into OcrDebugRuntimeBehaviour.
-    /// Model assets, the generated recognition dictionary, and its revision manifest remain Inspector-assigned so
+    /// Model assets, the generated recognition dictionary, and its revision manifest remain explicitly configured so
     /// unreviewed artifacts are not bundled by code and dictionary/model contract drift fails before inference.
     /// </summary>
     public sealed class UnityPaddleOcrBootstrapBehaviour : MonoBehaviour
@@ -30,6 +30,12 @@ namespace PhraseLayer.Unity
         private UnityPaddleOcrEngine engine;
 
         public bool IsInitialized => engine != null;
+        public bool HasConfiguredAssets =>
+            runtimeDriver != null &&
+            detectorModel != null &&
+            recognizerModel != null &&
+            characterDictionary != null &&
+            characterDictionaryManifest != null;
         public IOcrEngine Engine => engine;
         public int DictionaryTokenCount { get; private set; }
         public string DictionaryManifestReport { get; private set; } =
@@ -41,6 +47,37 @@ namespace PhraseLayer.Unity
         private void Awake()
         {
             Initialize();
+        }
+
+        /// <summary>
+        /// Configures a bootstrap created at runtime from a git-ignored local Resources config. This must run before
+        /// the inactive runtime root is enabled, so Awake observes the same fully explicit references as a serialized
+        /// scene bootstrap. Reconfiguration after engine creation is rejected.
+        /// </summary>
+        public void Configure(
+            OcrDebugRuntimeBehaviour configuredRuntimeDriver,
+            ModelAsset configuredDetectorModel,
+            ModelAsset configuredRecognizerModel,
+            TextAsset configuredCharacterDictionary,
+            TextAsset configuredCharacterDictionaryManifest,
+            bool configuredUseSpaceCharacter,
+            float configuredRecognitionDropScore,
+            int configuredRecognizerModelWidth,
+            BackendType configuredDetectorBackend,
+            BackendType configuredRecognizerBackend)
+        {
+            if (engine != null)
+                throw new InvalidOperationException("Cannot reconfigure PP-OCR assets after the engine has initialized.");
+            runtimeDriver = configuredRuntimeDriver ?? throw new ArgumentNullException(nameof(configuredRuntimeDriver));
+            detectorModel = configuredDetectorModel ?? throw new ArgumentNullException(nameof(configuredDetectorModel));
+            recognizerModel = configuredRecognizerModel ?? throw new ArgumentNullException(nameof(configuredRecognizerModel));
+            characterDictionary = configuredCharacterDictionary ?? throw new ArgumentNullException(nameof(configuredCharacterDictionary));
+            characterDictionaryManifest = configuredCharacterDictionaryManifest ?? throw new ArgumentNullException(nameof(configuredCharacterDictionaryManifest));
+            useSpaceCharacter = configuredUseSpaceCharacter;
+            recognitionDropScore = configuredRecognitionDropScore;
+            recognizerModelWidth = configuredRecognizerModelWidth;
+            detectorBackend = configuredDetectorBackend;
+            recognizerBackend = configuredRecognizerBackend;
         }
 
         public void Initialize()
@@ -103,6 +140,7 @@ namespace PhraseLayer.Unity
         }
 #else
         public bool IsInitialized => false;
+        public bool HasConfiguredAssets => false;
         public IOcrEngine Engine => null;
         public int DictionaryTokenCount => 0;
         public string DictionaryManifestReport => UnityPaddleOcrDictionaryManifest.UnsupportedReport;
