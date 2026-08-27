@@ -166,7 +166,7 @@ require(
     "Quest surface fallback chain",
 )
 
-require(
+overlay = require(
     SCRIPTS / "QuestReadWorldOverlayBehaviour.cs",
     (
         "ISurfaceRaycaster raycaster",
@@ -190,6 +190,8 @@ require(
         "surfaceStabilizer.Stabilize(unit.Id, projected.Surface.Value)",
         "surfaceStabilizer.TryHoldMissing(unit.Id, out var heldSurface)",
         "previouslyRendered.Contains(unit.Id)",
+        "private void DestroyAllLabels()",
+        "labels.Clear();",
         "EnsureSpatialPermissionRequested();",
         "Permission.RequestUserPermissions(",
         "HandleSpatialPermissionGranted",
@@ -204,6 +206,14 @@ require(
     ),
     "Quest Read world overlay surface/permission contract",
 )
+if overlay:
+    encounter_method = overlay.find("private void EnsureSurfaceEncounter()")
+    next_method = overlay.find("private void ResetSurfaceStability()", encounter_method)
+    destroy_call = overlay.find("DestroyAllLabels();", encounter_method)
+    if encounter_method < 0 or next_method < 0 or not (encounter_method < destroy_call < next_method):
+        violations.append(
+            "Quest Read world overlay must destroy old TextMesh labels inside EnsureSurfaceEncounter before accepting a new encounter"
+        )
 
 require(
     LINK_XML,
@@ -259,7 +269,8 @@ print(
     "native interop for IL2CPP, fails closed across the optional reflection boundary, requires an identity tracking "
     "origin, destroys only a ready raycaster it owns, avoids Meta telemetry/depth-manager coupling, canonicalizes each "
     "verified surface normal toward its camera ray origin, stabilizes only verified world hits with bounded miss "
-    "retention reset per encounter, derives physical label extent/orientation only by intersecting viewport-corner "
-    "rays with that verified plane, rejects implausibly distant corner intersections, falls back to Unity colliders, "
-    "and keeps unresolved misses on the local-only viewport path"
+    "retention reset per encounter, destroys encounter-scoped world-label objects instead of accumulating stale TextMesh "
+    "instances, derives physical label extent/orientation only by intersecting viewport-corner rays with that verified "
+    "plane, rejects implausibly distant corner intersections, falls back to Unity colliders, and keeps unresolved misses "
+    "on the local-only viewport path"
 )
