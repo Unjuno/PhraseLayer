@@ -35,6 +35,10 @@ REFERENCE_XR_BLOBS = {
     "Assets/XR/XRGeneralSettingsPerBuildTarget.asset.meta": "c30b95fa04b45f50c5f84c476348825e30bf8852",
 }
 PHRASELAYER_XR_GENERAL_BLOB = "c02fc87a6a3d115a88194ab20589a57943a38dbb"
+REFERENCE_STANDARD_SETTINGS_BLOBS = {
+    "InputManager.asset": "8068b2058b089f9973b15f83648e58cd238688f0",
+    "QualitySettings.asset": "a079bf80d077026aade1fcddfdd36d9183e6c79c",
+}
 
 errors = []
 
@@ -97,6 +101,8 @@ required_settings = (
     "EditorSettings.asset",
     "AudioManager.asset",
     "GraphicsSettings.asset",
+    "InputManager.asset",
+    "QualitySettings.asset",
     "DynamicsManager.asset",
     "Physics2DSettings.asset",
     "NavMeshAreas.asset",
@@ -113,6 +119,17 @@ required_settings = (
 for name in required_settings:
     if not (settings_dir / name).is_file():
         errors.append(f"missing deterministic Unity project setting: ProjectSettings/{name}")
+
+for name, expected_sha in REFERENCE_STANDARD_SETTINGS_BLOBS.items():
+    path = settings_dir / name
+    if not path.is_file():
+        continue
+    actual_sha = git_blob_sha(path)
+    if actual_sha != expected_sha:
+        errors.append(
+            f"standard Unity project setting drift: ProjectSettings/{name} expected reviewed blob "
+            f"{expected_sha}, found {actual_sha}"
+        )
 
 player_path = settings_dir / "ProjectSettings.asset"
 if player_path.is_file():
