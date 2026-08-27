@@ -100,6 +100,16 @@ def main() -> None:
             "full lowercase 40-character Git SHA",
         )
 
+        vocab_path = snapshot / "vocab.json"
+        vocab = json.loads(vocab_path.read_text(encoding="utf-8"))
+        vocab["token-100"] = 99
+        write_json(vocab_path, vocab)
+        expect_failure(
+            lambda: module.build_manifest(snapshot, revision, None),
+            "unique vocab token id count",
+        )
+        write_json(vocab_path, {f"token-{index}": index for index in range(46276)})
+
         config_path = snapshot / "config.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))
         config["vocab_size"] = 46277
