@@ -45,6 +45,8 @@ Because the Unity/MRUK/XR package pins above are identical, PhraseLayer commits 
 
 `tools/validate_unity_reference_baseline.py` computes Git blob SHAs for the unchanged Meta-reference assets and separately pins the PhraseLayer XR-general-settings blob. It also rejects the sample's extra Android loader GUID and requires exactly one Android loader: OpenXR. These are integrity/equality checks, not cryptographic trust claims.
 
+The same validator now also requires and pins the reviewed `ProjectSettings/InputManager.asset` and `ProjectSettings/QualitySettings.asset` blobs. Those standard Unity settings are deliberately committed so a clean Unity Build Automation checkout does not rely on first-import generation for project-wide input or quality defaults.
+
 `ProjectSettings/EditorBuildSettings.asset` keeps PhraseLayer's own Read MVP scene, while its XR config-object entries use the reviewed settings GUIDs:
 
 - `Unity.XR.Oculus.Settings` -> `f2bf97b3acdb64248a707c407c9fc54e`;
@@ -91,7 +93,7 @@ Avoid architecture-only differences until the reference-equivalent vertical slic
 
 ## Current structural baseline
 
-The earlier skeletal-project gap is now materially reduced. PhraseLayer commits deterministic `ProjectSettings`, the reviewed OpenXR loader/feature settings, its explicit OpenXR-only Android provider lifecycle, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene remains model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load. The camera has a Unity-XR head-pose driver, but device correctness remains a separate gate.
+The earlier skeletal-project gap is now materially reduced. PhraseLayer commits deterministic `ProjectSettings`, including reviewed `InputManager.asset` and `QualitySettings.asset`, the reviewed OpenXR loader/feature settings, its explicit OpenXR-only Android provider lifecycle, an enabled `Assets/Scenes/PhraseLayerReadMvp.unity`, and the scene's stable `.meta` GUID. The committed scene remains model-free: it serializes the reviewed MRUK 85 `PassthroughCameraAccess` component and PhraseLayer runtime code installs a synthetic-fixture Read graph after scene load. The camera has a Unity-XR head-pose driver, but device correctness remains a separate gate.
 
 This is a build/import baseline, not evidence of Quest device correctness. The following remain separate gates:
 
