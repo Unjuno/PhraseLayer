@@ -56,7 +56,7 @@ namespace PhraseLayer.Core.Translation
             int vocabularySize,
             int decoderStartTokenId,
             int eosTokenId,
-            IEnumerable<int> bannedTokenIds = null,
+            IEnumerable<int>? bannedTokenIds = null,
             bool forceEosAtMaximumTokens = true)
         {
             this.backend = backend ?? throw new ArgumentNullException(nameof(backend));
@@ -100,7 +100,7 @@ namespace PhraseLayer.Core.Translation
             }
             cancellationToken.ThrowIfCancellationRequested();
 
-            ISeq2SeqGenerationSession session = null;
+            ISeq2SeqGenerationSession? session = null;
             try
             {
                 session = await backend.StartAsync(sourceTokenIds, cancellationToken);
