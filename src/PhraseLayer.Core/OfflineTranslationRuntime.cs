@@ -140,7 +140,7 @@ namespace PhraseLayer.Core.Translation
         public OfflineSeq2SeqTranslationRuntime(
             ITranslationTokenizer tokenizer,
             ISeq2SeqTranslationModel model,
-            TranslationGenerationOptions options = null)
+            TranslationGenerationOptions? options = null)
         {
             this.tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
             this.model = model ?? throw new ArgumentNullException(nameof(model));
