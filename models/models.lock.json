@@ -45,7 +45,10 @@
         "source_artifact": "inference.yml",
         "source_format": "paddle-inference-yaml",
         "postprocess_name": "CTCLabelDecode",
-        "yaml_path": ["PostProcess", "character_dict"],
+        "yaml_path": [
+          "PostProcess",
+          "character_dict"
+        ],
         "use_space_char": true,
         "raw_token_count": 6904,
         "effective_token_count": 6905,
@@ -67,8 +70,50 @@
       "id": "opus-mt-en-jap",
       "purpose": "translation-en-ja",
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
+      "revision_short": "a863894",
+      "revision_status": "upstream-main-short-id-observed; full-40-character-sha-required-before-artifact-staging",
+      "architecture": "MarianMTModel",
+      "model_type": "marian",
+      "source_language": "en",
+      "target_language": "jap",
+      "preprocessing": "normalization + SentencePiece",
+      "vocab_size": 46276,
+      "decoder_vocab_size": 46276,
+      "d_model": 512,
+      "encoder_layers": 6,
+      "decoder_layers": 6,
+      "max_position_embeddings": 512,
+      "bos_token_id": 0,
+      "eos_token_id": 0,
+      "pad_token_id": 46275,
+      "decoder_start_token_id": 46275,
+      "configured_num_beams": 4,
+      "source_snapshot_artifacts": [
+        "config.json",
+        "generation_config.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "source.spm",
+        "target.spm",
+        "pytorch_model.bin"
+      ],
+      "onnx_export": {
+        "tool": "optimum-cli export onnx",
+        "task": "text2text-generation-with-past",
+        "no_post_process": true,
+        "expected_artifacts": [
+          "encoder_model.onnx",
+          "decoder_model.onnx",
+          "decoder_with_past_model.onnx"
+        ]
+      },
+      "format": "pytorch-source; reviewed-export-target=onnx",
       "license": "Apache-2.0",
-      "license_status": "candidate-unverified-at-pinned-revision",
+      "license_status": "upstream-metadata-observed; revision-level-review-pending; redistribution-review-pending",
+      "runtime_target": "com.unity.ai.inference@2.2.1",
+      "runtime_compatibility": "unverified-real-unity-import-and-quest-execution-required",
+      "quantization": "unverified",
+      "source_precision": "fp32-upstream-pytorch-observed",
       "bundled": false
     },
     {
