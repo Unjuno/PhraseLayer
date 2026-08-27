@@ -1,0 +1,10 @@
+<linker>
+  <assembly fullname="meta.xr.mrutilitykit">
+    <!--
+      PhraseLayer intentionally reaches MRUK's native environment-raycast interop through reflection so the
+      telemetry-emitting EnvironmentRaycastManager component is never instantiated. Preserve only the generated
+      MRUKNativeFuncs family needed by that reflected boundary, including its nested delegate/interop structs.
+    -->
+    <type fullname="Meta.XR.MRUtilityKit.MRUKNativeFuncs*" preserve="all" />
+  </assembly>
+</linker>
