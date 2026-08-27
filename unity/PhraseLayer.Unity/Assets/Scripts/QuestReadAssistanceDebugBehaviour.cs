@@ -22,7 +22,8 @@ namespace PhraseLayer.Unity
     /// The visible language plan is frozen per Read encounter. OCR geometry may refresh, but a transient OCR
     /// mutation cannot cause the displayed source/translation mix to oscillate frame by frame. Replacing the
     /// translation engine explicitly resets the encounter so one encounter can never mix outputs from two engines.
-    /// Small viewport-space OCR jitter is smoothed per semantic target; large movement is accepted immediately.
+    /// Small viewport-space OCR jitter is smoothed per semantic target; large movement is accepted immediately, and
+    /// a bounded number of missing target observations may retain the most recent placeable envelope.
     /// </summary>
     public sealed class QuestReadAssistanceDebugBehaviour : MonoBehaviour
     {
@@ -46,6 +47,7 @@ namespace PhraseLayer.Unity
         [SerializeField] private bool showPartialCoverage = false;
         [SerializeField] private float overlayBlendFactor = 0.35f;
         [SerializeField] private float overlayResetCenterDistance = 0.10f;
+        [SerializeField] private int overlayMaxMissingObservations = 2;
         [SerializeField] private TranslationEntry[] localDebugTranslations =
         {
             new TranslationEntry("keep off", "立ち入らない"),
@@ -170,6 +172,7 @@ namespace PhraseLayer.Unity
             {
                 BlendFactor = blendFactor,
                 ResetCenterDistance = resetDistance,
+                MaxMissingObservations = Math.Max(0, overlayMaxMissingObservations),
             });
         }
 
@@ -269,11 +272,19 @@ namespace PhraseLayer.Unity
             for (var index = 0; index < targets.Count; index++)
             {
                 var target = targets[index];
-                if (!target.Envelope.HasValue || target.Segment.Unit == null)
+                var unit = target.Segment.Unit;
+                if (unit == null)
                     continue;
 
-                var key = target.Segment.Unit.Id;
-                stabilizedEnvelopes[key] = overlayStabilizer.Stabilize(key, target.Envelope.Value);
+                var key = unit.Id;
+                if (target.Envelope.HasValue)
+                {
+                    stabilizedEnvelopes[key] = overlayStabilizer.Stabilize(key, target.Envelope.Value);
+                }
+                else if (overlayStabilizer.TryHoldMissing(key, out var heldEnvelope))
+                {
+                    stabilizedEnvelopes[key] = heldEnvelope;
+                }
             }
         }
 
@@ -292,18 +303,29 @@ namespace PhraseLayer.Unity
             for (var index = 0; index < targets.Count; index++)
             {
                 var target = targets[index];
-                if (!target.Envelope.HasValue) continue;
-                if (target.Coverage == SpatialAssistanceCoverage.Unresolved) continue;
                 if (target.Coverage == SpatialAssistanceCoverage.Partial && !showPartialCoverage) continue;
                 if (string.Equals(target.Segment.SourceText, target.Segment.DisplayText, StringComparison.Ordinal)) continue;
 
-                var envelope = target.Envelope.Value;
-                if (target.Segment.Unit != null &&
-                    stabilizedEnvelopes.TryGetValue(target.Segment.Unit.Id, out var stabilized))
+                var unit = target.Segment.Unit;
+                var hasStabilizedEnvelope = unit != null &&
+                    stabilizedEnvelopes.TryGetValue(unit.Id, out var stabilized);
+                var isRetainedDropout = hasStabilizedEnvelope && !target.Envelope.HasValue;
+
+                ViewportEnvelope envelope;
+                if (hasStabilizedEnvelope)
                 {
                     envelope = stabilized;
                 }
+                else if (target.Envelope.HasValue)
+                {
+                    envelope = target.Envelope.Value;
+                }
+                else
+                {
+                    continue;
+                }
 
+                if (target.Coverage == SpatialAssistanceCoverage.Unresolved && !isRetainedDropout) continue;
                 GUI.Box(ToScreenRect(envelope), target.Segment.DisplayText);
             }
         }
