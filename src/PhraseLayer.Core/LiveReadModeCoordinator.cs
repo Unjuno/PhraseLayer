@@ -44,6 +44,7 @@ namespace PhraseLayer.Core.Pipeline
     /// A newer frame cancels an older in-flight language/alignment operation. If an adapter ignores cancellation and
     /// the older operation eventually completes, its generation is still rejected as Superseded, preventing stale
     /// semantic/world-space output from replacing the result for a newer camera observation.
+    /// Cancellation callbacks are never invoked while the coordinator lock is held.
     /// </summary>
     public sealed class LiveReadModeCoordinator : IDisposable
     {
@@ -84,6 +85,7 @@ namespace PhraseLayer.Core.Pipeline
             cancellationToken.ThrowIfCancellationRequested();
 
             CancellationTokenSource localCancellation;
+            CancellationTokenSource? previousCancellation;
             long localGeneration;
             lock (gate)
             {
@@ -98,12 +100,13 @@ namespace PhraseLayer.Core.Pipeline
 
                 latestAcceptedTimestampMicroseconds = frame.TimestampMicroseconds;
                 localGeneration = ++generation;
-                activeCancellation?.Cancel();
-                activeCancellation?.Dispose();
+                previousCancellation = activeCancellation;
                 localCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 activeCancellation = localCancellation;
             }
 
+            CancelAndDispose(previousCancellation);
+            var localToken = localCancellation.Token;
             ReadModeAlignedResult aligned;
             try
             {
@@ -111,10 +114,10 @@ namespace PhraseLayer.Core.Pipeline
                     frame,
                     observation,
                     policy,
-                    localCancellation.Token);
+                    localToken);
             }
             catch (OperationCanceledException) when (
-                localCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                localToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 return new LiveReadModeProcessingResult(
                     LiveReadModeProcessingStatus.Superseded,
@@ -123,20 +126,24 @@ namespace PhraseLayer.Core.Pipeline
             }
             finally
             {
+                var disposeLocal = false;
                 lock (gate)
                 {
                     if (ReferenceEquals(activeCancellation, localCancellation))
                     {
                         activeCancellation = null;
-                        localCancellation.Dispose();
+                        disposeLocal = true;
                     }
                 }
+                if (disposeLocal)
+                    localCancellation.Dispose();
             }
 
             lock (gate)
             {
-                ThrowIfDisposed();
-                if (localGeneration != generation || frame.TimestampMicroseconds != latestAcceptedTimestampMicroseconds)
+                if (disposed ||
+                    localGeneration != generation ||
+                    frame.TimestampMicroseconds != latestAcceptedTimestampMicroseconds)
                 {
                     return new LiveReadModeProcessingResult(
                         LiveReadModeProcessingStatus.Superseded,
@@ -153,37 +160,55 @@ namespace PhraseLayer.Core.Pipeline
 
         public void CancelActive()
         {
+            CancellationTokenSource? cancellation;
             lock (gate)
             {
                 ThrowIfDisposed();
                 generation++;
-                activeCancellation?.Cancel();
+                cancellation = activeCancellation;
+                activeCancellation = null;
             }
+            CancelAndDispose(cancellation);
         }
 
         public void Reset()
         {
+            CancellationTokenSource? cancellation;
             lock (gate)
             {
                 ThrowIfDisposed();
                 generation++;
-                activeCancellation?.Cancel();
-                activeCancellation?.Dispose();
+                cancellation = activeCancellation;
                 activeCancellation = null;
                 latestAcceptedTimestampMicroseconds = -1;
             }
+            CancelAndDispose(cancellation);
         }
 
         public void Dispose()
         {
+            CancellationTokenSource? cancellation;
             lock (gate)
             {
                 if (disposed) return;
                 disposed = true;
                 generation++;
-                activeCancellation?.Cancel();
-                activeCancellation?.Dispose();
+                cancellation = activeCancellation;
                 activeCancellation = null;
+            }
+            CancelAndDispose(cancellation);
+        }
+
+        private static void CancelAndDispose(CancellationTokenSource? cancellation)
+        {
+            if (cancellation == null) return;
+            try
+            {
+                cancellation.Cancel();
+            }
+            finally
+            {
+                cancellation.Dispose();
             }
         }
 
