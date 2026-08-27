@@ -307,8 +307,9 @@ namespace PhraseLayer.Unity
                 if (string.Equals(target.Segment.SourceText, target.Segment.DisplayText, StringComparison.Ordinal)) continue;
 
                 var unit = target.Segment.Unit;
+                var stabilized = default(ViewportEnvelope);
                 var hasStabilizedEnvelope = unit != null &&
-                    stabilizedEnvelopes.TryGetValue(unit.Id, out var stabilized);
+                    stabilizedEnvelopes.TryGetValue(unit.Id, out stabilized);
                 var isRetainedDropout = hasStabilizedEnvelope && !target.Envelope.HasValue;
 
                 ViewportEnvelope envelope;
