@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using PhraseLayer.Core.Inputs;
 
 namespace PhraseLayer.Core.Spatial
 {
