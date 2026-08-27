@@ -8,6 +8,7 @@ SCRIPTS = ASSETS / "Scripts"
 MANIFEST = ASSETS / "Plugins" / "Android" / "AndroidManifest.xml"
 LINK_XML = ASSETS / "link.xml"
 LINK_META = ASSETS / "link.xml.meta"
+OPENXR_SETTINGS = ASSETS / "XR" / "Settings" / "OpenXR Package Settings.asset"
 violations: list[str] = []
 
 
@@ -45,6 +46,11 @@ native = require(
         "statusValue == RaycasterReady",
         "IsIdentityTrackingOrigin()",
         'GetProperty("lossyScale"',
+        "TryGetDelegate(",
+        "TrySetField(",
+        "TryReadField(",
+        "TryConvertToInt32(",
+        "IsRecoverableBoundaryException(",
         "RaycasterCreating",
         "RaycasterReady",
         "RaycastStatusHit",
@@ -117,6 +123,28 @@ require(
     "IL2CPP linker asset metadata",
 )
 
+openxr = read(OPENXR_SETTINGS, "OpenXR feature contract")
+if openxr:
+    android_meta_sections = [
+        section
+        for section in openxr.split("--- !u!114")
+        if "m_Name: MetaXRFeature Android" in section
+    ]
+    if len(android_meta_sections) != 1:
+        violations.append(
+            "OpenXR settings must contain exactly one Android Meta XR Feature section"
+        )
+    else:
+        android_meta = android_meta_sections[0]
+        if "m_enabled: 1" not in android_meta:
+            violations.append(
+                "Android Meta XR Feature must remain enabled for Quest native environment raycast"
+            )
+        if "XR_META_environment_raycast" not in android_meta:
+            violations.append(
+                "Android Meta XR Feature must expose XR_META_environment_raycast"
+            )
+
 if not MANIFEST.is_file():
     violations.append(f"missing file: {MANIFEST.relative_to(ROOT)}")
 else:
@@ -133,8 +161,8 @@ if violations:
     raise SystemExit("\n".join(violations))
 
 print(
-    "PASS: Read world placement preserves the reflected MRUK native interop for IL2CPP, requires an identity "
-    "tracking origin, destroys only a ready raycaster it owns, avoids Meta's telemetry-emitting manager and "
-    "OVRCameraRig-bound depth manager, falls back to Unity colliders, and keeps unresolved misses on the local-only "
-    "viewport path"
+    "PASS: Read world placement keeps Android Meta XR environment-raycast support enabled, preserves reflected MRUK "
+    "native interop for IL2CPP, fails closed across the optional reflection boundary, requires an identity tracking "
+    "origin, destroys only a ready raycaster it owns, avoids Meta's telemetry-emitting manager and OVRCameraRig-bound "
+    "depth manager, falls back to Unity colliders, and keeps unresolved misses on the local-only viewport path"
 )
