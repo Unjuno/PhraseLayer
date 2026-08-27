@@ -14,8 +14,9 @@ namespace PhraseLayer.Unity
     /// available to the existing viewport GUI fallback.
     ///
     /// This component is intentionally conservative: it never assumes a fixed depth and never turns an unresolved
-    /// OCR target into a new world-space replacement. A target that was already placed on a verified surface may keep
-    /// that same world pose only while the Core viewport stabilizer is retaining a brief OCR dropout.
+    /// OCR target into a new world-space replacement. Verified surface hits are stabilized per semantic unit to reduce
+    /// small depth/normal jitter. A previously verified surface may survive only a bounded raycast miss, and all
+    /// world-surface state is discarded when the Read encounter changes.
     /// </summary>
     public sealed class QuestReadWorldOverlayBehaviour : MonoBehaviour
     {
@@ -26,11 +27,17 @@ namespace PhraseLayer.Unity
         [SerializeField] private float surfaceOffsetMeters = 0.01f;
         [SerializeField] private float characterSizeMeters = 0.02f;
         [SerializeField] private int fontSize = 64;
+        [SerializeField] private float surfaceBlendFactor = 0.35f;
+        [SerializeField] private float surfaceResetPointDistanceMeters = 0.20f;
+        [SerializeField] private float surfaceResetNormalAngleDegrees = 20f;
+        [SerializeField] private int surfaceMaxMissingObservations = 1;
 
         private readonly Dictionary<string, TextMesh> labels = new Dictionary<string, TextMesh>(StringComparer.Ordinal);
         private readonly HashSet<string> renderedUnitIds = new HashSet<string>(StringComparer.Ordinal);
         private ISurfaceRaycaster raycaster;
         private QuestSurfaceRaycaster questRaycaster;
+        private SurfaceHitStabilizer surfaceStabilizer;
+        private string stabilizedSurfaceEncounterId = string.Empty;
         private string status = "Waiting for projected Read assistance.";
 #if UNITY_ANDROID && !UNITY_EDITOR
         private UnityEngine.Android.PermissionCallbacks spatialPermissionCallbacks;
@@ -43,6 +50,8 @@ namespace PhraseLayer.Unity
         private void OnEnable()
         {
             EnsureReferences();
+            surfaceStabilizer = BuildSurfaceStabilizer();
+            stabilizedSurfaceEncounterId = string.Empty;
             RebuildRaycaster();
             readAssistance.ResultPresented += HandleResultPresented;
 
@@ -56,6 +65,7 @@ namespace PhraseLayer.Unity
                 readAssistance.ResultPresented -= HandleResultPresented;
             DetachSpatialPermissionCallbacks();
             DisposeRaycaster();
+            ResetSurfaceStability();
             HideAllLabels();
             if (readAssistance != null)
                 readAssistance.SetWorldRenderedTargets(Array.Empty<string>());
@@ -67,6 +77,8 @@ namespace PhraseLayer.Unity
                 readAssistance.ResultPresented -= HandleResultPresented;
             DetachSpatialPermissionCallbacks();
             DisposeRaycaster();
+            ResetSurfaceStability();
+            surfaceStabilizer = null;
 
             foreach (var pair in labels)
             {
@@ -91,7 +103,10 @@ namespace PhraseLayer.Unity
         {
             if (raycaster == null)
                 RebuildRaycaster();
+            if (surfaceStabilizer == null)
+                surfaceStabilizer = BuildSurfaceStabilizer();
             EnsureSpatialPermissionRequested();
+            EnsureSurfaceEncounter();
 
             var previouslyRendered = new HashSet<string>(renderedUnitIds, StringComparer.Ordinal);
             HideAllLabels();
@@ -100,7 +115,8 @@ namespace PhraseLayer.Unity
             var targets = result.SpatialAssistance.Targets;
             var exactCandidates = 0;
             var surfaceMisses = 0;
-            var retainedDropouts = 0;
+            var retainedOcrDropouts = 0;
+            var retainedSurfaceMisses = 0;
 
             for (var index = 0; index < targets.Count; index++)
             {
@@ -113,18 +129,18 @@ namespace PhraseLayer.Unity
 
                 var hasRenderableEnvelope = readAssistance.TryGetRenderableEnvelope(target, out var envelope);
                 TextMesh retainedLabel = null;
-                var isRetainedDropout =
+                var isRetainedOcrDropout =
                     !target.Envelope.HasValue &&
                     hasRenderableEnvelope &&
                     previouslyRendered.Contains(unit.Id) &&
                     labels.TryGetValue(unit.Id, out retainedLabel) &&
                     retainedLabel != null;
 
-                if (isRetainedDropout)
+                if (isRetainedOcrDropout)
                 {
                     SetGameObjectActive(retainedLabel.gameObject, true);
                     renderedUnitIds.Add(unit.Id);
-                    retainedDropouts++;
+                    retainedOcrDropouts++;
                     continue;
                 }
 
@@ -143,22 +159,34 @@ namespace PhraseLayer.Unity
                 if (!projected.CanRenderInWorld || !projected.Surface.HasValue)
                 {
                     surfaceMisses++;
+                    if (previouslyRendered.Contains(unit.Id) &&
+                        labels.TryGetValue(unit.Id, out var heldLabel) &&
+                        heldLabel != null &&
+                        surfaceStabilizer.TryHoldMissing(unit.Id, out var heldSurface))
+                    {
+                        ApplyWorldPlacement(heldLabel, target.Segment.DisplayText, heldSurface);
+                        SetGameObjectActive(heldLabel.gameObject, true);
+                        renderedUnitIds.Add(unit.Id);
+                        retainedSurfaceMisses++;
+                    }
                     continue;
                 }
 
+                var stabilizedSurface = surfaceStabilizer.Stabilize(unit.Id, projected.Surface.Value);
                 var label = GetOrCreateLabel(unit.Id);
-                ApplyWorldPlacement(label, target.Segment.DisplayText, projected.Surface.Value);
+                ApplyWorldPlacement(label, target.Segment.DisplayText, stabilizedSurface);
                 SetGameObjectActive(label.gameObject, true);
                 renderedUnitIds.Add(unit.Id);
             }
 
             readAssistance.SetWorldRenderedTargets(renderedUnitIds);
             status = string.Format(
-                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}, environment-api={4}.",
+                "World overlay: candidates={0}, rendered={1}, retained-ocr-dropouts={2}, surface-misses={3}, retained-surface-misses={4}, environment-api={5}.",
                 exactCandidates,
                 renderedUnitIds.Count,
-                retainedDropouts,
+                retainedOcrDropouts,
                 surfaceMisses,
+                retainedSurfaceMisses,
                 questRaycaster != null && questRaycaster.HasEnvironmentDepthApi);
         }
 
@@ -194,6 +222,33 @@ namespace PhraseLayer.Unity
             // Unity TextMesh faces local -Z in the standard orientation. Align that front face with the outward
             // surface normal so text is readable from the same side of the surface that the camera ray reached.
             label.transform.localRotation = BuildSurfaceRotation(normal);
+        }
+
+        private SurfaceHitStabilizer BuildSurfaceStabilizer()
+        {
+            return new SurfaceHitStabilizer(new SurfaceHitStabilizerOptions
+            {
+                BlendFactor = Math.Max(0.01, Math.Min(1.0, surfaceBlendFactor)),
+                ResetPointDistanceMeters = Math.Max(0.0, surfaceResetPointDistanceMeters),
+                ResetNormalAngleDegrees = Math.Max(0.0, Math.Min(180.0, surfaceResetNormalAngleDegrees)),
+                MaxMissingObservations = Math.Max(0, surfaceMaxMissingObservations),
+            });
+        }
+
+        private void EnsureSurfaceEncounter()
+        {
+            var encounterId = readAssistance.CurrentEncounterId ?? string.Empty;
+            if (string.Equals(stabilizedSurfaceEncounterId, encounterId, StringComparison.Ordinal))
+                return;
+
+            surfaceStabilizer.Reset();
+            stabilizedSurfaceEncounterId = encounterId;
+        }
+
+        private void ResetSurfaceStability()
+        {
+            surfaceStabilizer?.Reset();
+            stabilizedSurfaceEncounterId = string.Empty;
         }
 
         private void HideAllLabels()
