@@ -103,6 +103,12 @@ namespace PhraseLayer.Core.Spatial
                     nameof(timestampMicroseconds));
             }
 
+            for (var index = tracks.Count - 1; index >= 0; index--)
+            {
+                if (timestampMicroseconds - tracks[index].LastSeenTimestampMicroseconds > retentionMicroseconds)
+                    tracks.RemoveAt(index);
+            }
+
             for (var index = 0; index < tracks.Count; index++)
                 tracks[index].ObservedThisFrame = false;
 
@@ -131,12 +137,6 @@ namespace PhraseLayer.Core.Spatial
                 claimedTrackIds.Add(track.TrackId);
             }
 
-            for (var index = tracks.Count - 1; index >= 0; index--)
-            {
-                if (timestampMicroseconds - tracks[index].LastSeenTimestampMicroseconds > retentionMicroseconds)
-                    tracks.RemoveAt(index);
-            }
-
             lastTimestampMicroseconds = timestampMicroseconds;
             var snapshots = tracks
                 .OrderBy(track => track.TrackId)
@@ -155,7 +155,7 @@ namespace PhraseLayer.Core.Spatial
         private MutableTrack FindNearestTrack(
             string key,
             SpatialVector3 center,
-            IReadOnlySet<long> claimedTrackIds)
+            HashSet<long> claimedTrackIds)
         {
             MutableTrack best = null;
             var bestSquaredDistance = maximumAssociationDistanceMeters * maximumAssociationDistanceMeters;
