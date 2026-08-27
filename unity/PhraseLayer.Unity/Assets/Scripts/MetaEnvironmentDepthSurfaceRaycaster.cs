@@ -142,22 +142,25 @@ namespace PhraseLayer.Unity
                 return;
             disposed = true;
 
-            if (!ownsEnvironmentRaycaster)
-                return;
-
-            var destroy = GetDelegate(destroyRaycasterField);
-            if (destroy != null)
+            // Mirror MRUK's own shutdown discipline: the native destroy call is valid only for a Ready handle.
+            // If creation is still asynchronous, leave the package-global handle alone rather than destroying an
+            // in-flight resource. A later MRUK/Quest adapter can reuse that global handle.
+            if (ownsEnvironmentRaycaster && TryGetRaycasterStatus(out var statusValue) && statusValue == RaycasterReady)
             {
-                try
+                var destroy = GetDelegate(destroyRaycasterField);
+                if (destroy != null)
                 {
-                    destroy.DynamicInvoke();
-                }
-                catch (TargetInvocationException)
-                {
-                    // The native boundary is optional. Shutdown must not make the fallback renderer fail.
-                }
-                catch (ArgumentException)
-                {
+                    try
+                    {
+                        destroy.DynamicInvoke();
+                    }
+                    catch (TargetInvocationException)
+                    {
+                        // The native boundary is optional. Shutdown must not make the fallback renderer fail.
+                    }
+                    catch (ArgumentException)
+                    {
+                    }
                 }
             }
 
@@ -167,23 +170,8 @@ namespace PhraseLayer.Unity
 
         private bool TryEnsureRaycasterReady()
         {
-            var status = GetDelegate(raycasterStatusField);
-            if (status == null)
+            if (!TryGetRaycasterStatus(out var statusValue))
                 return false;
-
-            int statusValue;
-            try
-            {
-                statusValue = ToInt32(status.DynamicInvoke());
-            }
-            catch (TargetInvocationException)
-            {
-                return false;
-            }
-            catch (ArgumentException)
-            {
-                return false;
-            }
 
             if (statusValue == RaycasterReady)
                 return true;
@@ -208,6 +196,28 @@ namespace PhraseLayer.Unity
                 ownsEnvironmentRaycaster = true;
                 // Creation is asynchronous. A later observation will see Ready and perform the real raycast.
                 return false;
+            }
+            catch (TargetInvocationException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private bool TryGetRaycasterStatus(out int statusValue)
+        {
+            statusValue = int.MinValue;
+            var status = GetDelegate(raycasterStatusField);
+            if (status == null)
+                return false;
+
+            try
+            {
+                statusValue = ToInt32(status.DynamicInvoke());
+                return statusValue != int.MinValue;
             }
             catch (TargetInvocationException)
             {
