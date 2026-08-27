@@ -6,101 +6,112 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Optional Meta Environment Depth adapter resolved through reflection so PhraseLayer keeps the Core/runtime
-    /// assembly boundary independent from a concrete Meta XR assembly reference.
+    /// Optional Meta environment-raycast adapter that talks directly to MRUK's native environment-raycaster
+    /// delegates through reflection. PhraseLayer deliberately does not instantiate Meta's
+    /// EnvironmentRaycastManager component because that component emits an MRUK telemetry event from Start().
     ///
-    /// The adapter never requests permission by itself. It activates only when Spatial Data permission has already
-    /// been granted, EnvironmentRaycastManager exists in the installed MRUK package, and the device reports support.
-    /// Any unavailable/not-ready/error state fails closed so callers can fall back to collider or viewport placement.
+    /// The native raycaster consumes tracking-space coordinates. PhraseLayer's committed Read MVP keeps its OpenXR
+    /// tracking origin at Unity world origin, so the Passthrough Camera ray can cross this boundary without inventing
+    /// an additional transform. If the application later introduces a moved/scaled tracking origin, this adapter must
+    /// be upgraded together with that coordinate-space contract rather than silently applying a guessed transform.
+    ///
+    /// The adapter never requests permission itself. Missing permission, an uninitialized MRUK native layer, a
+    /// creating/not-ready raycaster, or any reflected API mismatch simply returns no hit so the caller can fall back
+    /// to ordinary Unity collider geometry and ultimately the viewport overlay.
     /// </summary>
-    public sealed class MetaEnvironmentDepthSurfaceRaycaster : ISurfaceRaycaster
+    public sealed class MetaEnvironmentDepthSurfaceRaycaster : ISurfaceRaycaster, IDisposable
     {
         public const string ScenePermission = "com.oculus.permission.USE_SCENE";
-        private const string ManagerTypeName = "Meta.XR.EnvironmentRaycastManager";
-        private const string HitTypeName = "Meta.XR.EnvironmentRaycastHit";
 
-        private readonly GameObject owner;
+        private const string NativeFuncsTypeName = "Meta.XR.MRUtilityKit.MRUKNativeFuncs";
+        private const string HitInfoTypeName = "MrukEnvironmentRaycastHitPointGetInfo";
+        private const string HitPointTypeName = "MrukEnvironmentRaycastHitPoint";
+        private const int ResultSuccess = 0;
+        private const int RaycasterStopped = 0;
+        private const int RaycasterCreating = 1;
+        private const int RaycasterReady = 2;
+        private const int RaycastStatusHit = 1;
+
         private readonly float maxDistanceMeters;
-        private readonly Type managerType;
-        private readonly Type hitType;
-        private readonly PropertyInfo isSupportedProperty;
-        private readonly MethodInfo raycastWithDistance;
-        private readonly MethodInfo raycastWithoutDistance;
-        private Component manager;
+        private readonly Type nativeFuncsType;
+        private readonly Type hitInfoType;
+        private readonly Type hitPointType;
+        private readonly FieldInfo createRaycasterField;
+        private readonly FieldInfo destroyRaycasterField;
+        private readonly FieldInfo raycasterStatusField;
+        private readonly FieldInfo raycastEnvironmentField;
+
+        private bool createRequested;
+        private bool ownsEnvironmentRaycaster;
+        private bool disposed;
 
         public MetaEnvironmentDepthSurfaceRaycaster(GameObject owner, float maxDistanceMeters = 10f)
         {
-            this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
             if (float.IsNaN(maxDistanceMeters) || float.IsInfinity(maxDistanceMeters) || maxDistanceMeters <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(maxDistanceMeters));
             this.maxDistanceMeters = maxDistanceMeters;
 
-            managerType = ResolveType(ManagerTypeName);
-            hitType = ResolveType(HitTypeName);
-            if (managerType == null || hitType == null)
+            nativeFuncsType = ResolveType(NativeFuncsTypeName);
+            if (nativeFuncsType == null)
                 return;
 
-            isSupportedProperty = managerType.GetProperty("IsSupported", BindingFlags.Instance | BindingFlags.Public);
-            var hitByRef = hitType.MakeByRefType();
-            raycastWithDistance = managerType.GetMethod(
-                "Raycast",
-                BindingFlags.Instance | BindingFlags.Public,
-                null,
-                new[] { typeof(Ray), hitByRef, typeof(float) },
-                null);
-            raycastWithoutDistance = managerType.GetMethod(
-                "Raycast",
-                BindingFlags.Instance | BindingFlags.Public,
-                null,
-                new[] { typeof(Ray), hitByRef },
-                null);
+            hitInfoType = nativeFuncsType.GetNestedType(HitInfoTypeName, BindingFlags.Public | BindingFlags.NonPublic);
+            hitPointType = nativeFuncsType.GetNestedType(HitPointTypeName, BindingFlags.Public | BindingFlags.NonPublic);
+            createRaycasterField = GetNativeDelegateField("CreateEnvironmentRaycaster");
+            destroyRaycasterField = GetNativeDelegateField("DestroyEnvironmentRaycaster");
+            raycasterStatusField = GetNativeDelegateField("EnvironmentRaycasterStatus");
+            raycastEnvironmentField = GetNativeDelegateField("RaycastEnvironment");
         }
 
         public bool IsApiAvailable =>
-            managerType != null &&
-            hitType != null &&
-            (raycastWithDistance != null || raycastWithoutDistance != null);
+            nativeFuncsType != null &&
+            hitInfoType != null &&
+            hitPointType != null &&
+            createRaycasterField != null &&
+            destroyRaycasterField != null &&
+            raycasterStatusField != null &&
+            raycastEnvironmentField != null;
 
         public bool TryRaycast(SpatialRay ray, out SurfaceHit hit)
         {
             hit = default(SurfaceHit);
-            if (!IsApiAvailable || !HasSpatialPermission() || !EnsureManager())
+            if (disposed || !IsApiAvailable || !HasSpatialPermission() || !TryEnsureRaycasterReady())
+                return false;
+
+            var raycast = GetDelegate(raycastEnvironmentField);
+            if (raycast == null)
                 return false;
 
             try
             {
-                if (isSupportedProperty != null)
-                {
-                    var supportedValue = isSupportedProperty.GetValue(manager, null);
-                    if (supportedValue is bool supported && !supported)
-                        return false;
-                }
+                var origin = ToUnity(ray.Origin);
+                var direction = Normalize(ToUnity(ray.Direction));
 
-                var unityRay = new Ray(ToUnity(ray.Origin), Normalize(ToUnity(ray.Direction)));
-                var boxedHit = Activator.CreateInstance(hitType);
-                object[] arguments;
-                MethodInfo method;
-                if (raycastWithDistance != null)
-                {
-                    method = raycastWithDistance;
-                    arguments = new[] { (object)unityRay, boxedHit, maxDistanceMeters };
-                }
-                else
-                {
-                    method = raycastWithoutDistance;
-                    arguments = new[] { (object)unityRay, boxedHit };
-                }
+                var hitInfo = Activator.CreateInstance(hitInfoType);
+                SetField(hitInfo, "startPoint", origin);
+                SetField(hitInfo, "direction", direction);
+                SetField(hitInfo, "filterCount", 0u);
+                SetField(hitInfo, "maxDistance", maxDistanceMeters);
 
-                var successValue = method.Invoke(manager, arguments);
-                if (!(successValue is bool success) || !success)
+                var hitPoint = Activator.CreateInstance(hitPointType);
+                var arguments = new[] { hitInfo, hitPoint };
+                var result = raycast.DynamicInvoke(arguments);
+                if (ToInt32(result) != ResultSuccess)
                     return false;
 
-                boxedHit = arguments[1];
-                if (!TryReadVector3(boxedHit, "point", out var point) ||
-                    !TryReadVector3(boxedHit, "normal", out var normal))
+                hitPoint = arguments[1];
+                if (ToInt32(ReadField(hitPoint, "status")) != RaycastStatusHit)
+                    return false;
+                if (!TryReadVector3(hitPoint, "point", out var point) ||
+                    !TryReadVector3(hitPoint, "normal", out var normal))
                     return false;
 
-                var distance = Distance(ToUnity(ray.Origin), point);
+                normal = Normalize(normal);
+                var distance = Distance(origin, point);
+                if (distance > maxDistanceMeters)
+                    return false;
+
                 hit = new SurfaceHit(ToSpatial(point), ToSpatial(normal), distance);
                 return true;
             }
@@ -116,38 +127,122 @@ namespace PhraseLayer.Unity
             {
                 return false;
             }
+            catch (MemberAccessException)
+            {
+                return false;
+            }
         }
 
-        private bool EnsureManager()
+        public void Dispose()
         {
-            if (manager != null)
-                return true;
+            if (disposed)
+                return;
+            disposed = true;
 
-            var components = Resources.FindObjectsOfTypeAll<Component>();
-            for (var index = 0; index < components.Length; index++)
+            if (!ownsEnvironmentRaycaster)
+                return;
+
+            var destroy = GetDelegate(destroyRaycasterField);
+            if (destroy != null)
             {
-                var component = components[index];
-                if (component == null || component.gameObject == null)
-                    continue;
-                if (!ReferenceEquals(component.gameObject, owner))
-                    continue;
-                if (!managerType.IsInstanceOfType(component))
-                    continue;
-                manager = component;
-                return true;
+                try
+                {
+                    destroy.DynamicInvoke();
+                }
+                catch (TargetInvocationException)
+                {
+                    // The native boundary is optional. Shutdown must not make the fallback renderer fail.
+                }
+                catch (ArgumentException)
+                {
+                }
             }
 
-            var addComponent = typeof(GameObject).GetMethod(
-                "AddComponent",
-                BindingFlags.Instance | BindingFlags.Public,
-                null,
-                new[] { typeof(Type) },
-                null);
-            if (addComponent == null)
+            ownsEnvironmentRaycaster = false;
+            createRequested = false;
+        }
+
+        private bool TryEnsureRaycasterReady()
+        {
+            var status = GetDelegate(raycasterStatusField);
+            if (status == null)
                 return false;
 
-            manager = addComponent.Invoke(owner, new object[] { managerType }) as Component;
-            return manager != null;
+            int statusValue;
+            try
+            {
+                statusValue = ToInt32(status.DynamicInvoke());
+            }
+            catch (TargetInvocationException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+
+            if (statusValue == RaycasterReady)
+                return true;
+            if (statusValue == RaycasterCreating)
+                return false;
+            if (statusValue != RaycasterStopped)
+                return false;
+
+            // Stopped after a prior successful request means creation did not survive. Allow a later observation to
+            // retry, but never issue two create calls in the same TryRaycast invocation.
+            createRequested = false;
+            var create = GetDelegate(createRaycasterField);
+            if (create == null)
+                return false;
+
+            try
+            {
+                var result = create.DynamicInvoke();
+                if (ToInt32(result) != ResultSuccess)
+                    return false;
+                createRequested = true;
+                ownsEnvironmentRaycaster = true;
+                return false;
+            }
+            catch (TargetInvocationException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private FieldInfo GetNativeDelegateField(string fieldName)
+        {
+            return nativeFuncsType.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        }
+
+        private static Delegate GetDelegate(FieldInfo field)
+        {
+            return field == null ? null : field.GetValue(null) as Delegate;
+        }
+
+        private static void SetField(object value, string fieldName, object fieldValue)
+        {
+            if (value == null)
+                throw new InvalidOperationException("MRUK native raycast struct could not be created.");
+            var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field == null)
+                throw new MissingFieldException(value.GetType().FullName, fieldName);
+            field.SetValue(value, fieldValue);
+        }
+
+        private static object ReadField(object value, string fieldName)
+        {
+            if (value == null)
+                throw new InvalidOperationException("MRUK native raycast result was null.");
+            var field = value.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field == null)
+                throw new MissingFieldException(value.GetType().FullName, fieldName);
+            return field.GetValue(value);
         }
 
         private static bool HasSpatialPermission()
@@ -178,14 +273,14 @@ namespace PhraseLayer.Unity
                 return false;
 
             var type = value.GetType();
-            var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public);
+            var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (field != null && field.GetValue(value) is Vector3 fieldValue)
             {
                 result = fieldValue;
                 return true;
             }
 
-            var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public);
+            var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (property != null && property.GetValue(value, null) is Vector3 propertyValue)
             {
                 result = propertyValue;
@@ -195,11 +290,16 @@ namespace PhraseLayer.Unity
             return false;
         }
 
+        private static int ToInt32(object value)
+        {
+            return value == null ? int.MinValue : Convert.ToInt32(value);
+        }
+
         private static Vector3 Normalize(Vector3 value)
         {
             var magnitude = Math.Sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
             if (magnitude <= 0.0)
-                throw new InvalidOperationException("Spatial ray direction must remain non-zero at the Meta depth boundary.");
+                throw new InvalidOperationException("Spatial ray or surface normal must remain non-zero at the Meta environment boundary.");
             return new Vector3(
                 (float)(value.x / magnitude),
                 (float)(value.y / magnitude),
