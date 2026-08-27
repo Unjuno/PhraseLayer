@@ -3,8 +3,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UNITY = ROOT / "unity" / "PhraseLayer.Unity"
-SCRIPTS = UNITY / "Assets" / "Scripts"
-MANIFEST = UNITY / "Assets" / "Plugins" / "Android" / "AndroidManifest.xml"
+ASSETS = UNITY / "Assets"
+SCRIPTS = ASSETS / "Scripts"
+MANIFEST = ASSETS / "Plugins" / "Android" / "AndroidManifest.xml"
+LINK_XML = ASSETS / "link.xml"
+LINK_META = ASSETS / "link.xml.meta"
 violations: list[str] = []
 
 
@@ -36,12 +39,18 @@ native = require(
         'GetNativeDelegateField("RaycastEnvironment")',
         "HasUserAuthorizedPermission(ScenePermission)",
         "ownsEnvironmentRaycaster",
+        "creationRequested",
         "public void Dispose()",
+        "TryGetRaycasterStatus(out var statusValue)",
+        "statusValue == RaycasterReady",
+        "IsIdentityTrackingOrigin()",
+        'GetProperty("lossyScale"',
         "RaycasterCreating",
         "RaycasterReady",
         "RaycastStatusHit",
         "hit = default(SurfaceHit)",
         "Creation is asynchronous",
+        "destroy.DynamicInvoke()",
     ),
     "Meta native environment raycaster",
 )
@@ -90,6 +99,24 @@ overlay = require(
     "Quest Read world overlay surface/permission contract",
 )
 
+require(
+    LINK_XML,
+    (
+        '<assembly fullname="meta.xr.mrutilitykit">',
+        '<type fullname="Meta.XR.MRUtilityKit.MRUKNativeFuncs*" preserve="all" />',
+        "EnvironmentRaycastManager",
+    ),
+    "IL2CPP reflection preservation",
+)
+require(
+    LINK_META,
+    (
+        "fileFormatVersion: 2",
+        "TextScriptImporter:",
+    ),
+    "IL2CPP linker asset metadata",
+)
+
 if not MANIFEST.is_file():
     violations.append(f"missing file: {MANIFEST.relative_to(ROOT)}")
 else:
@@ -106,7 +133,8 @@ if violations:
     raise SystemExit("\n".join(violations))
 
 print(
-    "PASS: Read world placement uses permission-gated MRUK native environment raycasting without instantiating "
-    "Meta's telemetry-emitting EnvironmentRaycastManager or OVRCameraRig-bound EnvironmentDepthManager, falls back "
-    "to Unity collider geometry, and leaves unresolved surface misses to the viewport overlay without network access"
+    "PASS: Read world placement preserves the reflected MRUK native interop for IL2CPP, requires an identity "
+    "tracking origin, destroys only a ready raycaster it owns, avoids Meta's telemetry-emitting manager and "
+    "OVRCameraRig-bound depth manager, falls back to Unity colliders, and keeps unresolved misses on the local-only "
+    "viewport path"
 )
