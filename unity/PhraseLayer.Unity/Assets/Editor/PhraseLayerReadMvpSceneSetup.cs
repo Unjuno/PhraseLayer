@@ -45,6 +45,7 @@ namespace PhraseLayer.Unity.Editor
             var ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
             var learnerProfile = root.AddComponent<UnityLearnerProfileBehaviour>();
             var readAssistance = root.AddComponent<QuestReadAssistanceDebugBehaviour>();
+            var worldOverlay = root.AddComponent<QuestReadWorldOverlayBehaviour>();
 
             cameraBridge.SetPassthroughCameraAccess(passthroughCameraAccess);
             presenter.LoadSyntheticFixtureOnStart = false;
@@ -53,6 +54,8 @@ namespace PhraseLayer.Unity.Editor
             AssignReference(ocrBootstrap, "runtimeDriver", runtimeDriver);
             AssignReference(readAssistance, "ocrPresenter", presenter);
             AssignReference(readAssistance, "learnerProfile", learnerProfile);
+            AssignReference(worldOverlay, "readAssistance", readAssistance);
+            AssignReference(worldOverlay, "cameraBridge", cameraBridge);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, ScenePath))
@@ -69,7 +72,8 @@ namespace PhraseLayer.Unity.Editor
             Debug.Log(
                 "PhraseLayer Read MVP scene ready: " + ScenePath +
                 " camera=Meta.XR.PassthroughCameraAccess" +
-                " OCR=local-PP-OCR translation=" + (translationWired ? "local-OPUS-MT" : "debug-dictionary"));
+                " OCR=local-PP-OCR translation=" + (translationWired ? "local-OPUS-MT" : "debug-dictionary") +
+                " world=physics-surface+viewport-fallback");
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference 2.2.x before creating the local Read MVP scene.");
