@@ -1,0 +1,34 @@
+name: Translation Contract CI
+
+on:
+  push:
+    branches: ["agent/**"]
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/**"
+      - "tests/PhraseLayer.Core.Tests/**"
+      - "tools/prepare_marian_translation.py"
+      - "tools/test_prepare_marian_translation.py"
+      - ".github/workflows/translation-contract.yml"
+  pull_request:
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/**"
+      - "tests/PhraseLayer.Core.Tests/**"
+      - "tools/prepare_marian_translation.py"
+      - "tools/test_prepare_marian_translation.py"
+      - ".github/workflows/translation-contract.yml"
+
+concurrency:
+  group: translation-contract-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/test_prepare_marian_translation.py
