@@ -5,6 +5,10 @@ on:
     branches: [main, "agent/**"]
   pull_request:
 
+concurrency:
+  group: core-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   core:
     runs-on: ubuntu-latest

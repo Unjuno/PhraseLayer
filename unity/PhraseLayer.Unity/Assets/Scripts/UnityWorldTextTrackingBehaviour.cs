@@ -12,6 +12,7 @@ namespace PhraseLayer.Unity
     public sealed class UnityWorldTextTrackingBehaviour : MonoBehaviour
     {
         [SerializeField] private UnitySpatialProjectionBehaviour projection = default(UnitySpatialProjectionBehaviour);
+        [SerializeField] private UnityWorldTextRendererBehaviour renderer = default(UnityWorldTextRendererBehaviour);
         [SerializeField] private float maximumAssociationDistanceMeters = 0.15f;
         [SerializeField] private float retentionSeconds = 0.60f;
         [SerializeField] private float smoothingTimeConstantSeconds = 0.12f;
@@ -20,11 +21,19 @@ namespace PhraseLayer.Unity
 
         public WorldTextTrackingPlan LastPlan { get; private set; }
         public UnitySpatialProjectionBehaviour Projection => projection;
+        public UnityWorldTextRendererBehaviour Renderer => renderer;
+        public bool LastRenderSucceeded { get; private set; }
 
         public void SetProjection(UnitySpatialProjectionBehaviour spatialProjection)
         {
             projection = spatialProjection ?? throw new ArgumentNullException(nameof(spatialProjection));
             ResetTracking();
+        }
+
+        public void SetRenderer(UnityWorldTextRendererBehaviour worldTextRenderer)
+        {
+            renderer = worldTextRenderer ?? throw new ArgumentNullException(nameof(worldTextRenderer));
+            LastRenderSucceeded = false;
         }
 
         public WorldTextTrackingPlan ProjectFitAndTrack(
@@ -38,6 +47,7 @@ namespace PhraseLayer.Unity
 
             var layout = projection.ProjectAndFitWorldText(aligned);
             LastPlan = stabilizer.Update(layout, timestampMicroseconds);
+            PresentIfConfigured();
             return LastPlan;
         }
 
@@ -48,6 +58,7 @@ namespace PhraseLayer.Unity
             if (layout == null) throw new ArgumentNullException(nameof(layout));
             EnsureStabilizer();
             LastPlan = stabilizer.Update(layout, timestampMicroseconds);
+            PresentIfConfigured();
             return LastPlan;
         }
 
@@ -55,6 +66,8 @@ namespace PhraseLayer.Unity
         {
             stabilizer = null;
             LastPlan = null;
+            LastRenderSucceeded = false;
+            renderer?.Clear();
         }
 
         private void OnValidate()
@@ -62,6 +75,12 @@ namespace PhraseLayer.Unity
             ValidateConfiguration();
             stabilizer = null;
             LastPlan = null;
+            LastRenderSucceeded = false;
+        }
+
+        private void PresentIfConfigured()
+        {
+            LastRenderSucceeded = renderer != null && renderer.TryPresent(LastPlan);
         }
 
         private void EnsureStabilizer()

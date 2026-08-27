@@ -18,7 +18,7 @@ namespace PhraseLayer.Unity.Editor
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
 
-            root.AddComponent<PhraseLayerDemoBehaviour>();
+            var demo = root.AddComponent<PhraseLayerDemoBehaviour>();
             var presenter = root.AddComponent<OcrViewportDebugBehaviour>();
             var cameraBridge = root.AddComponent<MetaPassthroughCameraBridge>();
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
@@ -26,6 +26,8 @@ namespace PhraseLayer.Unity.Editor
             var surfaceRaycaster = root.AddComponent<UnityPhysicsSurfaceRaycaster>();
             var spatialProjection = root.AddComponent<UnitySpatialProjectionBehaviour>();
             var worldTextTracking = root.AddComponent<UnityWorldTextTrackingBehaviour>();
+            var worldTextRenderer = root.AddComponent<UnityWorldTextRendererBehaviour>();
+            var liveReadMode = root.AddComponent<UnityLiveReadModeBehaviour>();
             var metaCamera = AddMetaPassthroughCameraAccess(root);
 
             // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
@@ -35,6 +37,9 @@ namespace PhraseLayer.Unity.Editor
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
             spatialProjection.SetSceneReferences(cameraBridge, surfaceRaycaster);
             worldTextTracking.SetProjection(spatialProjection);
+            worldTextTracking.SetRenderer(worldTextRenderer);
+            liveReadMode.SetSceneReferences(presenter, worldTextTracking);
+            demo.SetLiveReadMode(liveReadMode);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
@@ -43,7 +48,7 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → OCR → semantic geometry → four-corner surface fit → temporal world-text tracking wiring: " +
+                "PhraseLayer demo scene created with Meta camera → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based; assign a reviewed Japanese-capable Font before rendering: " +
                 DemoScenePath);
         }
 
