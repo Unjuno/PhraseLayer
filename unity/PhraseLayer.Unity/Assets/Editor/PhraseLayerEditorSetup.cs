@@ -23,6 +23,8 @@ namespace PhraseLayer.Unity.Editor
             var cameraBridge = root.AddComponent<MetaPassthroughCameraBridge>();
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
             var ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
+            var surfaceRaycaster = root.AddComponent<UnityPhysicsSurfaceRaycaster>();
+            var spatialProjection = root.AddComponent<UnitySpatialProjectionBehaviour>();
             var metaCamera = AddMetaPassthroughCameraAccess(root);
 
             // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
@@ -30,6 +32,7 @@ namespace PhraseLayer.Unity.Editor
             cameraBridge.SetPassthroughCameraAccess(metaCamera);
             runtimeDriver.SetSceneReferences(cameraBridge, presenter);
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
+            spatialProjection.SetSceneReferences(cameraBridge, surfaceRaycaster);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
@@ -38,7 +41,7 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta Passthrough Camera → OCR runtime → viewport presenter wiring: " +
+                "PhraseLayer demo scene created with Meta Passthrough Camera → OCR → viewport geometry → Unity Physics surface projection wiring: " +
                 DemoScenePath);
         }
 
