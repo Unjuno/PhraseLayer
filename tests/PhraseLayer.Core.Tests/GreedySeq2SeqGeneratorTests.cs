@@ -152,8 +152,8 @@ namespace PhraseLayer.Core.Tests
                 this.steps = steps;
             }
 
-            public IReadOnlyList<int> SourceTokens { get; private set; }
-            public RecordingSession Session { get; private set; }
+            public IReadOnlyList<int> SourceTokens { get; private set; } = null!;
+            public RecordingSession Session { get; private set; } = null!;
 
             public Task<ISeq2SeqGenerationSession> StartAsync(
                 IReadOnlyList<int> sourceTokenIds,
