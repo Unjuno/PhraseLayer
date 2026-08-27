@@ -29,7 +29,8 @@ namespace PhraseLayer.Core.Tests
             Assert.Equal(0.2, surface.HeightMeters, 6);
             Assert.Equal(0.0, surface.MaxPlanarityErrorMeters, 6);
             Assert.Equal(1.0, surface.Right.X, 6);
-            Assert.Equal(-1.0, surface.Normal.Z, 6);
+            Assert.Equal(1.0, surface.Up.Y, 6);
+            Assert.Equal(1.0, surface.Normal.Z, 6);
             Assert.Equal(1, layout.ReadyCount);
         }
 
