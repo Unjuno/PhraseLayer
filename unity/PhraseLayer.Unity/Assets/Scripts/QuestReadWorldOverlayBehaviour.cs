@@ -100,11 +100,12 @@ namespace PhraseLayer.Unity
                     continue;
 
                 var hasRenderableEnvelope = readAssistance.TryGetRenderableEnvelope(target, out var envelope);
+                TextMesh retainedLabel = null;
                 var isRetainedDropout =
                     !target.Envelope.HasValue &&
                     hasRenderableEnvelope &&
                     previouslyRendered.Contains(unit.Id) &&
-                    labels.TryGetValue(unit.Id, out var retainedLabel) &&
+                    labels.TryGetValue(unit.Id, out retainedLabel) &&
                     retainedLabel != null;
 
                 if (isRetainedDropout)
