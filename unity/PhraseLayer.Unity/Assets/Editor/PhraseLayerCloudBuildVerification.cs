@@ -19,7 +19,7 @@ namespace PhraseLayer.Unity.Editor
         public const string PreExportMethodName =
             "PhraseLayer.Unity.Editor.PhraseLayerCloudBuildVerification.PreExport";
 
-        // The local-only guard runs at -10000. Run the wider Unity gate immediately after it.
+        // Local-only runs at -10000 and the Quest/MR contract at -9500. Run the wider Unity gate last.
         public int callbackOrder => -9000;
 
         public void OnPreprocessBuild(BuildReport report)
@@ -28,6 +28,8 @@ namespace PhraseLayer.Unity.Editor
 
             EnsureEnabledBuildSceneOrFail();
             PhraseLayerLocalOnlyBuildGuard.VerifyCurrentProject(report.summary.platform);
+            if (report.summary.platform == BuildTarget.Android)
+                PhraseLayerQuestMrBuildGuard.VerifyQuestMrContract();
             PhraseLayerEditorVerification.VerifyCorePipeline();
 
             Debug.Log("PhraseLayer Unity player-build gate PASS: " + report.summary.platform);
@@ -45,6 +47,8 @@ namespace PhraseLayer.Unity.Editor
             PhraseLayerLocalOnlyBuildGuard.ApplyLocalOnlyAndroidDefaults();
             EnsureBuildScene();
             PhraseLayerLocalOnlyBuildGuard.VerifyCurrentProject(EditorUserBuildSettings.activeBuildTarget);
+            if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.Android)
+                PhraseLayerQuestMrBuildGuard.VerifyQuestMrContract();
             PhraseLayerEditorVerification.VerifyCorePipeline();
 
             Debug.Log("PhraseLayer UBA PreExport PASS: " + EditorUserBuildSettings.activeBuildTarget);
