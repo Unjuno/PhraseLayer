@@ -152,12 +152,12 @@ namespace PhraseLayer.Core.Spatial
             lastTimestampMicroseconds = -1;
         }
 
-        private MutableTrack FindNearestTrack(
+        private MutableTrack? FindNearestTrack(
             string key,
             SpatialVector3 center,
             HashSet<long> claimedTrackIds)
         {
-            MutableTrack best = null;
+            MutableTrack? best = null;
             var bestSquaredDistance = maximumAssociationDistanceMeters * maximumAssociationDistanceMeters;
             for (var index = 0; index < tracks.Count; index++)
             {
