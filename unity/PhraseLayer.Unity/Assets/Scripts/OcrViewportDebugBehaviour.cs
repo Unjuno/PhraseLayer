@@ -8,6 +8,8 @@ namespace PhraseLayer.Unity
     /// <summary>
     /// Runtime/debug presenter for OCR observations. The observation is always mapped against the exact
     /// ImageFrame whose pixel coordinate system produced its regions.
+    /// Successful presentations are also published so downstream Read Mode stages can reuse the same OCR result
+    /// without running inference a second time.
     /// </summary>
     public sealed class OcrViewportDebugBehaviour : MonoBehaviour, IOcrObservationSink
     {
@@ -18,6 +20,8 @@ namespace PhraseLayer.Unity
         private long frameTimestampMicroseconds;
         private OcrScheduleStatus lastScheduleStatus = OcrScheduleStatus.Processed;
         private bool hasObservation;
+
+        public event Action<OcrObservation, ImageFrame> ObservationPresented;
 
         public IReadOnlyList<OcrViewportRegion> Regions => regions;
         public bool HasObservation => hasObservation;
@@ -44,6 +48,7 @@ namespace PhraseLayer.Unity
             frameTimestampMicroseconds = frame.TimestampMicroseconds;
             lastScheduleStatus = OcrScheduleStatus.Processed;
             hasObservation = true;
+            ObservationPresented?.Invoke(observation, frame);
         }
 
         /// <summary>
