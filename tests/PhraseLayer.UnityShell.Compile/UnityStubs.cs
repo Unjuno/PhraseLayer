@@ -2,8 +2,25 @@ using System;
 
 namespace UnityEngine
 {
-    public class Object { }
-    public class Component : Object { }
+    public class Object
+    {
+        public static void Destroy(Object obj) { }
+    }
+
+    public class Transform : Object
+    {
+        public Vector3 position { get; set; }
+        public Quaternion rotation { get; set; }
+        public Vector3 localScale { get; set; }
+        public void SetParent(Transform parent, bool worldPositionStays) { }
+    }
+
+    public class Component : Object
+    {
+        public Transform transform { get; } = new Transform();
+        public T GetComponent<T>() where T : Component, new() => new T();
+    }
+
     public class Behaviour : Component { public bool enabled { get; set; } }
     public class MonoBehaviour : Behaviour { }
 
@@ -20,6 +37,16 @@ namespace UnityEngine
     {
         Normal = 0,
         Bold = 1
+    }
+
+    public enum TextAnchor
+    {
+        MiddleCenter = 0
+    }
+
+    public enum TextAlignment
+    {
+        Center = 0
     }
 
     public enum QueryTriggerInteraction
@@ -49,6 +76,12 @@ namespace UnityEngine
         public float x;
         public float y;
         public float z;
+        public static Vector3 one => new Vector3(1f, 1f, 1f);
+    }
+
+    public struct Quaternion
+    {
+        public static Quaternion LookRotation(Vector3 forward, Vector3 upwards) => new Quaternion();
     }
 
     public struct Ray
@@ -83,6 +116,30 @@ namespace UnityEngine
     {
         public int width { get; set; }
         public int height { get; set; }
+    }
+
+    public class Material : Object { }
+
+    public class Font : Object
+    {
+        public Material material { get; } = new Material();
+    }
+
+    public class Renderer : Component
+    {
+        public Material sharedMaterial { get; set; }
+    }
+
+    public class MeshRenderer : Renderer { }
+
+    public class TextMesh : Component
+    {
+        public string text { get; set; }
+        public Font font { get; set; }
+        public int fontSize { get; set; }
+        public float characterSize { get; set; }
+        public TextAnchor anchor { get; set; }
+        public TextAlignment alignment { get; set; }
     }
 
     public struct Rect
@@ -164,8 +221,10 @@ namespace UnityEngine
     public sealed class GameObject : Object
     {
         public GameObject(string name) { }
-        public T AddComponent<T>() where T : new() => new T();
+        public Transform transform { get; } = new Transform();
+        public T AddComponent<T>() where T : Component, new() => new T();
         public Component AddComponent(Type componentType) => new Component();
+        public T GetComponent<T>() where T : Component, new() => new T();
     }
 
     public static class Debug
