@@ -173,6 +173,7 @@ namespace UnityEngine
         public static void Log(object message) { }
         public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
+        public static void DrawLine(Vector3 start, Vector3 end) { }
     }
 
     public static class Application
