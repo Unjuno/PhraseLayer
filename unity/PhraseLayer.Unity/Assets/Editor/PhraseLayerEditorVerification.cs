@@ -27,7 +27,7 @@ namespace PhraseLayer.Unity.Editor
             VerifyUnitySpatialProjectionGate();
             VerifyUnityWorldTextGate();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4/5 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity surface projection, four-corner text fitting, temporal world-text tracking, font-injected reference renderer, Unity Inference 2.2 API gate, PP-OCR runtime, scene bootstrap, and local OCR asset bridge verified at compile/contract level.");
+            Debug.Log("PhraseLayer Gate 3/4/5 shell PASS: language pipeline, one-pass latest-only live Read Mode coordination, OCR viewport geometry, OCR presentation/runtime contracts, Unity surface projection, four-corner text fitting, temporal world-text tracking, font-injected reference renderer, Unity Inference 2.2 API gate, PP-OCR runtime, scene bootstrap, and local OCR asset bridge verified at compile/contract level.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -117,6 +117,10 @@ namespace PhraseLayer.Unity.Editor
         {
             if (typeof(WorldTextLayoutPlanner) == null || typeof(WorldTextTrackStabilizer) == null)
                 throw new InvalidOperationException("World text fitting/tracking Core types must compile.");
+            if (typeof(LiveReadModeCoordinator) == null)
+                throw new InvalidOperationException("LiveReadModeCoordinator must compile for latest-observation-wins processing.");
+            if (typeof(UnityLiveReadModeBehaviour) == null)
+                throw new InvalidOperationException("UnityLiveReadModeBehaviour must compile for OCR event → adaptive Read Mode wiring.");
             if (typeof(UnityWorldTextTrackingBehaviour) == null)
                 throw new InvalidOperationException("UnityWorldTextTrackingBehaviour must compile for temporal stabilization.");
             if (typeof(UnityWorldTextRendererBehaviour) == null)
