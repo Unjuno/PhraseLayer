@@ -163,14 +163,14 @@ namespace PhraseLayer.Core.Tests
         {
             private readonly Func<double, double, double> zFor;
             private readonly SpatialVector3 defaultNormal;
-            private readonly Func<double, double, bool> failWhen;
-            private readonly Func<double, double, SpatialVector3> normalFor;
+            private readonly Func<double, double, bool>? failWhen;
+            private readonly Func<double, double, SpatialVector3>? normalFor;
 
             public ViewportPlaneRaycaster(
                 Func<double, double, double> zFor,
                 SpatialVector3 defaultNormal,
-                Func<double, double, bool> failWhen = null,
-                Func<double, double, SpatialVector3> normalFor = null)
+                Func<double, double, bool>? failWhen = null,
+                Func<double, double, SpatialVector3>? normalFor = null)
             {
                 this.zFor = zFor;
                 this.defaultNormal = defaultNormal;
