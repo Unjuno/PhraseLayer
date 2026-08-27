@@ -12,7 +12,7 @@ namespace PhraseLayer.Core.Translation
     {
         IReadOnlyList<string> EncodePieces(string text);
         string DecodePieces(IReadOnlyList<string> pieces);
-        bool TryGetPiece(int sentencePieceId, out string piece);
+        bool TryGetPiece(int sentencePieceId, out string? piece);
     }
 
     /// <summary>
@@ -92,8 +92,7 @@ namespace PhraseLayer.Core.Translation
                     "Marian source sequences require room for at least one piece plus EOS.");
             }
 
-            var pieces = sourceProcessor.EncodePieces(sourceText)
-                ?? throw new InvalidOperationException("SentencePiece source processor returned no piece sequence.");
+            var pieces = sourceProcessor.EncodePieces(sourceText);
             if (pieces.Count == 0)
                 throw new InvalidOperationException("SentencePiece source processor returned an empty piece sequence.");
 
