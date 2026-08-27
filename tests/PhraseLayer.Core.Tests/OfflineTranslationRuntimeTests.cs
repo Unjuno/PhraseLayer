@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using PhraseLayer.Core.Translation;
@@ -108,6 +109,65 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void MarianTokenizerMapsSentencePiecesThroughExternalVocabularyAndAppendsEos()
+        {
+            var source = new FakeSentencePieceProcessor(new[] { "▁keep", "▁off", "not-in-vocab" });
+            var target = new FakeSentencePieceProcessor(Array.Empty<string>());
+            var tokenizer = new MarianSentencePieceTokenizer(source, target, BuildMarianFixtureVocabulary());
+
+            var encoded = tokenizer.EncodeSource("keep off mystery", 8);
+
+            Assert.Equal(new[] { 2, 3, 1, 0 }, encoded.TokenIds);
+            Assert.False(encoded.WasTruncated);
+            Assert.Equal(1, tokenizer.UnknownTokenId);
+            Assert.Equal(0, tokenizer.EosTokenId);
+            Assert.Equal(46275, tokenizer.PadTokenId);
+        }
+
+        [Fact]
+        public void MarianTokenizerTruncatesPiecesBeforeReservedEosSlot()
+        {
+            var source = new FakeSentencePieceProcessor(new[] { "▁keep", "▁off", "not-in-vocab" });
+            var target = new FakeSentencePieceProcessor(Array.Empty<string>());
+            var tokenizer = new MarianSentencePieceTokenizer(source, target, BuildMarianFixtureVocabulary());
+
+            var encoded = tokenizer.EncodeSource("keep off mystery", 3);
+
+            Assert.Equal(new[] { 2, 3, 0 }, encoded.TokenIds);
+            Assert.True(encoded.WasTruncated);
+        }
+
+        [Fact]
+        public void MarianTokenizerDecodesExternalVocabularyAndSkipsGenerationSpecials()
+        {
+            var source = new FakeSentencePieceProcessor(Array.Empty<string>());
+            var target = new FakeSentencePieceProcessor(
+                Array.Empty<string>(),
+                new Dictionary<int, string> { { 99, "fallback" } });
+            var tokenizer = new MarianSentencePieceTokenizer(source, target, BuildMarianFixtureVocabulary());
+
+            var decoded = tokenizer.DecodeTarget(new[] { 10, 11, 0, 46275, 99 });
+
+            Assert.Equal("立入らないfallback", decoded);
+            Assert.Equal(new[] { "▁立入", "らない", "fallback" }, target.LastDecodedPieces);
+        }
+
+        [Fact]
+        public void MarianTokenizerRejectsSpecialTokenIdDrift()
+        {
+            var vocabulary = BuildMarianFixtureVocabulary();
+            vocabulary["wrong"] = 7;
+
+            Assert.Throws<ArgumentException>(() =>
+                new MarianSentencePieceTokenizer(
+                    new FakeSentencePieceProcessor(new[] { "▁keep" }),
+                    new FakeSentencePieceProcessor(Array.Empty<string>()),
+                    vocabulary,
+                    eosTokenId: 7,
+                    padTokenId: 46275));
+        }
+
+        [Fact]
         public void ReviewedOpusMarianMetadataPassesStrictContract()
         {
             var metadata = ReviewedMetadata();
@@ -158,6 +218,22 @@ namespace PhraseLayer.Core.Tests
                 new TranslationGenerationOptions(128, 128, 1));
         }
 
+        private static Dictionary<string, int> BuildMarianFixtureVocabulary()
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                { "</s>", 0 },
+                { "<unk>", 1 },
+                { "▁keep", 2 },
+                { "▁off", 3 },
+                { "▁立入", 10 },
+                { "らない", 11 },
+                { "<eop>", 20 },
+                { "<eod>", 21 },
+                { "<pad>", 46275 }
+            };
+        }
+
         private static MarianTranslationMetadata ReviewedMetadata()
         {
             return new MarianTranslationMetadata(
@@ -176,6 +252,38 @@ namespace PhraseLayer.Core.Tests
                 46275,
                 46275,
                 4);
+        }
+
+        private sealed class FakeSentencePieceProcessor : ISentencePieceProcessor
+        {
+            private readonly IReadOnlyList<string> encodedPieces;
+            private readonly IReadOnlyDictionary<int, string> fallbackPieces;
+
+            public FakeSentencePieceProcessor(
+                IReadOnlyList<string> encodedPieces,
+                IReadOnlyDictionary<int, string> fallbackPieces = null)
+            {
+                this.encodedPieces = encodedPieces;
+                this.fallbackPieces = fallbackPieces ?? new Dictionary<int, string>();
+            }
+
+            public IReadOnlyList<string> LastDecodedPieces { get; private set; }
+
+            public IReadOnlyList<string> EncodePieces(string text)
+            {
+                return encodedPieces;
+            }
+
+            public string DecodePieces(IReadOnlyList<string> pieces)
+            {
+                LastDecodedPieces = pieces.ToArray();
+                return string.Concat(pieces).Replace("▁", " ").Trim();
+            }
+
+            public bool TryGetPiece(int sentencePieceId, out string piece)
+            {
+                return fallbackPieces.TryGetValue(sentencePieceId, out piece);
+            }
         }
 
         private sealed class RecordingTokenizer : ITranslationTokenizer
