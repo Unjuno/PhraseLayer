@@ -5,10 +5,10 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Makes the committed Read MVP scene runnable without serializing PhraseLayer MonoBehaviours or local model
-    /// assets into source control. The scene pins Meta's PassthroughCameraAccess component; this installer creates
-    /// the PhraseLayer runtime graph after scene load and uses the synthetic OCR fixture until a developer regenerates
-    /// the same scene with locally staged PP-OCR assets through PhraseLayerReadMvpSceneSetup.
+    /// Makes the committed Read MVP scene runnable without serializing local model binaries into source control.
+    /// The scene pins Meta's PassthroughCameraAccess component; this installer creates the PhraseLayer runtime graph
+    /// after scene load. When a verified git-ignored local PP-OCR Resources config is present it starts real camera
+    /// OCR automatically. Otherwise it keeps the deterministic synthetic fixture as the safe development fallback.
     /// </summary>
     public static class PhraseLayerReadMvpRuntimeInstaller
     {
@@ -28,6 +28,9 @@ namespace PhraseLayer.Unity
             if (cameraAccess == null)
                 return;
 
+            var localOcrConfig = Resources.Load<UnityLocalOcrRuntimeConfig>(UnityLocalOcrRuntimeConfig.ResourcesName);
+            var useLocalOcr = localOcrConfig != null && localOcrConfig.IsConfigured;
+
             var root = new GameObject("PhraseLayer Read MVP Runtime");
             SetGameObjectActive(root, false);
 
@@ -37,15 +40,23 @@ namespace PhraseLayer.Unity
             var learnerProfile = root.AddComponent<UnityLearnerProfileBehaviour>();
             var readAssistance = root.AddComponent<QuestReadAssistanceDebugBehaviour>();
             var worldOverlay = root.AddComponent<QuestReadWorldOverlayBehaviour>();
+            UnityPaddleOcrBootstrapBehaviour ocrBootstrap = null;
+            if (useLocalOcr)
+                ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
 
-            presenter.LoadSyntheticFixtureOnStart = true;
-            runtimeDriver.AutoRun = false;
+            presenter.LoadSyntheticFixtureOnStart = !useLocalOcr;
+            runtimeDriver.AutoRun = useLocalOcr;
             AssignReference(runtimeDriver, "cameraBridge", cameraBridge);
             AssignReference(runtimeDriver, "presenter", presenter);
             AssignReference(readAssistance, "ocrPresenter", presenter);
             AssignReference(readAssistance, "learnerProfile", learnerProfile);
             AssignReference(worldOverlay, "readAssistance", readAssistance);
             AssignReference(worldOverlay, "cameraBridge", cameraBridge);
+
+            if (ocrBootstrap != null)
+                localOcrConfig.ConfigureBootstrap(ocrBootstrap, runtimeDriver);
+            else if (localOcrConfig != null)
+                Debug.LogWarning("PhraseLayer local OCR runtime config exists but is incomplete; using synthetic OCR fallback. " + localOcrConfig.Status);
 
             try
             {
@@ -61,8 +72,11 @@ namespace PhraseLayer.Unity
             SetGameObjectActive(root, true);
             Debug.Log(
                 "PhraseLayer committed Read MVP runtime installed. " +
-                "HeadPose=UnityXR; OCR=synthetic-fixture; WorldOverlay=native-environment+physics+viewport-fallback; " +
-                "stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
+                "HeadPose=UnityXR; OCR=" + (useLocalOcr ? "local-ppocr-camera" : "synthetic-fixture") +
+                "; WorldOverlay=native-environment+physics+viewport-fallback." +
+                (useLocalOcr
+                    ? " Verified local PP-OCR Resources config loaded; camera OCR auto-run enabled."
+                    : " Stage/prepare verified local PP-OCR assets to enable real camera OCR."));
         }
 
         private static void InstallHeadTracking()
