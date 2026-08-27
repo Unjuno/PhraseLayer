@@ -128,12 +128,15 @@ def validate_snapshot(snapshot_dir: Path) -> list[dict]:
 
     if not isinstance(vocab, dict):
         fail("vocab.json must contain a JSON object")
-    require_equal(len(vocab), EXPECTED_CONFIG["vocab_size"], "vocab token count")
-    vocab_ids = set(vocab.values())
-    if not all(isinstance(value, int) for value in vocab_ids):
+    expected_vocab_size = EXPECTED_CONFIG["vocab_size"]
+    require_equal(len(vocab), expected_vocab_size, "vocab token count")
+    vocab_values = list(vocab.values())
+    if not all(type(value) is int for value in vocab_values):
         fail("vocab.json token ids must be integers")
+    vocab_ids = set(vocab_values)
+    require_equal(len(vocab_ids), expected_vocab_size, "unique vocab token id count")
     require_equal(min(vocab_ids), 0, "minimum vocab token id")
-    require_equal(max(vocab_ids), EXPECTED_CONFIG["vocab_size"] - 1, "maximum vocab token id")
+    require_equal(max(vocab_ids), expected_vocab_size - 1, "maximum vocab token id")
 
     return [fingerprint(snapshot_dir / name) for name in SNAPSHOT_FILES]
 
