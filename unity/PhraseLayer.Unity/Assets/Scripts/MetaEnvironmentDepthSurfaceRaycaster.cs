@@ -12,8 +12,8 @@ namespace PhraseLayer.Unity
     ///
     /// The native raycaster consumes tracking-space coordinates. PhraseLayer's committed Read MVP keeps its OpenXR
     /// tracking origin at Unity world origin, so the Passthrough Camera ray can cross this boundary without inventing
-    /// an additional transform. If the application later introduces a moved/scaled tracking origin, this adapter must
-    /// be upgraded together with that coordinate-space contract rather than silently applying a guessed transform.
+    /// an additional transform. If the application later introduces a moved/scaled tracking origin, this adapter
+    /// fails closed until that coordinate-space contract is implemented explicitly.
     ///
     /// The adapter never requests permission itself. Missing permission, an uninitialized MRUK native layer, a
     /// creating/not-ready raycaster, or any reflected API mismatch simply returns no hit so the caller can fall back
@@ -31,8 +31,10 @@ namespace PhraseLayer.Unity
         private const int RaycasterCreating = 1;
         private const int RaycasterReady = 2;
         private const int RaycastStatusHit = 1;
+        private const double TransformTolerance = 0.00001;
 
         private readonly float maxDistanceMeters;
+        private readonly Transform trackingOrigin;
         private readonly Type nativeFuncsType;
         private readonly Type hitInfoType;
         private readonly Type hitPointType;
@@ -51,6 +53,7 @@ namespace PhraseLayer.Unity
             if (float.IsNaN(maxDistanceMeters) || float.IsInfinity(maxDistanceMeters) || maxDistanceMeters <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(maxDistanceMeters));
             this.maxDistanceMeters = maxDistanceMeters;
+            trackingOrigin = owner.transform;
 
             nativeFuncsType = ResolveType(NativeFuncsTypeName);
             if (nativeFuncsType == null)
@@ -76,7 +79,7 @@ namespace PhraseLayer.Unity
         public bool TryRaycast(SpatialRay ray, out SurfaceHit hit)
         {
             hit = default(SurfaceHit);
-            if (disposed || !IsApiAvailable || !HasSpatialPermission() || !TryEnsureRaycasterReady())
+            if (disposed || !IsApiAvailable || !HasSpatialPermission() || !IsIdentityTrackingOrigin() || !TryEnsureRaycasterReady())
                 return false;
 
             var raycast = GetDelegate(raycastEnvironmentField);
@@ -214,6 +217,31 @@ namespace PhraseLayer.Unity
             {
                 return false;
             }
+        }
+
+        private bool IsIdentityTrackingOrigin()
+        {
+            if (trackingOrigin == null)
+                return false;
+
+            var position = trackingOrigin.localPosition;
+            var rotation = trackingOrigin.localRotation;
+            if (Math.Abs(position.x) > TransformTolerance ||
+                Math.Abs(position.y) > TransformTolerance ||
+                Math.Abs(position.z) > TransformTolerance ||
+                Math.Abs(rotation.x) > TransformTolerance ||
+                Math.Abs(rotation.y) > TransformTolerance ||
+                Math.Abs(rotation.z) > TransformTolerance ||
+                Math.Abs(Math.Abs(rotation.w) - 1.0) > TransformTolerance)
+                return false;
+
+            // lossyScale is reflected so the host compile harness does not need to model the full Unity Transform API.
+            var scaleProperty = typeof(Transform).GetProperty("lossyScale", BindingFlags.Instance | BindingFlags.Public);
+            if (scaleProperty == null || !(scaleProperty.GetValue(trackingOrigin, null) is Vector3 scale))
+                return false;
+            return Math.Abs(scale.x - 1.0) <= TransformTolerance &&
+                   Math.Abs(scale.y - 1.0) <= TransformTolerance &&
+                   Math.Abs(scale.z - 1.0) <= TransformTolerance;
         }
 
         private FieldInfo GetNativeDelegateField(string fieldName)
