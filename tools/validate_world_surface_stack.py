@@ -95,11 +95,10 @@ surface_stabilizer = require(
 )
 if surface_stabilizer:
     for forbidden in (
-        "ISurfaceRaycaster",
-        "IViewportRayProvider",
         "UnityEngine",
         "Meta.XR",
         "Oculus",
+        "Android.Permission",
     ):
         if forbidden in surface_stabilizer:
             violations.append(
