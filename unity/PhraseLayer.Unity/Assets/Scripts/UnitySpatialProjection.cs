@@ -87,17 +87,22 @@ namespace PhraseLayer.Unity
     }
 
     /// <summary>
-    /// Scene-facing bridge from aligned Read Mode output to the platform-neutral projection policy. It computes
-    /// world surface hits only; rendering, smoothing, tracking, and source-text masking remain separate concerns.
+    /// Scene-facing bridge from aligned Read Mode output to the platform-neutral projection and physical text-plane policies.
+    /// Center projection is followed by an independent four-corner surface fit before an in-place target is considered layout-ready.
     /// </summary>
     public sealed class UnitySpatialProjectionBehaviour : MonoBehaviour
     {
         [SerializeField] private MetaPassthroughCameraBridge rayProvider = default(MetaPassthroughCameraBridge);
         [SerializeField] private UnityPhysicsSurfaceRaycaster surfaceRaycaster = default(UnityPhysicsSurfaceRaycaster);
+        [SerializeField] private float maximumPlanarityErrorMeters = 0.03f;
+        [SerializeField] private float minimumTextExtentMeters = 0.005f;
+        [SerializeField] private float minimumSurfaceNormalDot = 0.80f;
 
-        private SpatialProjectionPlanner planner;
+        private SpatialProjectionPlanner projectionPlanner;
+        private WorldTextLayoutPlanner layoutPlanner;
 
         public SpatialProjectionPlan LastPlan { get; private set; }
+        public WorldTextLayoutPlan LastWorldTextLayout { get; private set; }
         public MetaPassthroughCameraBridge RayProvider => rayProvider;
         public UnityPhysicsSurfaceRaycaster SurfaceRaycaster => surfaceRaycaster;
 
@@ -107,27 +112,138 @@ namespace PhraseLayer.Unity
         {
             rayProvider = viewportRayProvider ?? throw new ArgumentNullException(nameof(viewportRayProvider));
             surfaceRaycaster = worldSurfaceRaycaster ?? throw new ArgumentNullException(nameof(worldSurfaceRaycaster));
-            planner = null;
+            projectionPlanner = null;
+            layoutPlanner = null;
             LastPlan = null;
+            LastWorldTextLayout = null;
         }
 
         public SpatialProjectionPlan Project(ReadModeAlignedResult aligned)
         {
             if (aligned == null) throw new ArgumentNullException(nameof(aligned));
-            EnsurePlanner();
-            LastPlan = planner.Project(aligned.SpatialAssistance);
+            EnsurePlanners();
+            LastPlan = projectionPlanner.Project(aligned.SpatialAssistance);
+            LastWorldTextLayout = null;
             return LastPlan;
         }
 
-        private void EnsurePlanner()
+        public WorldTextLayoutPlan ProjectAndFitWorldText(ReadModeAlignedResult aligned)
         {
-            if (planner != null) return;
+            var projection = Project(aligned);
+            LastWorldTextLayout = layoutPlanner.Fit(projection);
+            return LastWorldTextLayout;
+        }
+
+        public WorldTextLayoutPlan FitWorldText(SpatialProjectionPlan projection)
+        {
+            if (projection == null) throw new ArgumentNullException(nameof(projection));
+            EnsurePlanners();
+            LastPlan = projection;
+            LastWorldTextLayout = layoutPlanner.Fit(projection);
+            return LastWorldTextLayout;
+        }
+
+        private void OnValidate()
+        {
+            ValidateLayoutConfiguration();
+            projectionPlanner = null;
+            layoutPlanner = null;
+        }
+
+        private void EnsurePlanners()
+        {
+            if (projectionPlanner != null && layoutPlanner != null) return;
             if (rayProvider == null)
                 throw new InvalidOperationException("Assign MetaPassthroughCameraBridge before projecting Read Mode assistance.");
             if (surfaceRaycaster == null)
                 throw new InvalidOperationException("Assign UnityPhysicsSurfaceRaycaster before projecting Read Mode assistance.");
 
-            planner = new SpatialProjectionPlanner(rayProvider, surfaceRaycaster);
+            ValidateLayoutConfiguration();
+            projectionPlanner = new SpatialProjectionPlanner(rayProvider, surfaceRaycaster);
+            layoutPlanner = new WorldTextLayoutPlanner(
+                rayProvider,
+                surfaceRaycaster,
+                maximumPlanarityErrorMeters,
+                minimumTextExtentMeters,
+                minimumSurfaceNormalDot);
         }
+
+        private void ValidateLayoutConfiguration()
+        {
+            if (!IsFinitePositive(maximumPlanarityErrorMeters))
+                throw new InvalidOperationException("Maximum text-surface planarity error must be finite and greater than zero meters.");
+            if (!IsFinitePositive(minimumTextExtentMeters))
+                throw new InvalidOperationException("Minimum world text extent must be finite and greater than zero meters.");
+            if (float.IsNaN(minimumSurfaceNormalDot) || float.IsInfinity(minimumSurfaceNormalDot) ||
+                minimumSurfaceNormalDot < 0f || minimumSurfaceNormalDot > 1f)
+            {
+                throw new InvalidOperationException("Minimum surface normal dot must be finite and within [0,1].");
+            }
+        }
+
+        private static bool IsFinitePositive(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value) && value > 0f;
+        }
+    }
+
+    /// <summary>
+    /// Reference visualization for Quest verification. It draws fitted OCR text envelopes in world space without
+    /// claiming to be the final replacement renderer. Only layout-ready in-place targets are visualized.
+    /// </summary>
+    public sealed class UnityWorldTextLayoutDebugBehaviour : MonoBehaviour
+    {
+        private WorldTextLayoutPlan plan;
+
+        public WorldTextLayoutPlan Plan => plan;
+
+        public void Present(WorldTextLayoutPlan worldTextLayout)
+        {
+            plan = worldTextLayout ?? throw new ArgumentNullException(nameof(worldTextLayout));
+        }
+
+        public void Clear()
+        {
+            plan = null;
+        }
+
+        private void Update()
+        {
+            if (plan == null) return;
+            foreach (var target in plan.Targets)
+            {
+                if (!target.IsReady) continue;
+                DrawSurface(target.Surface.Value);
+            }
+        }
+
+        private static void DrawSurface(WorldTextSurface surface)
+        {
+            var center = ToUnity(surface.Center);
+            var right = Scale(ToUnity(surface.Right), (float)(surface.WidthMeters * 0.5));
+            var up = Scale(ToUnity(surface.Up), (float)(surface.HeightMeters * 0.5));
+
+            var p0 = Add(Subtract(center, right), up);
+            var p1 = Add(Add(center, right), up);
+            var p2 = Subtract(Add(center, right), up);
+            var p3 = Subtract(Subtract(center, right), up);
+
+            Debug.DrawLine(p0, p1);
+            Debug.DrawLine(p1, p2);
+            Debug.DrawLine(p2, p3);
+            Debug.DrawLine(p3, p0);
+        }
+
+        private static Vector3 ToUnity(SpatialVector3 value) =>
+            new Vector3((float)value.X, (float)value.Y, (float)value.Z);
+
+        private static Vector3 Add(Vector3 a, Vector3 b) =>
+            new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
+
+        private static Vector3 Subtract(Vector3 a, Vector3 b) =>
+            new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
+
+        private static Vector3 Scale(Vector3 value, float scale) =>
+            new Vector3(value.x * scale, value.y * scale, value.z * scale);
     }
 }
