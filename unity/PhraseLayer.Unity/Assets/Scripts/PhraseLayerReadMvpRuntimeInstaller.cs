@@ -36,6 +36,7 @@ namespace PhraseLayer.Unity
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
             var learnerProfile = root.AddComponent<UnityLearnerProfileBehaviour>();
             var readAssistance = root.AddComponent<QuestReadAssistanceDebugBehaviour>();
+            var worldOverlay = root.AddComponent<QuestReadWorldOverlayBehaviour>();
 
             presenter.LoadSyntheticFixtureOnStart = true;
             runtimeDriver.AutoRun = false;
@@ -43,6 +44,8 @@ namespace PhraseLayer.Unity
             AssignReference(runtimeDriver, "presenter", presenter);
             AssignReference(readAssistance, "ocrPresenter", presenter);
             AssignReference(readAssistance, "learnerProfile", learnerProfile);
+            AssignReference(worldOverlay, "readAssistance", readAssistance);
+            AssignReference(worldOverlay, "cameraBridge", cameraBridge);
 
             try
             {
@@ -58,7 +61,8 @@ namespace PhraseLayer.Unity
             SetGameObjectActive(root, true);
             Debug.Log(
                 "PhraseLayer committed Read MVP runtime installed. " +
-                "HeadPose=UnityXR; OCR=synthetic-fixture; stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
+                "HeadPose=UnityXR; OCR=synthetic-fixture; WorldOverlay=physics-surface+viewport-fallback; " +
+                "stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
         }
 
         private static void InstallHeadTracking()
