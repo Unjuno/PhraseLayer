@@ -130,6 +130,7 @@ namespace UnityEngine
     {
         public GameObject(string name) { }
         public T AddComponent<T>() where T : new() => new T();
+        public Component AddComponent(Type componentType) => new Component();
     }
 
     public static class Debug
