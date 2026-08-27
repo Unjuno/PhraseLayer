@@ -12,8 +12,8 @@ namespace PhraseLayer.Unity
     /// surfaces. Targets that cannot be projected remain available to the existing viewport GUI fallback.
     ///
     /// This component is intentionally conservative: it never assumes a fixed depth and never turns an unresolved
-    /// OCR target into a world-space replacement. Accurate real-world placement therefore depends on a real surface
-    /// provider (for example MRUK/scene geometry with colliders) being present in the running Quest scene.
+    /// OCR target into a new world-space replacement. A target that was already placed on a verified surface may keep
+    /// that same world pose only while the Core viewport stabilizer is retaining a brief OCR dropout.
     /// </summary>
     public sealed class QuestReadWorldOverlayBehaviour : MonoBehaviour
     {
@@ -81,13 +81,14 @@ namespace PhraseLayer.Unity
             if (raycaster == null)
                 RebuildRaycaster();
 
+            var previouslyRendered = new HashSet<string>(renderedUnitIds, StringComparer.Ordinal);
             HideAllLabels();
-            renderedUnitIds.Clear();
 
             var planner = new SpatialProjectionPlanner(cameraBridge, raycaster);
             var targets = result.SpatialAssistance.Targets;
             var exactCandidates = 0;
             var surfaceMisses = 0;
+            var retainedDropouts = 0;
 
             for (var index = 0; index < targets.Count; index++)
             {
@@ -95,11 +96,28 @@ namespace PhraseLayer.Unity
                 var unit = target.Segment.Unit;
                 if (unit == null)
                     continue;
-                if (target.Coverage != SpatialAssistanceCoverage.Exact)
-                    continue;
                 if (string.Equals(target.Segment.SourceText, target.Segment.DisplayText, StringComparison.Ordinal))
                     continue;
-                if (!readAssistance.TryGetRenderableEnvelope(target, out var envelope))
+
+                var hasRenderableEnvelope = readAssistance.TryGetRenderableEnvelope(target, out var envelope);
+                var isRetainedDropout =
+                    !target.Envelope.HasValue &&
+                    hasRenderableEnvelope &&
+                    previouslyRendered.Contains(unit.Id) &&
+                    labels.TryGetValue(unit.Id, out var retainedLabel) &&
+                    retainedLabel != null;
+
+                if (isRetainedDropout)
+                {
+                    SetGameObjectActive(retainedLabel.gameObject, true);
+                    renderedUnitIds.Add(unit.Id);
+                    retainedDropouts++;
+                    continue;
+                }
+
+                if (target.Coverage != SpatialAssistanceCoverage.Exact)
+                    continue;
+                if (!hasRenderableEnvelope)
                     continue;
 
                 exactCandidates++;
@@ -123,9 +141,10 @@ namespace PhraseLayer.Unity
 
             readAssistance.SetWorldRenderedTargets(renderedUnitIds);
             status = string.Format(
-                "World overlay: candidates={0}, rendered={1}, surface-misses={2}.",
+                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}.",
                 exactCandidates,
                 renderedUnitIds.Count,
+                retainedDropouts,
                 surfaceMisses);
         }
 
