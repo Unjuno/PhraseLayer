@@ -75,6 +75,24 @@ if native:
                 f"depth manager: {forbidden}"
             )
 
+projection = require(
+    CORE / "SpatialProjection.cs",
+    (
+        "Verified surface normals are canonicalized to face back toward the camera ray origin",
+        "hit = OrientSurfaceTowardRayOrigin(ray, hit);",
+        "private static SurfaceHit OrientSurfaceTowardRayOrigin(SpatialRay ray, SurfaceHit hit)",
+        "if (Dot(ray.Direction, hit.Normal) <= 0.0)",
+        "new SpatialVector3(-hit.Normal.X, -hit.Normal.Y, -hit.Normal.Z)",
+    ),
+    "camera-facing verified surface orientation",
+)
+if projection:
+    for forbidden in ("UnityEngine", "Meta.XR", "Oculus", "Android.Permission"):
+        if forbidden in projection:
+            violations.append(
+                f"Core spatial projection must stay platform/runtime independent: {forbidden}"
+            )
+
 surface_stabilizer = require(
     CORE / "SurfaceHitStabilizer.cs",
     (
@@ -234,8 +252,9 @@ if violations:
 print(
     "PASS: Read world placement keeps Android Meta XR environment-raycast support enabled, preserves reflected MRUK "
     "native interop for IL2CPP, fails closed across the optional reflection boundary, requires an identity tracking "
-    "origin, destroys only a ready raycaster it owns, avoids Meta telemetry/depth-manager coupling, stabilizes only "
-    "verified world hits with bounded miss retention reset per encounter, derives physical label extent/orientation only "
-    "by intersecting viewport-corner rays with that verified plane, falls back to Unity colliders, and keeps unresolved "
-    "misses on the local-only viewport path"
+    "origin, destroys only a ready raycaster it owns, avoids Meta telemetry/depth-manager coupling, canonicalizes each "
+    "verified surface normal toward its camera ray origin, stabilizes only verified world hits with bounded miss "
+    "retention reset per encounter, derives physical label extent/orientation only by intersecting viewport-corner "
+    "rays with that verified plane, falls back to Unity colliders, and keeps unresolved misses on the local-only "
+    "viewport path"
 )
