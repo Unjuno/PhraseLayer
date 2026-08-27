@@ -67,14 +67,56 @@ namespace PhraseLayer.Unity
         private ViewportEnvelopeStabilizer overlayStabilizer;
         private readonly Dictionary<string, ViewportEnvelope> stabilizedEnvelopes =
             new Dictionary<string, ViewportEnvelope>(StringComparer.Ordinal);
+        private readonly HashSet<string> worldRenderedUnitIds = new HashSet<string>(StringComparer.Ordinal);
         private string stabilizedEncounterId = string.Empty;
         private string currentEncounterId = string.Empty;
         private string status = "Waiting for real OCR observation.";
+
+        public event Action<ReadModeSpatialResult> ResultPresented;
 
         public ReadModeSpatialResult LastResult => lastResult;
         public string CurrentEncounterId => currentEncounterId;
         public string Status => status;
         public bool HasConfiguredTranslationEngine => configuredTranslationEngine != null;
+
+        /// <summary>
+        /// Returns the stabilized/retained viewport envelope currently used by the visible Read overlay.
+        /// World-space renderers use this method so their ray origin follows the same temporal geometry as the
+        /// viewport fallback instead of independently reintroducing raw OCR jitter.
+        /// </summary>
+        public bool TryGetRenderableEnvelope(SpatialAssistanceTarget target, out ViewportEnvelope envelope)
+        {
+            if (target == null) throw new ArgumentNullException(nameof(target));
+
+            var unit = target.Segment.Unit;
+            if (unit != null && stabilizedEnvelopes.TryGetValue(unit.Id, out envelope))
+                return true;
+            if (target.Envelope.HasValue)
+            {
+                envelope = target.Envelope.Value;
+                return true;
+            }
+
+            envelope = default(ViewportEnvelope);
+            return false;
+        }
+
+        /// <summary>
+        /// Marks semantic units that have a verified world-space surface placement for the current frame/result.
+        /// Those units are suppressed from the 2D fallback; all other targets remain visible in viewport space.
+        /// </summary>
+        public void SetWorldRenderedTargets(IEnumerable<string> unitIds)
+        {
+            worldRenderedUnitIds.Clear();
+            if (unitIds == null)
+                return;
+
+            foreach (var unitId in unitIds)
+            {
+                if (!string.IsNullOrWhiteSpace(unitId))
+                    worldRenderedUnitIds.Add(unitId);
+            }
+        }
 
         /// <summary>
         /// Replaces the translation implementation used for future Read encounters.
@@ -227,10 +269,13 @@ namespace PhraseLayer.Unity
                         {
                             lastResult = result;
                             UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result);
+                            var presented = ResultPresented;
+                            if (presented != null)
+                                presented(lastResult);
                         }
 
                         status = string.Format(
-                            "Read encounter {0} | {1} | targets={2}, exact={3}, partial={4}, unresolved={5}, held={6}, stabilized={7}.",
+                            "Read encounter {0} | {1} | targets={2}, exact={3}, partial={4}, unresolved={5}, held={6}, stabilized={7}, world={8}.",
                             encounter.Decision.EncounterId,
                             encounter.Decision.Transition,
                             result.SpatialAssistance.Targets.Count,
@@ -238,7 +283,8 @@ namespace PhraseLayer.Unity
                             result.SpatialAssistance.PartialCount,
                             result.SpatialAssistance.UnresolvedCount,
                             keepPreviousOverlay,
-                            stabilizedEnvelopes.Count);
+                            stabilizedEnvelopes.Count,
+                            worldRenderedUnitIds.Count);
                     }
 
                     if (pendingObservation == null)
@@ -265,6 +311,7 @@ namespace PhraseLayer.Unity
             {
                 overlayStabilizer.Reset();
                 stabilizedEncounterId = encounterId;
+                worldRenderedUnitIds.Clear();
             }
 
             stabilizedEnvelopes.Clear();
@@ -292,6 +339,7 @@ namespace PhraseLayer.Unity
         {
             overlayStabilizer?.Reset();
             stabilizedEnvelopes.Clear();
+            worldRenderedUnitIds.Clear();
             stabilizedEncounterId = string.Empty;
         }
 
@@ -307,6 +355,8 @@ namespace PhraseLayer.Unity
                 if (string.Equals(target.Segment.SourceText, target.Segment.DisplayText, StringComparison.Ordinal)) continue;
 
                 var unit = target.Segment.Unit;
+                if (unit != null && worldRenderedUnitIds.Contains(unit.Id)) continue;
+
                 var stabilized = default(ViewportEnvelope);
                 var hasStabilizedEnvelope = unit != null &&
                     stabilizedEnvelopes.TryGetValue(unit.Id, out stabilized);
