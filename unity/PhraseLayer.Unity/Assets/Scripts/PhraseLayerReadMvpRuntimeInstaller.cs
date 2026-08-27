@@ -61,7 +61,7 @@ namespace PhraseLayer.Unity
             SetGameObjectActive(root, true);
             Debug.Log(
                 "PhraseLayer committed Read MVP runtime installed. " +
-                "HeadPose=UnityXR; OCR=synthetic-fixture; WorldOverlay=physics-surface+viewport-fallback; " +
+                "HeadPose=UnityXR; OCR=synthetic-fixture; WorldOverlay=native-environment+physics+viewport-fallback; " +
                 "stage PP-OCR assets and run PhraseLayer/Read MVP/Create or Reset Local Read Scene for real camera OCR.");
         }
 
