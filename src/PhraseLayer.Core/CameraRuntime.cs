@@ -37,6 +37,7 @@ namespace PhraseLayer.Core.Inputs
     /// <summary>
     /// Platform-neutral camera lifecycle used by Quest/Unity adapters.
     /// It deliberately mirrors the Meta sample lifecycle without importing Meta or Unity types into Core.
+    /// Await points preserve the caller synchronization context because platform adapters may be main-thread-bound.
     /// </summary>
     public sealed class CameraCaptureCoordinator
     {
@@ -64,7 +65,7 @@ namespace PhraseLayer.Core.Inputs
                 if (permissionState != CameraPermissionState.Granted)
                 {
                     State = CameraCaptureState.WaitingForPermission;
-                    permissionState = await permission.RequestAsync(cancellationToken).ConfigureAwait(false);
+                    permissionState = await permission.RequestAsync(cancellationToken);
                     if (permissionState != CameraPermissionState.Granted)
                     {
                         State = CameraCaptureState.Failed;
@@ -75,7 +76,7 @@ namespace PhraseLayer.Core.Inputs
 
                 State = CameraCaptureState.Starting;
                 if (!stream.IsPlaying)
-                    await stream.StartAsync(cancellationToken).ConfigureAwait(false);
+                    await stream.StartAsync(cancellationToken);
 
                 if (!stream.IsPlaying)
                 {
@@ -103,12 +104,12 @@ namespace PhraseLayer.Core.Inputs
 
         public async Task<ImageFrame?> CaptureAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
-            if (await EnsureReadyAsync(cancellationToken).ConfigureAwait(false) != CameraCaptureState.Ready)
+            if (await EnsureReadyAsync(cancellationToken) != CameraCaptureState.Ready)
                 return null;
 
             try
             {
-                var frame = await stream.CaptureAsync(cancellationToken).ConfigureAwait(false);
+                var frame = await stream.CaptureAsync(cancellationToken);
                 if (frame != null) return frame;
 
                 State = CameraCaptureState.Failed;
@@ -132,7 +133,7 @@ namespace PhraseLayer.Core.Inputs
             try
             {
                 if (stream.IsPlaying)
-                    await stream.StopAsync(cancellationToken).ConfigureAwait(false);
+                    await stream.StopAsync(cancellationToken);
             }
             finally
             {

@@ -41,6 +41,7 @@ namespace PhraseLayer.Core.Inputs
     /// Executes one end-to-end camera → OCR scheduler → presentation cycle.
     /// The pump itself is single-flight so an overlapping caller cannot start another camera capture
     /// while the current frame is still being captured or inferred.
+    /// Await points preserve the caller synchronization context so Unity-bound adapters remain on their owner thread.
     /// </summary>
     public sealed class OcrRuntimePump
     {
@@ -75,7 +76,7 @@ namespace PhraseLayer.Core.Inputs
 
             try
             {
-                var frame = await camera.CaptureAsync(cancellationToken).ConfigureAwait(false);
+                var frame = await camera.CaptureAsync(cancellationToken);
                 if (frame == null)
                 {
                     return new OcrPumpResult(
@@ -86,7 +87,7 @@ namespace PhraseLayer.Core.Inputs
                         false);
                 }
 
-                var scheduleResult = await scheduler.TryProcessAsync(frame, cancellationToken).ConfigureAwait(false);
+                var scheduleResult = await scheduler.TryProcessAsync(frame, cancellationToken);
                 if (scheduleResult.WasProcessed)
                 {
                     var presented = presenter.PresentIfProcessed(scheduleResult, frame);

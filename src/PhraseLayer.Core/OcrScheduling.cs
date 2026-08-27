@@ -30,6 +30,7 @@ namespace PhraseLayer.Core.Inputs
     /// <summary>
     /// Prevents camera-frequency OCR from becoming inference-frequency OCR.
     /// At most one inference is active, stale frames are rejected, and processed frames are rate-limited by source timestamp.
+    /// Await points preserve the caller synchronization context because an OCR adapter may be bound to a platform render thread.
     /// </summary>
     public sealed class OcrFrameScheduler : IDisposable
     {
@@ -75,7 +76,7 @@ namespace PhraseLayer.Core.Inputs
                         return new OcrScheduleResult(OcrScheduleStatus.SkippedRateLimit, frame.TimestampMicroseconds, null);
                 }
 
-                var observation = await engine.RecognizeAsync(frame, cancellationToken).ConfigureAwait(false);
+                var observation = await engine.RecognizeAsync(frame, cancellationToken);
                 lastProcessedTimestampMicroseconds = frame.TimestampMicroseconds;
                 return new OcrScheduleResult(OcrScheduleStatus.Processed, frame.TimestampMicroseconds, observation);
             }

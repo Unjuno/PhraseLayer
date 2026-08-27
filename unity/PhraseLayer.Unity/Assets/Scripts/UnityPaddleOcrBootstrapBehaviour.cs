@@ -15,8 +15,9 @@ namespace PhraseLayer.Unity
     /// </summary>
     public sealed class UnityPaddleOcrBootstrapBehaviour : MonoBehaviour
     {
-#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         [SerializeField] private OcrDebugRuntimeBehaviour runtimeDriver = default(OcrDebugRuntimeBehaviour);
+
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         [SerializeField] private ModelAsset detectorModel = default(ModelAsset);
         [SerializeField] private ModelAsset recognizerModel = default(ModelAsset);
         [SerializeField] private TextAsset characterDictionary = default(TextAsset);
@@ -37,7 +38,32 @@ namespace PhraseLayer.Unity
         public string RuntimeContractReport => engine == null
             ? "PP-OCR engine not initialized; runtime model contract is unobserved."
             : engine.RuntimeContractReport;
+#else
+        public bool IsInitialized => false;
+        public IOcrEngine Engine => null;
+        public int DictionaryTokenCount => 0;
+        public string DictionaryManifestReport => UnityPaddleOcrDictionaryManifest.UnsupportedReport;
+        public string RuntimeContractReport =>
+            "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
+#endif
 
+        public OcrDebugRuntimeBehaviour RuntimeDriver => runtimeDriver;
+
+        /// <summary>
+        /// Assigns the scene runtime driver before initialization. Editor tooling uses this to build a fully wired
+        /// camera → OCR → viewport presentation vertical slice without relying on manual Inspector references.
+        /// </summary>
+        public void SetRuntimeDriver(OcrDebugRuntimeBehaviour driver)
+        {
+            if (driver == null) throw new ArgumentNullException(nameof(driver));
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            if (engine != null)
+                throw new InvalidOperationException("Cannot replace the OCR runtime driver after PP-OCR initialization.");
+#endif
+            runtimeDriver = driver;
+        }
+
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         private void Awake()
         {
             Initialize();
@@ -101,13 +127,6 @@ namespace PhraseLayer.Unity
             engine?.Dispose();
             engine = null;
         }
-#else
-        public bool IsInitialized => false;
-        public IOcrEngine Engine => null;
-        public int DictionaryTokenCount => 0;
-        public string DictionaryManifestReport => UnityPaddleOcrDictionaryManifest.UnsupportedReport;
-        public string RuntimeContractReport =>
-            "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
 #endif
     }
 }
