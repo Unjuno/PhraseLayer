@@ -50,8 +50,8 @@ SpatialRay
 ISurfaceRaycaster
         ↓
 SurfaceHit
-        ↓
-ProjectedAssistanceTarget
+        ↓ verified-hit stabilizer
+ProjectedAssistanceTarget / world label
 ```
 
 `MetaPassthroughCameraBridge` implements `IViewportRayProvider` by delegating to the real Passthrough Camera API `ViewportPointToRay` call. PhraseLayer does not reconstruct a ray from an assumed symmetric field of view and does not assume viewport center is the optical axis.
@@ -70,6 +70,21 @@ The native adapter therefore has a strict coordinate contract: the committed Rea
 
 Permission denial, unavailable native delegates, creating/not-ready native state, unsupported calls, or invocation failure all fail closed into the next fallback rather than fabricating distance. If PhraseLayer created the global native environment raycaster itself, it tracks that ownership and releases it on overlay shutdown; a raycaster that was already ready is treated as externally owned and is not destroyed by PhraseLayer.
 
+## Verified surface-hit stabilization
+
+Viewport-box stabilization alone is insufficient for a comfortable MR label: environment-depth or collider hits can move slightly even when OCR geometry is stable. `SurfaceHitStabilizer` therefore runs only after an `ISurfaceRaycaster` has produced a real hit.
+
+Its default policy is intentionally bounded:
+
+- small point and normal changes blend with a `0.35` newest-hit factor;
+- point movement over `0.20 m` is accepted immediately rather than lagged;
+- normal changes over `20°` are accepted immediately rather than blended across a different plane;
+- one consecutive raycast miss may reuse the last verified hit for an already-rendered semantic unit;
+- a second consecutive miss drops the state and returns that unit to the viewport fallback;
+- every Read encounter change resets all world-hit state.
+
+This state is keyed by semantic unit ID. It cannot create a new world placement, cannot promote Partial/Unresolved OCR coverage to Exact, and cannot carry a hit from one encounter into another. The retained miss is therefore temporal continuity for previously verified geometry, not guessed depth.
+
 ## Conservative overlay policy
 
 Physical text covering is confidence-sensitive:
@@ -80,9 +95,9 @@ Physical text covering is confidence-sensitive:
 | Partial | yes | Core permits `AdjacentLabel`; current Quest world renderer keeps partial targets on its viewport/debug path |
 | Unresolved | n/a | no new world placement |
 | Any resolved coverage | ray unavailable | viewport fallback |
-| Any resolved coverage | surface not found | viewport fallback |
+| Any resolved coverage | surface not found | viewport fallback, except the single bounded retention of a previously verified hit |
 
-The current Quest renderer suppresses its 2D GUI target only after the same semantic unit has a verified world-surface placement. A previously verified world label may retain the same world pose for the Core stabilizer's bounded two-observation OCR-dropout window; it is not reprojected from guessed depth during that gap.
+The current Quest renderer suppresses its 2D GUI target only after the same semantic unit has a verified world-surface placement. A previously verified world label may retain the same world pose for the Core viewport stabilizer's bounded two-observation OCR-dropout window. Separately, a single transient surface-raycast miss may retain the last verified `SurfaceHit`. Neither path reprojects from guessed depth.
 
 This is deliberately conservative. A translation should not be painted over the wrong physical phrase merely to maximize visible assistance.
 
@@ -91,6 +106,7 @@ This is deliberately conservative. A translation should not be painted over the 
 - Quest 3 confirmation of passthrough permission/startup and real frame capture;
 - locally staged PP-OCR execution on camera frames;
 - native environment-raycaster startup/permission behavior and hit accuracy on Quest 3;
+- tuning the world-hit smoothing thresholds from measured Quest 3 motion/latency rather than desktop assumptions;
 - world-label orientation/readability and physical text-plane fitting on device;
 - longer-term world persistence/anchor strategy if needed;
 - local OPUS-MT execution and quality/latency validation;
