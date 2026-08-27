@@ -41,6 +41,7 @@ namespace PhraseLayer.Unity
         private readonly FieldInfo raycasterStatusField;
         private readonly FieldInfo raycastEnvironmentField;
 
+        private bool creationRequested;
         private bool ownsEnvironmentRaycaster;
         private bool disposed;
 
@@ -157,6 +158,7 @@ namespace PhraseLayer.Unity
                 }
             }
 
+            creationRequested = false;
             ownsEnvironmentRaycaster = false;
         }
 
@@ -183,8 +185,11 @@ namespace PhraseLayer.Unity
             if (statusValue == RaycasterReady)
                 return true;
             if (statusValue == RaycasterCreating)
+            {
+                creationRequested = true;
                 return false;
-            if (statusValue != RaycasterStopped)
+            }
+            if (statusValue != RaycasterStopped || creationRequested)
                 return false;
 
             var create = GetDelegate(createRaycasterField);
@@ -196,6 +201,7 @@ namespace PhraseLayer.Unity
                 var result = create.DynamicInvoke();
                 if (ToInt32(result) != ResultSuccess)
                     return false;
+                creationRequested = true;
                 ownsEnvironmentRaycaster = true;
                 // Creation is asynchronous. A later observation will see Ready and perform the real raycast.
                 return false;
