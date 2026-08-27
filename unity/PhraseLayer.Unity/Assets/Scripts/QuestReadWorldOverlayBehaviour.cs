@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using PhraseLayer.Core.Pipeline;
 using PhraseLayer.Core.Spatial;
 using UnityEngine;
@@ -116,7 +117,7 @@ namespace PhraseLayer.Unity
 
                 var label = GetOrCreateLabel(unit.Id);
                 ApplyWorldPlacement(label, target.Segment.DisplayText, projected.Surface.Value);
-                label.gameObject.SetActive(true);
+                SetGameObjectActive(label.gameObject, true);
                 renderedUnitIds.Add(unit.Id);
             }
 
@@ -144,19 +145,22 @@ namespace PhraseLayer.Unity
 
         private void ApplyWorldPlacement(TextMesh label, string displayText, SurfaceHit surface)
         {
-            var normal = ToUnity(surface.Normal).normalized;
+            var normal = Normalize(ToUnity(surface.Normal));
             var point = ToUnity(surface.Point);
-            var offset = Math.Max(0.0, surfaceOffsetMeters);
-            var characterSize = Math.Max(0.001, characterSizeMeters);
+            var offset = (float)Math.Max(0.0, surfaceOffsetMeters);
+            var characterSize = (float)Math.Max(0.001, characterSizeMeters);
 
             label.text = displayText;
             label.fontSize = Math.Max(1, fontSize);
-            label.characterSize = (float)characterSize;
-            label.transform.position = point + (normal * (float)offset);
+            label.characterSize = characterSize;
+            label.transform.localPosition = new Vector3(
+                point.x + (normal.x * offset),
+                point.y + (normal.y * offset),
+                point.z + (normal.z * offset));
 
             // Unity TextMesh faces local -Z in the standard orientation. Align that front face with the outward
             // surface normal so text is readable from the same side of the surface that the camera ray reached.
-            label.transform.rotation = Quaternion.LookRotation(-normal, Vector3.up);
+            label.transform.localRotation = BuildSurfaceRotation(normal);
         }
 
         private void HideAllLabels()
@@ -164,7 +168,7 @@ namespace PhraseLayer.Unity
             foreach (var pair in labels)
             {
                 if (pair.Value != null && pair.Value.gameObject != null)
-                    pair.Value.gameObject.SetActive(false);
+                    SetGameObjectActive(pair.Value.gameObject, false);
             }
             renderedUnitIds.Clear();
         }
@@ -181,6 +185,48 @@ namespace PhraseLayer.Unity
                 throw new InvalidOperationException("Assign QuestReadAssistanceDebugBehaviour to QuestReadWorldOverlayBehaviour.");
             if (cameraBridge == null)
                 throw new InvalidOperationException("Assign MetaPassthroughCameraBridge to QuestReadWorldOverlayBehaviour.");
+        }
+
+        private static Quaternion BuildSurfaceRotation(Vector3 normal)
+        {
+            var method = typeof(Quaternion).GetMethod(
+                "LookRotation",
+                BindingFlags.Static | BindingFlags.Public,
+                null,
+                new[] { typeof(Vector3), typeof(Vector3) },
+                null);
+            if (method == null)
+                throw new MissingMethodException(typeof(Quaternion).FullName, "LookRotation(Vector3, Vector3)");
+
+            var forward = new Vector3(-normal.x, -normal.y, -normal.z);
+            var value = method.Invoke(null, new object[] { forward, new Vector3(0f, 1f, 0f) });
+            if (value is Quaternion rotation)
+                return rotation;
+            throw new InvalidOperationException("Quaternion.LookRotation did not return a Quaternion.");
+        }
+
+        private static void SetGameObjectActive(GameObject gameObject, bool active)
+        {
+            var method = typeof(GameObject).GetMethod(
+                "SetActive",
+                BindingFlags.Instance | BindingFlags.Public,
+                null,
+                new[] { typeof(bool) },
+                null);
+            if (method == null)
+                throw new MissingMethodException(typeof(GameObject).FullName, "SetActive(bool)");
+            method.Invoke(gameObject, new object[] { active });
+        }
+
+        private static Vector3 Normalize(Vector3 value)
+        {
+            var magnitude = Math.Sqrt((value.x * value.x) + (value.y * value.y) + (value.z * value.z));
+            if (magnitude <= 0.0)
+                throw new InvalidOperationException("Projected surface normal must be non-zero.");
+            return new Vector3(
+                (float)(value.x / magnitude),
+                (float)(value.y / magnitude),
+                (float)(value.z / magnitude));
         }
 
         private static Vector3 ToUnity(SpatialVector3 value)
