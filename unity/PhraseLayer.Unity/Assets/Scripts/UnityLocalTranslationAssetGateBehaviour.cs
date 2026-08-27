@@ -7,9 +7,9 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Scene-wiring gate for local translation assets. It validates the locally staged model/support files and,
-    /// when requested by the runtime bootstrap, verifies the generated managed-tokenizer/fixture TextAssets
-    /// against the SHA-256 values recorded in the local staging manifest. No remote fallback exists.
+    /// Scene/runtime wiring gate for local translation assets. It validates the locally staged model/support files and,
+    /// when requested by the runtime bootstrap, verifies the generated managed-tokenizer/fixture TextAssets against
+    /// the SHA-256 values recorded in the local staging manifest. No remote fallback exists.
     /// </summary>
     public sealed class UnityLocalTranslationAssetGateBehaviour : MonoBehaviour
     {
@@ -19,6 +19,17 @@ namespace PhraseLayer.Unity
 
         public string LastReport => lastReport;
         public bool HasManifest => stagingManifest != null;
+
+        /// <summary>
+        /// Configures a runtime-created gate before its inactive owner is activated. Reconfiguration is explicit and
+        /// local; no asset discovery or network access occurs here.
+        /// </summary>
+        public void Configure(TextAsset configuredStagingManifest, bool configuredValidateOnAwake)
+        {
+            stagingManifest = configuredStagingManifest ?? throw new ArgumentNullException(nameof(configuredStagingManifest));
+            validateOnAwake = configuredValidateOnAwake;
+            lastReport = string.Empty;
+        }
 
         public LocalTranslationRuntimeSet ValidateAssets()
         {
