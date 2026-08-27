@@ -55,8 +55,11 @@ require(
         "sealed class ViewportEnvelopeStabilizerOptions",
         "BlendFactor = 0.35",
         "ResetCenterDistance = 0.10",
+        "MaxMissingObservations = 2",
         "sealed class ViewportEnvelopeStabilizer",
         "centerDistance > options.ResetCenterDistance",
+        "bool TryHoldMissing",
+        "state.MissingObservations > options.MaxMissingObservations",
         "states.Clear()",
     ),
     "Core viewport overlay stabilization",
@@ -79,8 +82,11 @@ require(
         "ReadEncounterPipeline pipeline",
         "ITranslationEngine configuredTranslationEngine",
         "ViewportEnvelopeStabilizer overlayStabilizer",
+        "overlayMaxMissingObservations = 2",
         "UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result)",
-        "stabilizedEnvelopes.TryGetValue(target.Segment.Unit.Id",
+        "overlayStabilizer.TryHoldMissing(key, out var heldEnvelope)",
+        "stabilizedEnvelopes.TryGetValue(unit.Id, out var stabilized)",
+        "isRetainedDropout",
         "ResetOverlayStability();",
         "ConfigureTranslationEngine(ITranslationEngine engine)",
         "pipeline.Reset();",
@@ -207,6 +213,8 @@ require(
         "FirstObservationIsAcceptedWithoutLag",
         "SmallOcrJitterIsExponentiallySmoothed",
         "LargeViewportMotionResetsImmediately",
+        "MissingObservationIsHeldOnlyForConfiguredBudget",
+        "FreshObservationResetsMissingBudget",
         "TargetsHaveIndependentStateAndResetClearsEncounterGeometry",
         "InvalidOptionsFailClosed",
     ),
@@ -218,8 +226,8 @@ if violations:
 
 print(
     "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; language plans are frozen "
-    "per encounter; small OCR viewport jitter is stabilized without delaying large motion; the committed camera starts "
-    "at XR origin and receives Unity XR head pose; the deterministic local Read scene wires camera/OCR/learner/assistance; "
-    "local OPUS-MT is injected only after staged asset/tokenizer/model validation; and stale/noisy frames cannot flicker "
-    "the overlay"
+    "per encounter; small OCR viewport jitter is stabilized without delaying large motion, brief per-target OCR dropouts "
+    "are retained only for a bounded observation budget; the committed camera starts at XR origin and receives Unity XR "
+    "head pose; the deterministic local Read scene wires camera/OCR/learner/assistance; local OPUS-MT is injected only "
+    "after staged asset/tokenizer/model validation; and stale/noisy frames cannot flicker the overlay"
 )
