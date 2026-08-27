@@ -83,6 +83,10 @@ require(
         "ITranslationEngine configuredTranslationEngine",
         "ViewportEnvelopeStabilizer overlayStabilizer",
         "overlayMaxMissingObservations = 2",
+        "event Action<ReadModeSpatialResult> ResultPresented",
+        "bool TryGetRenderableEnvelope",
+        "void SetWorldRenderedTargets",
+        "worldRenderedUnitIds.Contains(unit.Id)",
         "UpdateStabilizedEnvelopes(encounter.Decision.EncounterId, result)",
         "overlayStabilizer.TryHoldMissing(key, out var heldEnvelope)",
         "stabilizedEnvelopes.TryGetValue(unit.Id, out stabilized)",
@@ -107,6 +111,34 @@ require(
 )
 
 require(
+    SCRIPTS / "UnityPhysicsSurfaceRaycaster.cs",
+    (
+        "sealed class UnityPhysicsSurfaceRaycaster : ISurfaceRaycaster",
+        "Physics.Raycast(",
+        "QueryTriggerInteraction.Ignore",
+        "new SurfaceHit(",
+        "hit = default(SurfaceHit)",
+    ),
+    "Unity collider-backed surface projection",
+)
+
+require(
+    SCRIPTS / "QuestReadWorldOverlayBehaviour.cs",
+    (
+        "sealed class QuestReadWorldOverlayBehaviour",
+        "new SpatialProjectionPlanner(cameraBridge, raycaster)",
+        "target.Coverage != SpatialAssistanceCoverage.Exact",
+        "readAssistance.TryGetRenderableEnvelope(target, out var envelope)",
+        "!projected.CanRenderInWorld",
+        "GetOrCreateLabel(unit.Id)",
+        "readAssistance.SetWorldRenderedTargets(renderedUnitIds)",
+        "surface-misses",
+        "never assumes a fixed depth",
+    ),
+    "Quest Read conservative world overlay",
+)
+
+require(
     SCRIPTS / "UnityXrHeadPoseBehaviour.cs",
     (
         "InputDevices.GetDeviceAtXRNode(XRNode.Head)",
@@ -126,8 +158,11 @@ require(
         "camera.transform.localPosition = Vector3.zero",
         "camera.transform.localRotation = Quaternion.identity",
         "camera.gameObject.AddComponent<UnityXrHeadPoseBehaviour>()",
+        "root.AddComponent<QuestReadWorldOverlayBehaviour>()",
+        'AssignReference(worldOverlay, "readAssistance", readAssistance)',
+        'AssignReference(worldOverlay, "cameraBridge", cameraBridge)',
     ),
-    "Committed Read MVP runtime installer head tracking",
+    "Committed Read MVP runtime installer head tracking/world overlay",
 )
 
 require(
@@ -150,11 +185,14 @@ require(
         "root.AddComponent<UnityPaddleOcrBootstrapBehaviour>()",
         "root.AddComponent<UnityLearnerProfileBehaviour>()",
         "root.AddComponent<QuestReadAssistanceDebugBehaviour>()",
+        "root.AddComponent<QuestReadWorldOverlayBehaviour>()",
         'AssignReference(runtimeDriver, "cameraBridge", cameraBridge)',
         'AssignReference(runtimeDriver, "presenter", presenter)',
         'AssignReference(ocrBootstrap, "runtimeDriver", runtimeDriver)',
         'AssignReference(readAssistance, "ocrPresenter", presenter)',
         'AssignReference(readAssistance, "learnerProfile", learnerProfile)',
+        'AssignReference(worldOverlay, "readAssistance", readAssistance)',
+        'AssignReference(worldOverlay, "cameraBridge", cameraBridge)',
         "EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) }",
         "PhraseLayerLocalOcrAssets.AssignLocalAssetsToSceneBootstrap()",
         "TryWireLocalTranslation(root, readAssistance)",
@@ -227,7 +265,8 @@ if violations:
 print(
     "PASS: OCR observation/frame pairs feed one downstream semantic/spatial Read pipeline; language plans are frozen "
     "per encounter; small OCR viewport jitter is stabilized without delaying large motion, brief per-target OCR dropouts "
-    "are retained only for a bounded observation budget; the committed camera starts at XR origin and receives Unity XR "
-    "head pose; the deterministic local Read scene wires camera/OCR/learner/assistance; local OPUS-MT is injected only "
-    "after staged asset/tokenizer/model validation; and stale/noisy frames cannot flicker the overlay"
+    "are retained only for a bounded observation budget; exact targets can project through the Meta camera ray into a "
+    "real collider-backed world surface while misses remain on the viewport fallback; the committed camera starts at XR "
+    "origin and receives Unity XR head pose; local Read scene wiring remains deterministic; local OPUS-MT is injected "
+    "only after staged asset/tokenizer/model validation; and stale/noisy frames cannot flicker the overlay"
 )
