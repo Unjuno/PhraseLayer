@@ -45,7 +45,7 @@ namespace PhraseLayer.Unity
             if (!IsConfigured)
                 throw new InvalidOperationException("Cannot configure local translation from an incomplete runtime config.");
 
-            assetGate.Configure(stagingManifest, validateOnAwake: true);
+            assetGate.Configure(stagingManifest, true);
             bootstrap.Configure(
                 assetGate,
                 readAssistance,
@@ -53,7 +53,7 @@ namespace PhraseLayer.Unity
                 tokenizerFixtureManifest,
                 encoderModel,
                 decoderModel,
-                initializeOnAwake: true);
+                true);
         }
 #else
         public bool IsConfigured => false;
