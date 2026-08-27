@@ -29,6 +29,25 @@ namespace PhraseLayer.Unity
         public Exception LastError => lastError;
         public OcrPumpResult LastResult => lastResult;
         public float TargetOcrHz => targetOcrHz;
+        public MetaPassthroughCameraBridge CameraBridge => cameraBridge;
+        public OcrViewportDebugBehaviour Presenter => presenter;
+
+        /// <summary>
+        /// Assigns scene-level camera and presentation dependencies before an OCR engine is configured.
+        /// This is used by the Editor scene builder so the Quest OCR vertical slice is reproducible instead of Inspector-only wiring.
+        /// </summary>
+        public void SetSceneReferences(
+            MetaPassthroughCameraBridge camera,
+            OcrViewportDebugBehaviour observationPresenter)
+        {
+            if (camera == null) throw new ArgumentNullException(nameof(camera));
+            if (observationPresenter == null) throw new ArgumentNullException(nameof(observationPresenter));
+            if (pump != null)
+                throw new InvalidOperationException("Cannot replace OCR scene references after an OCR engine has been configured.");
+
+            cameraBridge = camera;
+            presenter = observationPresenter;
+        }
 
         public void ConfigureBackend(IUnityTextureOcrBackend backend)
         {
