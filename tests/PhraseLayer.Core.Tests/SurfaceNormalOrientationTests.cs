@@ -1,5 +1,6 @@
 using System;
 using PhraseLayer.Core.Inputs;
+using PhraseLayer.Core.Pipeline;
 using PhraseLayer.Core.Semantics;
 using PhraseLayer.Core.Spatial;
 using Xunit;
