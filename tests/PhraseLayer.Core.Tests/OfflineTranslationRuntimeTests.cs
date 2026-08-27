@@ -261,13 +261,13 @@ namespace PhraseLayer.Core.Tests
 
             public FakeSentencePieceProcessor(
                 IReadOnlyList<string> encodedPieces,
-                IReadOnlyDictionary<int, string> fallbackPieces = null)
+                IReadOnlyDictionary<int, string>? fallbackPieces = null)
             {
                 this.encodedPieces = encodedPieces;
                 this.fallbackPieces = fallbackPieces ?? new Dictionary<int, string>();
             }
 
-            public IReadOnlyList<string> LastDecodedPieces { get; private set; }
+            public IReadOnlyList<string> LastDecodedPieces { get; private set; } = null!;
 
             public IReadOnlyList<string> EncodePieces(string text)
             {
@@ -280,7 +280,7 @@ namespace PhraseLayer.Core.Tests
                 return string.Concat(pieces).Replace("▁", " ").Trim();
             }
 
-            public bool TryGetPiece(int sentencePieceId, out string piece)
+            public bool TryGetPiece(int sentencePieceId, out string? piece)
             {
                 return fallbackPieces.TryGetValue(sentencePieceId, out piece);
             }
@@ -295,7 +295,7 @@ namespace PhraseLayer.Core.Tests
                 this.decoded = decoded;
             }
 
-            public string LastSourceText { get; private set; }
+            public string LastSourceText { get; private set; } = null!;
             public int LastMaximumTokens { get; private set; }
 
             public TranslationTokenSequence EncodeSource(string sourceText, int maximumTokens)
@@ -320,8 +320,8 @@ namespace PhraseLayer.Core.Tests
                 this.result = result;
             }
 
-            public IReadOnlyList<int> LastSourceTokenIds { get; private set; }
-            public TranslationGenerationOptions LastOptions { get; private set; }
+            public IReadOnlyList<int> LastSourceTokenIds { get; private set; } = null!;
+            public TranslationGenerationOptions LastOptions { get; private set; } = null!;
 
             public Task<TranslationGenerationResult> GenerateAsync(
                 IReadOnlyList<int> sourceTokenIds,
@@ -345,7 +345,7 @@ namespace PhraseLayer.Core.Tests
             }
 
             public int CallCount { get; private set; }
-            public OfflineTranslationRequest LastRequest { get; private set; }
+            public OfflineTranslationRequest LastRequest { get; private set; } = null!;
 
             public Task<OfflineTranslationResult> TranslateAsync(
                 OfflineTranslationRequest request,
