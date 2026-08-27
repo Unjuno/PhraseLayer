@@ -8,8 +8,10 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Projects exact Read assistance targets from stabilized OCR viewport geometry onto real Unity collider-backed
-    /// surfaces. Targets that cannot be projected remain available to the existing viewport GUI fallback.
+    /// Projects exact Read assistance targets from stabilized OCR viewport geometry onto physical surfaces.
+    /// Meta Environment Depth is preferred when Spatial Data permission and device support are available; ordinary
+    /// Unity collider geometry is the secondary surface source. Targets that cannot be projected remain available to
+    /// the existing viewport GUI fallback.
     ///
     /// This component is intentionally conservative: it never assumes a fixed depth and never turns an unresolved
     /// OCR target into a new world-space replacement. A target that was already placed on a verified surface may keep
@@ -27,8 +29,13 @@ namespace PhraseLayer.Unity
 
         private readonly Dictionary<string, TextMesh> labels = new Dictionary<string, TextMesh>(StringComparer.Ordinal);
         private readonly HashSet<string> renderedUnitIds = new HashSet<string>(StringComparer.Ordinal);
-        private UnityPhysicsSurfaceRaycaster raycaster;
+        private ISurfaceRaycaster raycaster;
+        private QuestSurfaceRaycaster questRaycaster;
         private string status = "Waiting for projected Read assistance.";
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private UnityEngine.Android.PermissionCallbacks spatialPermissionCallbacks;
+        private bool spatialPermissionRequested;
+#endif
 
         public int WorldRenderedCount => renderedUnitIds.Count;
         public string Status => status;
@@ -47,6 +54,7 @@ namespace PhraseLayer.Unity
         {
             if (readAssistance != null)
                 readAssistance.ResultPresented -= HandleResultPresented;
+            DetachSpatialPermissionCallbacks();
             HideAllLabels();
             if (readAssistance != null)
                 readAssistance.SetWorldRenderedTargets(Array.Empty<string>());
@@ -56,6 +64,7 @@ namespace PhraseLayer.Unity
         {
             if (readAssistance != null)
                 readAssistance.ResultPresented -= HandleResultPresented;
+            DetachSpatialPermissionCallbacks();
 
             foreach (var pair in labels)
             {
@@ -80,6 +89,7 @@ namespace PhraseLayer.Unity
         {
             if (raycaster == null)
                 RebuildRaycaster();
+            EnsureSpatialPermissionRequested();
 
             var previouslyRendered = new HashSet<string>(renderedUnitIds, StringComparer.Ordinal);
             HideAllLabels();
@@ -142,11 +152,12 @@ namespace PhraseLayer.Unity
 
             readAssistance.SetWorldRenderedTargets(renderedUnitIds);
             status = string.Format(
-                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}.",
+                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}, depth-api={4}.",
                 exactCandidates,
                 renderedUnitIds.Count,
                 retainedDropouts,
-                surfaceMisses);
+                surfaceMisses,
+                questRaycaster != null && questRaycaster.HasEnvironmentDepthApi);
         }
 
         private TextMesh GetOrCreateLabel(string unitId)
@@ -196,8 +207,65 @@ namespace PhraseLayer.Unity
         private void RebuildRaycaster()
         {
             var maxDistance = maxSurfaceDistanceMeters > 0f ? maxSurfaceDistanceMeters : 0.01f;
-            raycaster = new UnityPhysicsSurfaceRaycaster(maxDistance, surfaceLayerMask);
+            questRaycaster = new QuestSurfaceRaycaster(gameObject, maxDistance, surfaceLayerMask);
+            raycaster = questRaycaster;
         }
+
+        private void EnsureSpatialPermissionRequested()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (questRaycaster == null || !questRaycaster.HasEnvironmentDepthApi)
+                return;
+            if (UnityEngine.Android.Permission.HasUserAuthorizedPermission(MetaEnvironmentDepthSurfaceRaycaster.ScenePermission))
+                return;
+            if (spatialPermissionRequested)
+                return;
+
+            spatialPermissionRequested = true;
+            spatialPermissionCallbacks = new UnityEngine.Android.PermissionCallbacks();
+            spatialPermissionCallbacks.PermissionGranted += HandleSpatialPermissionGranted;
+            spatialPermissionCallbacks.PermissionDenied += HandleSpatialPermissionDenied;
+            UnityEngine.Android.Permission.RequestUserPermissions(
+                new[] { MetaEnvironmentDepthSurfaceRaycaster.ScenePermission },
+                spatialPermissionCallbacks);
+#endif
+        }
+
+        private void DetachSpatialPermissionCallbacks()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (spatialPermissionCallbacks == null)
+                return;
+            spatialPermissionCallbacks.PermissionGranted -= HandleSpatialPermissionGranted;
+            spatialPermissionCallbacks.PermissionDenied -= HandleSpatialPermissionDenied;
+            spatialPermissionCallbacks = null;
+#endif
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private void HandleSpatialPermissionGranted(string permission)
+        {
+            if (!string.Equals(permission, MetaEnvironmentDepthSurfaceRaycaster.ScenePermission, StringComparison.Ordinal))
+                return;
+
+            RebuildRaycaster();
+            status = "Spatial Data permission granted; Environment Depth placement enabled when supported.";
+            if (lastResultAvailable())
+                Refresh(readAssistance.LastResult);
+        }
+
+        private void HandleSpatialPermissionDenied(string permission)
+        {
+            if (!string.Equals(permission, MetaEnvironmentDepthSurfaceRaycaster.ScenePermission, StringComparison.Ordinal))
+                return;
+            status = "Spatial Data permission denied; using collider/viewport fallback.";
+        }
+
+        private bool lastResultAvailable()
+        {
+            return readAssistance != null && readAssistance.LastResult != null;
+        }
+#endif
 
         private void EnsureReferences()
         {
