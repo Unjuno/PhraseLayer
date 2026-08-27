@@ -16,6 +16,7 @@ namespace PhraseLayer.Unity
 
         [SerializeField, TextArea(2, 5)] private string sourceText = DefaultSource;
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
+        [SerializeField] private UnityLiveReadModeBehaviour liveReadMode = default(UnityLiveReadModeBehaviour);
 
         private InMemoryLearnerModel learner;
         private LanguagePipeline pipeline;
@@ -28,6 +29,7 @@ namespace PhraseLayer.Unity
         public string SourceText => sourceText;
         public string DisplayText => currentPlan != null ? currentPlan.DisplayText : sourceText;
         public MixedLanguagePlan CurrentPlan => currentPlan;
+        public LanguagePipeline Pipeline => pipeline;
 
         private async void Start()
         {
@@ -35,9 +37,18 @@ namespace PhraseLayer.Unity
             await ReplanAsync();
         }
 
+        public void SetLiveReadMode(UnityLiveReadModeBehaviour liveRuntime)
+        {
+            liveReadMode = liveRuntime ?? throw new ArgumentNullException(nameof(liveRuntime));
+            liveReadMode.SetAssistanceMode(assistanceMode);
+            if (pipeline != null)
+                liveReadMode.ConfigureLanguagePipeline(pipeline);
+        }
+
         public async Task ReplanAsync()
         {
             if (pipeline == null) BuildPipeline();
+            liveReadMode?.SetAssistanceMode(assistanceMode);
             status = "Planning...";
             try
             {
@@ -148,6 +159,12 @@ namespace PhraseLayer.Unity
                 learner,
                 new AssistancePlanner(),
                 new DictionaryTranslationEngine(translations));
+
+            if (liveReadMode != null)
+            {
+                liveReadMode.SetAssistanceMode(assistanceMode);
+                liveReadMode.ConfigureLanguagePipeline(pipeline);
+            }
         }
 
         private void ConfigureLearner(DemoLearnerProfile profile)
@@ -234,6 +251,7 @@ namespace PhraseLayer.Unity
                 if (GUILayout.Button(mode.ToString(), GUILayout.Height(32)))
                 {
                     assistanceMode = mode;
+                    liveReadMode?.SetAssistanceMode(mode);
                     _ = ReplanAsync();
                 }
             }
