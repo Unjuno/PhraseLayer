@@ -42,6 +42,7 @@ jobs:
       - run: python tools/validate_local_ocr_asset_staging.py
       - run: python tools/validate_quest_ocr_smoke_harness.py
       - run: python tools/validate_read_vertical_slice.py
+      - run: python tools/validate_world_surface_stack.py
       - run: python tools/validate_translation_model_candidate.py
       - run: python tools/validate_translation_export_probe.py
       - run: python tools/validate_local_translation_asset_staging.py
