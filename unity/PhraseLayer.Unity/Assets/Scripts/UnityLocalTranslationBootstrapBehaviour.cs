@@ -33,12 +33,45 @@ namespace PhraseLayer.Unity
 
         public bool IsSupported => true;
         public bool IsInitialized => configuredEngine != null;
+        public bool HasConfiguredAssets =>
+            assetGate != null &&
+            readAssistance != null &&
+            managedTokenizerManifest != null &&
+            tokenizerFixtureManifest != null &&
+            encoderModel != null &&
+            decoderModel != null;
         public string LastReport => lastReport;
 
         private void Awake()
         {
             if (!initializeOnAwake) return;
             InitializeLocalTranslation();
+        }
+
+        /// <summary>
+        /// Configures a runtime-created bootstrap before its inactive owner is activated. Reconfiguration after the
+        /// local engine has been created is rejected so one bootstrap cannot silently change model/tokenizer identity.
+        /// </summary>
+        public void Configure(
+            UnityLocalTranslationAssetGateBehaviour configuredAssetGate,
+            QuestReadAssistanceDebugBehaviour configuredReadAssistance,
+            TextAsset configuredManagedTokenizerManifest,
+            TextAsset configuredTokenizerFixtureManifest,
+            ModelAsset configuredEncoderModel,
+            ModelAsset configuredDecoderModel,
+            bool configuredInitializeOnAwake)
+        {
+            if (configuredEngine != null || ownedBackend != null)
+                throw new InvalidOperationException("Cannot reconfigure local translation after the engine has initialized.");
+
+            assetGate = configuredAssetGate ?? throw new ArgumentNullException(nameof(configuredAssetGate));
+            readAssistance = configuredReadAssistance ?? throw new ArgumentNullException(nameof(configuredReadAssistance));
+            managedTokenizerManifest = configuredManagedTokenizerManifest ?? throw new ArgumentNullException(nameof(configuredManagedTokenizerManifest));
+            tokenizerFixtureManifest = configuredTokenizerFixtureManifest ?? throw new ArgumentNullException(nameof(configuredTokenizerFixtureManifest));
+            encoderModel = configuredEncoderModel ?? throw new ArgumentNullException(nameof(configuredEncoderModel));
+            decoderModel = configuredDecoderModel ?? throw new ArgumentNullException(nameof(configuredDecoderModel));
+            initializeOnAwake = configuredInitializeOnAwake;
+            lastReport = string.Empty;
         }
 
         public string InitializeLocalTranslation()
@@ -113,6 +146,7 @@ namespace PhraseLayer.Unity
 
         public bool IsSupported => false;
         public bool IsInitialized => false;
+        public bool HasConfiguredAssets => false;
         public string LastReport => lastReport;
 
         public string InitializeLocalTranslation()
