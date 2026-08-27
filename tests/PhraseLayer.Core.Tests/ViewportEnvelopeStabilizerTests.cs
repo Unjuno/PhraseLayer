@@ -59,6 +59,40 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void MissingObservationIsHeldOnlyForConfiguredBudget()
+        {
+            var stabilizer = new ViewportEnvelopeStabilizer(new ViewportEnvelopeStabilizerOptions
+            {
+                MaxMissingObservations = 2,
+            });
+            var observed = new ViewportEnvelope(0.10, 0.20, 0.30, 0.40);
+            stabilizer.Stabilize("unit-1", observed);
+
+            Assert.True(stabilizer.TryHoldMissing("unit-1", out var firstHold));
+            Assert.True(stabilizer.TryHoldMissing("unit-1", out var secondHold));
+            Assert.False(stabilizer.TryHoldMissing("unit-1", out _));
+            Assert.Equal(observed.MinU, firstHold.MinU);
+            Assert.Equal(observed.MaxV, secondHold.MaxV);
+            Assert.Equal(0, stabilizer.Count);
+        }
+
+        [Fact]
+        public void FreshObservationResetsMissingBudget()
+        {
+            var stabilizer = new ViewportEnvelopeStabilizer(new ViewportEnvelopeStabilizerOptions
+            {
+                MaxMissingObservations = 1,
+            });
+
+            stabilizer.Stabilize("unit-1", new ViewportEnvelope(0.10, 0.20, 0.30, 0.40));
+            Assert.True(stabilizer.TryHoldMissing("unit-1", out _));
+
+            stabilizer.Stabilize("unit-1", new ViewportEnvelope(0.11, 0.21, 0.31, 0.41));
+
+            Assert.True(stabilizer.TryHoldMissing("unit-1", out _));
+        }
+
+        [Fact]
         public void TargetsHaveIndependentStateAndResetClearsEncounterGeometry()
         {
             var stabilizer = new ViewportEnvelopeStabilizer();
@@ -84,6 +118,8 @@ namespace PhraseLayer.Core.Tests
                 new ViewportEnvelopeStabilizerOptions { BlendFactor = 0.0 }));
             Assert.Throws<ArgumentOutOfRangeException>(() => new ViewportEnvelopeStabilizer(
                 new ViewportEnvelopeStabilizerOptions { ResetCenterDistance = -0.01 }));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ViewportEnvelopeStabilizer(
+                new ViewportEnvelopeStabilizerOptions { MaxMissingObservations = -1 }));
         }
     }
 }
