@@ -8,6 +8,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 UNITY = ROOT / "unity" / "PhraseLayer.Unity"
 HOOK = UNITY / "Assets" / "Editor" / "PhraseLayerCloudBuildVerification.cs"
+QUEST_GUARD = UNITY / "Assets" / "Editor" / "PhraseLayerQuestMrBuildGuard.cs"
 EDITOR_VERIFY = UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs"
 EDITOR_SETUP = UNITY / "Assets" / "Editor" / "PhraseLayerEditorSetup.cs"
 EDITOR_ASMDEF = UNITY / "Assets" / "Editor" / "PhraseLayer.Unity.Editor.asmdef"
@@ -36,7 +37,7 @@ def require(condition: bool, message: str, errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    for path in (HOOK, EDITOR_VERIFY, EDITOR_SETUP, EDITOR_ASMDEF, PROJECT_VERSION, MANIFEST, DOC):
+    for path in (HOOK, QUEST_GUARD, EDITOR_VERIFY, EDITOR_SETUP, EDITOR_ASMDEF, PROJECT_VERSION, MANIFEST, DOC):
         require(path.exists(), f"missing required UBA file: {path.relative_to(ROOT)}", errors)
     if errors:
         for error in errors:
@@ -44,6 +45,7 @@ def main() -> int:
         return 1
 
     hook = HOOK.read_text(encoding="utf-8")
+    quest_guard = QUEST_GUARD.read_text(encoding="utf-8")
     verify = EDITOR_VERIFY.read_text(encoding="utf-8")
     setup = EDITOR_SETUP.read_text(encoding="utf-8")
     editor_asmdef = json.loads(EDITOR_ASMDEF.read_text(encoding="utf-8"))
@@ -58,9 +60,27 @@ def main() -> int:
         ("PhraseLayerEditorVerification.VerifyCorePipeline();", "UBA gate must execute Unity verification"),
         ("PhraseLayerEditorSetup.CreateDemoScene();", "UBA PreExport must recover from no enabled build scene"),
         ("EnsureEnabledBuildSceneOrFail();", "player-build gate must fail closed when scene preparation did not occur"),
-        ("callbackOrder => -9000", "UBA gate ordering must follow the local-only guard"),
+        ("callbackOrder => -9000", "wider UBA gate ordering must remain after local-only and Quest/MR guards"),
     ):
         require(marker in hook, message, errors)
+
+    require(
+        hook.count("PhraseLayerQuestMrBuildGuard.VerifyQuestMrContract();") >= 2,
+        "Quest/MR contract must run both from UBA PreExport and immediately before Android player build",
+        errors,
+    )
+    require(
+        "callbackOrder => -9500" in quest_guard,
+        "Quest/MR build guard must run after local-only (-10000) and before wider UBA gate (-9000)",
+        errors,
+    )
+    for marker, message in (
+        ("MetaXRFeature Android", "Quest/MR guard must verify the Android Meta XR Feature"),
+        ("XR_META_environment_raycast", "Quest/MR guard must verify the environment-raycast OpenXR extension"),
+        ("com.oculus.permission.USE_SCENE", "Quest/MR guard must verify local Spatial Data permission"),
+        ("MRUKNativeFuncs", "Quest/MR guard must verify IL2CPP preservation for the native MRUK boundary"),
+    ):
+        require(marker in quest_guard, message, errors)
 
     require("VerifyCorePipeline" in verify, "editor verification entry point missing", errors)
     require("EditorBuildSettings.scenes" in setup, "editor setup must configure build scenes", errors)
