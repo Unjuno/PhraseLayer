@@ -9,9 +9,9 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Projects exact Read assistance targets from stabilized OCR viewport geometry onto physical surfaces.
-    /// Meta Environment Depth is preferred when Spatial Data permission and device support are available; ordinary
-    /// Unity collider geometry is the secondary surface source. Targets that cannot be projected remain available to
-    /// the existing viewport GUI fallback.
+    /// Meta's native environment raycaster is preferred when Spatial Data permission and device support are available;
+    /// ordinary Unity collider geometry is the secondary surface source. Targets that cannot be projected remain
+    /// available to the existing viewport GUI fallback.
     ///
     /// This component is intentionally conservative: it never assumes a fixed depth and never turns an unresolved
     /// OCR target into a new world-space replacement. A target that was already placed on a verified surface may keep
@@ -55,6 +55,7 @@ namespace PhraseLayer.Unity
             if (readAssistance != null)
                 readAssistance.ResultPresented -= HandleResultPresented;
             DetachSpatialPermissionCallbacks();
+            DisposeRaycaster();
             HideAllLabels();
             if (readAssistance != null)
                 readAssistance.SetWorldRenderedTargets(Array.Empty<string>());
@@ -65,6 +66,7 @@ namespace PhraseLayer.Unity
             if (readAssistance != null)
                 readAssistance.ResultPresented -= HandleResultPresented;
             DetachSpatialPermissionCallbacks();
+            DisposeRaycaster();
 
             foreach (var pair in labels)
             {
@@ -152,7 +154,7 @@ namespace PhraseLayer.Unity
 
             readAssistance.SetWorldRenderedTargets(renderedUnitIds);
             status = string.Format(
-                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}, depth-api={4}.",
+                "World overlay: candidates={0}, rendered={1}, retained-dropouts={2}, surface-misses={3}, environment-api={4}.",
                 exactCandidates,
                 renderedUnitIds.Count,
                 retainedDropouts,
@@ -206,9 +208,18 @@ namespace PhraseLayer.Unity
 
         private void RebuildRaycaster()
         {
+            DisposeRaycaster();
             var maxDistance = maxSurfaceDistanceMeters > 0f ? maxSurfaceDistanceMeters : 0.01f;
             questRaycaster = new QuestSurfaceRaycaster(gameObject, maxDistance, surfaceLayerMask);
             raycaster = questRaycaster;
+        }
+
+        private void DisposeRaycaster()
+        {
+            if (questRaycaster != null)
+                questRaycaster.Dispose();
+            questRaycaster = null;
+            raycaster = null;
         }
 
         private void EnsureSpatialPermissionRequested()
@@ -249,8 +260,8 @@ namespace PhraseLayer.Unity
                 return;
 
             RebuildRaycaster();
-            status = "Spatial Data permission granted; Environment Depth placement enabled when supported.";
-            if (lastResultAvailable())
+            status = "Spatial Data permission granted; native environment placement enabled when supported.";
+            if (LastResultAvailable())
                 Refresh(readAssistance.LastResult);
         }
 
@@ -261,7 +272,7 @@ namespace PhraseLayer.Unity
             status = "Spatial Data permission denied; using collider/viewport fallback.";
         }
 
-        private bool lastResultAvailable()
+        private bool LastResultAvailable()
         {
             return readAssistance != null && readAssistance.LastResult != null;
         }
