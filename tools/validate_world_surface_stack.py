@@ -2,6 +2,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CORE = ROOT / "src" / "PhraseLayer.Core"
 UNITY = ROOT / "unity" / "PhraseLayer.Unity"
 ASSETS = UNITY / "Assets"
 SCRIPTS = ASSETS / "Scripts"
@@ -74,6 +75,37 @@ if native:
                 f"depth manager: {forbidden}"
             )
 
+surface_stabilizer = require(
+    CORE / "SurfaceHitStabilizer.cs",
+    (
+        "sealed class SurfaceHitStabilizerOptions",
+        "BlendFactor = 0.35",
+        "ResetPointDistanceMeters = 0.20",
+        "ResetNormalAngleDegrees = 20.0",
+        "MaxMissingObservations = 1",
+        "sealed class SurfaceHitStabilizer",
+        "public SurfaceHit Stabilize(string key, SurfaceHit observed)",
+        "pointDistance > options.ResetPointDistanceMeters",
+        "normalAngle > options.ResetNormalAngleDegrees",
+        "public bool TryHoldMissing(string key, out SurfaceHit hit)",
+        "states.Remove(key)",
+        "public void Reset()",
+    ),
+    "verified world surface stabilizer",
+)
+if surface_stabilizer:
+    for forbidden in (
+        "ISurfaceRaycaster",
+        "IViewportRayProvider",
+        "UnityEngine",
+        "Meta.XR",
+        "Oculus",
+    ):
+        if forbidden in surface_stabilizer:
+            violations.append(
+                f"Core surface stabilizer must stay platform/runtime independent: {forbidden}"
+            )
+
 quest = require(
     SCRIPTS / "QuestSurfaceRaycaster.cs",
     (
@@ -91,7 +123,19 @@ overlay = require(
     SCRIPTS / "QuestReadWorldOverlayBehaviour.cs",
     (
         "ISurfaceRaycaster raycaster",
+        "SurfaceHitStabilizer surfaceStabilizer",
+        "surfaceBlendFactor = 0.35f",
+        "surfaceResetPointDistanceMeters = 0.20f",
+        "surfaceResetNormalAngleDegrees = 20f",
+        "surfaceMaxMissingObservations = 1",
         "new QuestSurfaceRaycaster(gameObject, maxDistance, surfaceLayerMask)",
+        "new SurfaceHitStabilizer(new SurfaceHitStabilizerOptions",
+        "EnsureSurfaceEncounter();",
+        "readAssistance.CurrentEncounterId",
+        "surfaceStabilizer.Reset();",
+        "surfaceStabilizer.Stabilize(unit.Id, projected.Surface.Value)",
+        "surfaceStabilizer.TryHoldMissing(unit.Id, out var heldSurface)",
+        "previouslyRendered.Contains(unit.Id)",
         "EnsureSpatialPermissionRequested();",
         "Permission.RequestUserPermissions(",
         "HandleSpatialPermissionGranted",
@@ -101,6 +145,7 @@ overlay = require(
         "questRaycaster.Dispose();",
         "target.Coverage != SpatialAssistanceCoverage.Exact",
         "!projected.CanRenderInWorld",
+        "retained-surface-misses",
     ),
     "Quest Read world overlay surface/permission contract",
 )
@@ -164,5 +209,6 @@ print(
     "PASS: Read world placement keeps Android Meta XR environment-raycast support enabled, preserves reflected MRUK "
     "native interop for IL2CPP, fails closed across the optional reflection boundary, requires an identity tracking "
     "origin, destroys only a ready raycaster it owns, avoids Meta's telemetry-emitting manager and OVRCameraRig-bound "
-    "depth manager, falls back to Unity colliders, and keeps unresolved misses on the local-only viewport path"
+    "depth manager, stabilizes only verified world hits with bounded miss retention reset per encounter, falls back to "
+    "Unity colliders, and keeps unresolved misses on the local-only viewport path"
 )
