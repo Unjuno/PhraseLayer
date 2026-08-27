@@ -24,23 +24,40 @@ I was tired, だから家に帰って, and I fell asleep immediately.
 
 The visible mix changes across encounters as the learner model changes. It stays frozen while the learner is reading the same encounter.
 
-## Current scope
+## Current implementation
 
-Implemented in the hardware-independent core:
+Implemented and host-tested:
 
 - semantic spans for words, multiword expressions, clauses, and sentences
 - longest-match multiword-expression detection
-- learner understanding scores
+- learner understanding scores and persisted learner profiles
 - adaptive assistance density (Auto / Easy / Balanced / Challenge / Immersion)
 - clause-first assistance when a whole clause is difficult
 - non-overlapping assistance selection
 - in-place mixed-language rendering without markers
-- encounter plan cache to prevent language flicker
-- replaceable OCR, ASR, and translation interfaces
+- encounter plan stability plus deferred learner updates for later encounters
+- replaceable OCR, ASR, translation, camera, and XR-facing interfaces
 - fake Read/Listen pipelines for deterministic tests
-- CI, model candidate manifest, and licensing/benchmark docs
+- Unity 6 shell and reproducible demo-scene setup
+- Meta Passthrough Camera bridge kept outside `PhraseLayer.Core`
+- PP-OCR detector → DB quad decode → perspective crop → recognizer → CTC runtime path using Unity Inference Engine
+- OCR image/viewport geometry, semantic-to-OCR-region alignment, and viewport debug presentation
+- synchronization-context guards for Unity/main-thread-bound platform adapters
+- CI, model candidate manifest, licensing, staging, and benchmark contracts
 
-Not implemented yet: Unity, Meta XR, Passthrough Camera, real OCR/ASR/NMT runtimes, spatial placement, or Quest benchmarks.
+Implemented but **not yet claimed as Quest-verified**:
+
+- automatic demo-scene wiring for Meta `PassthroughCameraAccess` → camera bridge → OCR runtime → PP-OCR bootstrap → viewport presenter
+- pinned PP-OCR model/dictionary asset preparation and Unity runtime integration
+
+Still required for the first complete Read Mode:
+
+- real Quest 3 camera/OCR execution and device measurements
+- stable world-space replacement rendering/tracking over physical text
+- a reviewed offline English → Japanese NMT runtime (the current Core fallback is dictionary-based)
+- 30-minute Quest performance/thermal/battery validation
+
+Listen Mode still requires microphone/VAD and a local ASR runtime.
 
 ## License
 
