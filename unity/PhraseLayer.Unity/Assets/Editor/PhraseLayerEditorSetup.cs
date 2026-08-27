@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -9,14 +10,26 @@ namespace PhraseLayer.Unity.Editor
     public static class PhraseLayerEditorSetup
     {
         public const string DemoScenePath = "Assets/Scenes/PhraseLayerDemo.unity";
+        private const string MetaPassthroughCameraAccessTypeName = "Meta.XR.PassthroughCameraAccess";
 
         [MenuItem("PhraseLayer/Create or Reset Demo Scene")]
         public static void CreateDemoScene()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
+
             root.AddComponent<PhraseLayerDemoBehaviour>();
-            root.AddComponent<OcrViewportDebugBehaviour>();
+            var presenter = root.AddComponent<OcrViewportDebugBehaviour>();
+            var cameraBridge = root.AddComponent<MetaPassthroughCameraBridge>();
+            var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
+            var ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
+            var metaCamera = AddMetaPassthroughCameraAccess(root);
+
+            // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
+            // MRUK package drifts away from IsPlaying/GetTexture/ViewportPointToRay, scene creation fails loudly.
+            cameraBridge.SetPassthroughCameraAccess(metaCamera);
+            runtimeDriver.SetSceneReferences(cameraBridge, presenter);
+            ocrBootstrap.SetRuntimeDriver(runtimeDriver);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
@@ -24,7 +37,38 @@ namespace PhraseLayer.Unity.Editor
 
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
-            Debug.Log("PhraseLayer demo scene created: " + DemoScenePath);
+            Debug.Log(
+                "PhraseLayer demo scene created with Meta Passthrough Camera → OCR runtime → viewport presenter wiring: " +
+                DemoScenePath);
+        }
+
+        private static Component AddMetaPassthroughCameraAccess(GameObject root)
+        {
+            var cameraType = FindLoadedType(MetaPassthroughCameraAccessTypeName);
+            if (cameraType == null)
+            {
+                throw new InvalidOperationException(
+                    "Could not resolve " + MetaPassthroughCameraAccessTypeName +
+                    ". Resolve the pinned com.meta.xr.mrutilitykit package before creating the Quest OCR demo scene.");
+            }
+            if (!typeof(Component).IsAssignableFrom(cameraType))
+            {
+                throw new InvalidOperationException(
+                    MetaPassthroughCameraAccessTypeName + " is not a UnityEngine.Component in the installed Meta package.");
+            }
+
+            return root.AddComponent(cameraType);
+        }
+
+        private static Type FindLoadedType(string fullName)
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (var index = 0; index < assemblies.Length; index++)
+            {
+                var type = assemblies[index].GetType(fullName, throwOnError: false);
+                if (type != null) return type;
+            }
+            return null;
         }
 
         public static void CreateDemoSceneBatch()
