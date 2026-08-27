@@ -25,8 +25,9 @@ namespace PhraseLayer.Unity.Editor
             VerifyOcrPresentationContract();
             VerifyOcrRuntimeContract();
             VerifyUnitySpatialProjectionGate();
+            VerifyUnityWorldTextGate();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4/5 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity surface projection bridge, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, scene bootstrap, and local OCR asset Editor bridge verified.");
+            Debug.Log("PhraseLayer Gate 3/4/5 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity surface projection, four-corner text fitting, temporal world-text tracking, font-injected reference renderer, Unity Inference 2.2 API gate, PP-OCR runtime, scene bootstrap, and local OCR asset bridge verified at compile/contract level.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -108,6 +109,18 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("UnityPhysicsSurfaceRaycaster must implement the Core ISurfaceRaycaster boundary.");
             if (typeof(UnitySpatialProjectionBehaviour) == null)
                 throw new InvalidOperationException("UnitySpatialProjectionBehaviour must compile for aligned Read Mode projection.");
+            if (typeof(UnityWorldTextLayoutDebugBehaviour) == null)
+                throw new InvalidOperationException("UnityWorldTextLayoutDebugBehaviour must compile for physical text-plane verification.");
+        }
+
+        private static void VerifyUnityWorldTextGate()
+        {
+            if (typeof(WorldTextLayoutPlanner) == null || typeof(WorldTextTrackStabilizer) == null)
+                throw new InvalidOperationException("World text fitting/tracking Core types must compile.");
+            if (typeof(UnityWorldTextTrackingBehaviour) == null)
+                throw new InvalidOperationException("UnityWorldTextTrackingBehaviour must compile for temporal stabilization.");
+            if (typeof(UnityWorldTextRendererBehaviour) == null)
+                throw new InvalidOperationException("UnityWorldTextRendererBehaviour must compile for font-injected world text presentation.");
         }
 
         private static void VerifyInferenceApiGate()
