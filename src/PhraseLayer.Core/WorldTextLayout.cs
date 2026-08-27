@@ -19,7 +19,8 @@ namespace PhraseLayer.Core.Spatial
 
     /// <summary>
     /// A fitted physical text plane derived from four independent viewport-corner surface samples.
-    /// Right/Up/Normal are unit vectors in the same world coordinate system as SurfaceHit.
+    /// Right and Up preserve the viewport text orientation. Normal is the corresponding right-handed
+    /// layout normal; the raw collider normal sign may therefore be flipped without changing the plane.
     /// WidthMeters/HeightMeters describe the fitted OCR envelope extent on that plane.
     /// </summary>
     public readonly struct WorldTextSurface
@@ -33,6 +34,8 @@ namespace PhraseLayer.Core.Spatial
             double heightMeters,
             double maxPlanarityErrorMeters)
         {
+            if (!SpatialMath.IsFiniteVector(center))
+                throw new ArgumentException("World text surface center must be finite.", nameof(center));
             if (widthMeters <= 0.0 || double.IsNaN(widthMeters) || double.IsInfinity(widthMeters))
                 throw new ArgumentOutOfRangeException(nameof(widthMeters));
             if (heightMeters <= 0.0 || double.IsNaN(heightMeters) || double.IsInfinity(heightMeters))
@@ -41,6 +44,12 @@ namespace PhraseLayer.Core.Spatial
                 throw new ArgumentOutOfRangeException(nameof(maxPlanarityErrorMeters));
             if (!SpatialMath.IsUnit(right) || !SpatialMath.IsUnit(up) || !SpatialMath.IsUnit(normal))
                 throw new ArgumentException("World text surface axes must be finite unit vectors.");
+            if (Math.Abs(SpatialMath.Dot(right, up)) > 1e-5 ||
+                Math.Abs(SpatialMath.Dot(right, normal)) > 1e-5 ||
+                Math.Abs(SpatialMath.Dot(up, normal)) > 1e-5)
+            {
+                throw new ArgumentException("World text surface axes must be mutually orthogonal.");
+            }
 
             Center = center;
             Right = right;
@@ -196,8 +205,10 @@ namespace PhraseLayer.Core.Spatial
                     up = SpatialMath.Scale(up, -1.0);
             }
 
+            // Surface normal sign is arbitrary for a plane. Preserve viewport right/up and flip only the
+            // fitted layout normal so downstream rendering never silently mirrors or inverts recognized text.
             if (SpatialMath.Dot(SpatialMath.Cross(right, up), normal) < 0.0)
-                up = SpatialMath.Scale(up, -1.0);
+                normal = SpatialMath.Scale(normal, -1.0);
 
             var widthMeters = 0.5 * (
                 Math.Abs(SpatialMath.Dot(SpatialMath.Subtract(hits[1].Point, hits[0].Point), right)) +
@@ -303,16 +314,16 @@ namespace PhraseLayer.Core.Spatial
 
             var magnitude = Math.Sqrt(squared);
             normalized = Scale(value, 1.0 / magnitude);
-            return IsFinite(normalized);
+            return IsFiniteVector(normalized);
         }
 
         public static bool IsUnit(SpatialVector3 value)
         {
-            if (!IsFinite(value)) return false;
+            if (!IsFiniteVector(value)) return false;
             return Math.Abs(value.SquaredMagnitude - 1.0) <= UnitTolerance;
         }
 
-        private static bool IsFinite(SpatialVector3 value)
+        public static bool IsFiniteVector(SpatialVector3 value)
         {
             return IsFinite(value.X) && IsFinite(value.Y) && IsFinite(value.Z);
         }
