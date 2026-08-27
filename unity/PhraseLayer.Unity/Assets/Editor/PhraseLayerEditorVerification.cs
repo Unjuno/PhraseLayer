@@ -5,6 +5,7 @@ using PhraseLayer.Core.Inputs;
 using PhraseLayer.Core.Learning;
 using PhraseLayer.Core.Pipeline;
 using PhraseLayer.Core.Semantics;
+using PhraseLayer.Core.Spatial;
 using PhraseLayer.Core.Translation;
 using UnityEditor;
 using UnityEngine;
@@ -23,8 +24,9 @@ namespace PhraseLayer.Unity.Editor
             VerifyViewportGeometry();
             VerifyOcrPresentationContract();
             VerifyOcrRuntimeContract();
+            VerifyUnitySpatialProjectionGate();
             VerifyInferenceApiGate();
-            Debug.Log("PhraseLayer Gate 3/4 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, scene bootstrap, and local OCR asset Editor bridge verified.");
+            Debug.Log("PhraseLayer Gate 3/4/5 shell PASS: language pipeline, OCR viewport geometry, OCR presentation/runtime contracts, Unity surface projection bridge, Unity Inference 2.2 API gate, PP-OCR detector/DB/crop/recognizer gates, end-to-end engine, scene bootstrap, and local OCR asset Editor bridge verified.");
         }
 
         private static void VerifyLanguagePipeline()
@@ -98,6 +100,14 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("PP-OCR detector runtime contract report is missing the observed shape.");
             if (!report.Contains("classes=97") || !report.Contains("dictionary=96"))
                 throw new InvalidOperationException("PP-OCR recognizer runtime contract report is missing class/dictionary parity.");
+        }
+
+        private static void VerifyUnitySpatialProjectionGate()
+        {
+            if (!typeof(ISurfaceRaycaster).IsAssignableFrom(typeof(UnityPhysicsSurfaceRaycaster)))
+                throw new InvalidOperationException("UnityPhysicsSurfaceRaycaster must implement the Core ISurfaceRaycaster boundary.");
+            if (typeof(UnitySpatialProjectionBehaviour) == null)
+                throw new InvalidOperationException("UnitySpatialProjectionBehaviour must compile for aligned Read Mode projection.");
         }
 
         private static void VerifyInferenceApiGate()

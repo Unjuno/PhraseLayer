@@ -22,6 +22,20 @@ namespace UnityEngine
         Bold = 1
     }
 
+    public enum QueryTriggerInteraction
+    {
+        UseGlobal = 0,
+        Ignore = 1,
+        Collide = 2
+    }
+
+    public struct LayerMask
+    {
+        public int value;
+        public static implicit operator LayerMask(int value) => new LayerMask { value = value };
+        public static implicit operator int(LayerMask value) => value.value;
+    }
+
     public struct Vector2
     {
         public Vector2(float x, float y) { this.x = x; this.y = y; }
@@ -42,6 +56,27 @@ namespace UnityEngine
         public Ray(Vector3 origin, Vector3 direction) { this.origin = origin; this.direction = direction; }
         public Vector3 origin;
         public Vector3 direction;
+    }
+
+    public struct RaycastHit
+    {
+        public Vector3 point;
+        public Vector3 normal;
+        public float distance;
+    }
+
+    public static class Physics
+    {
+        public static bool Raycast(
+            Ray ray,
+            out RaycastHit hitInfo,
+            float maxDistance,
+            int layerMask,
+            QueryTriggerInteraction queryTriggerInteraction)
+        {
+            hitInfo = default(RaycastHit);
+            return false;
+        }
     }
 
     public class Texture : Object
