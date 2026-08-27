@@ -49,6 +49,10 @@ namespace PhraseLayer.Core.Pipeline
         public string DisplayText => string.Concat(Segments.Select(segment => segment.DisplayText));
     }
 
+    /// <summary>
+    /// Builds mixed-language plans while preserving the caller synchronization context across translation awaits.
+    /// Platform translation adapters may be bound to a Unity/render thread just like OCR adapters.
+    /// </summary>
     public sealed class LanguagePipeline
     {
         private readonly ISemanticSegmenter _segmenter;
@@ -73,7 +77,7 @@ namespace PhraseLayer.Core.Pipeline
                     var untouched = sourceText.Substring(cursor, unit.Start - cursor);
                     segments.Add(new MixedLanguageSegment(untouched, untouched, false, null));
                 }
-                var translated = await _translator.TranslateAsync(unit.Text, context ?? sourceText, cancellationToken).ConfigureAwait(false);
+                var translated = await _translator.TranslateAsync(unit.Text, context ?? sourceText, cancellationToken);
                 if (string.IsNullOrWhiteSpace(translated)) translated = unit.Text;
                 segments.Add(new MixedLanguageSegment(unit.Text, translated, true, unit));
                 cursor = unit.End;
@@ -117,6 +121,10 @@ namespace PhraseLayer.Core.Pipeline
         public MixedLanguagePlan LanguagePlan { get; }
     }
 
+    /// <summary>
+    /// Read-mode composition preserves the caller synchronization context between OCR and language adapters.
+    /// This is required by Unity adapters whose texture/model operations are owner-thread-bound.
+    /// </summary>
     public sealed class ReadModePipeline
     {
         private readonly IOcrEngine _ocr;
@@ -133,7 +141,7 @@ namespace PhraseLayer.Core.Pipeline
             AssistancePolicy policy,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            var result = await ProcessSpatialAsync(frame, policy, cancellationToken).ConfigureAwait(false);
+            var result = await ProcessSpatialAsync(frame, policy, cancellationToken);
             return result.LanguagePlan;
         }
 
@@ -145,10 +153,9 @@ namespace PhraseLayer.Core.Pipeline
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (policy == null) throw new ArgumentNullException(nameof(policy));
 
-            var observation = await _ocr.RecognizeAsync(frame, cancellationToken).ConfigureAwait(false);
+            var observation = await _ocr.RecognizeAsync(frame, cancellationToken);
             var languagePlan = await _language
-                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken)
-                .ConfigureAwait(false);
+                .PlanAsync(observation.Text, policy, observation.Text, cancellationToken);
             var viewportRegions = OcrViewportMapper.Map(observation, frame);
 
             return new ReadModeSpatialResult(frame, observation, viewportRegions, languagePlan);
@@ -161,8 +168,8 @@ namespace PhraseLayer.Core.Pipeline
         public ListenModePipeline(IAsrEngine asr, LanguagePipeline language) { _asr = asr; _language = language; }
         public async Task<MixedLanguagePlan> ProcessAsync(AudioChunk audio, AssistancePolicy policy, CancellationToken cancellationToken = default(CancellationToken))
         {
-            var observation = await _asr.TranscribeAsync(audio, cancellationToken).ConfigureAwait(false);
-            return await _language.PlanAsync(observation.Text, policy, observation.Text, cancellationToken).ConfigureAwait(false);
+            var observation = await _asr.TranscribeAsync(audio, cancellationToken);
+            return await _language.PlanAsync(observation.Text, policy, observation.Text, cancellationToken);
         }
     }
 }
