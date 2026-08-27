@@ -6,10 +6,20 @@
 
 - **No PhraseLayer backend.** Learner state and encounter history remain on the device.
 - Camera frames and microphone audio are processed locally by the reference implementation.
-- OCR, ASR, semantic analysis, learner-state inference, assistance selection, and translation are local runtime responsibilities.
+- OCR, ASR, semantic analysis, learner-state inference, assistance selection, translation, and MR surface placement are local runtime responsibilities.
 - **No automatic cloud fallback.** If a local engine cannot produce a result, PhraseLayer may preserve the source or report an unresolved state; it must not silently upload data.
 - The official Quest project must not request Android `INTERNET` or `ACCESS_NETWORK_STATE` permissions.
 - Runtime analytics/telemetry SDKs are not part of the reference distribution.
+
+## Device-local camera and spatial permissions
+
+Local-only does not mean sensor-free. Read Mode needs explicit device permissions for data that remains on the headset:
+
+- `android.permission.CAMERA` and `horizonos.permission.HEADSET_CAMERA` are used for passthrough camera frames;
+- `com.oculus.permission.USE_SCENE` is used for Meta Environment Depth / Spatial Data raycasts so an OCR viewport point can be placed on a measured physical surface;
+- `com.oculus.permission.USE_ANCHOR_API` is not part of the current Read baseline because PhraseLayer does not persist spatial anchors yet.
+
+Spatial Data permission is requested only for world-surface placement. If the permission is denied, unavailable, or Environment Depth is unsupported/not ready, the Read pipeline falls back to collider-backed placement and then to the viewport overlay. No cloud fallback is introduced.
 
 ## Extensibility boundary
 
@@ -21,7 +31,7 @@ Keeping an interface does **not** mean the official app includes remote provider
 
 Privacy is not only a settings-screen promise. The repository enforces the local-only reference contract in two places:
 
-1. `tools/validate_local_only.py` rejects reviewed runtime networking APIs, direct Unity cloud-service dependencies, and network permissions in checked-in Android manifests.
+1. `tools/validate_local_only.py` rejects reviewed runtime networking APIs, direct Unity cloud-service dependencies, and network permissions in checked-in Android manifests while pinning the reviewed local camera/Spatial Data permissions.
 2. `PhraseLayerLocalOnlyBuildGuard` fails Unity builds that force Android Internet permission or add reviewed runtime network APIs.
 
 The build guard also exposes a menu action that disables forced Internet and external-storage permissions for the Quest project.
