@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -45,7 +46,7 @@ namespace PhraseLayer.Unity.Editor
             if (config == null)
             {
                 config = ScriptableObject.CreateInstance<UnityLocalOcrRuntimeConfig>();
-                AssetDatabase.CreateAsset(config, RuntimeConfigAssetPath);
+                CreateAsset(config, RuntimeConfigAssetPath);
             }
 
             var serialized = new SerializedObject(config);
@@ -54,12 +55,14 @@ namespace PhraseLayer.Unity.Editor
             RequireProperty(serialized, "characterDictionary").objectReferenceValue = dictionary;
             RequireProperty(serialized, "characterDictionaryManifest").objectReferenceValue = dictionaryManifest;
             RequireProperty(serialized, "useSpaceCharacter").boolValue = true;
-            RequireProperty(serialized, "recognitionDropScore").floatValue = 0.5f;
-            RequireProperty(serialized, "recognizerModelWidth").intValue =
-                PhraseLayer.Core.Inputs.PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth;
-            RequireProperty(serialized, "detectorBackend").enumValueIndex = (int)BackendType.GPUCompute;
-            RequireProperty(serialized, "recognizerBackend").enumValueIndex = (int)BackendType.GPUCompute;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
+            SetSerializedValue(RequireProperty(serialized, "recognitionDropScore"), "floatValue", 0.5f);
+            SetSerializedValue(
+                RequireProperty(serialized, "recognizerModelWidth"),
+                "intValue",
+                PhraseLayer.Core.Inputs.PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth);
+            SetSerializedValue(RequireProperty(serialized, "detectorBackend"), "enumValueIndex", (int)BackendType.GPUCompute);
+            SetSerializedValue(RequireProperty(serialized, "recognizerBackend"), "enumValueIndex", (int)BackendType.GPUCompute);
+            serialized.ApplyModifiedProperties();
 
             EditorUtility.SetDirty(config);
             AssetDatabase.SaveAssets();
@@ -109,6 +112,27 @@ namespace PhraseLayer.Unity.Editor
             if (property == null)
                 throw new InvalidOperationException("UnityLocalOcrRuntimeConfig serialized field missing: " + name);
             return property;
+        }
+
+        private static void CreateAsset(UnityEngine.Object asset, string path)
+        {
+            var method = typeof(AssetDatabase).GetMethod(
+                "CreateAsset",
+                BindingFlags.Static | BindingFlags.Public,
+                null,
+                new[] { typeof(UnityEngine.Object), typeof(string) },
+                null);
+            if (method == null)
+                throw new MissingMethodException(typeof(AssetDatabase).FullName, "CreateAsset(Object, string)");
+            method.Invoke(null, new object[] { asset, path });
+        }
+
+        private static void SetSerializedValue(SerializedProperty property, string memberName, object value)
+        {
+            var member = typeof(SerializedProperty).GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public);
+            if (member == null || !member.CanWrite)
+                throw new MissingMemberException(typeof(SerializedProperty).FullName, memberName);
+            member.SetValue(property, value, null);
         }
 #endif
     }
