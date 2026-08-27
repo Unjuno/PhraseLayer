@@ -19,7 +19,8 @@ namespace PhraseLayer.Unity.Editor
         private const string MetaAndroidFeatureName = "m_Name: MetaXRFeature Android";
         private const string EnvironmentRaycastExtension = "XR_META_environment_raycast";
 
-        public int callbackOrder => -9000;
+        // Local-only settings are fixed first at -10000. Validate Quest/MR next, before the wider cloud gate at -9000.
+        public int callbackOrder => -9500;
 
         public void OnPreprocessBuild(BuildReport report)
         {
