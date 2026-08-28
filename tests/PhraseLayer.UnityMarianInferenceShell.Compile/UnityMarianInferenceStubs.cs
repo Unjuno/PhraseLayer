@@ -101,6 +101,7 @@ namespace Unity.InferenceEngine
         public void SetInput(string name, Tensor tensor) { }
         public void Schedule() { }
         public Tensor PeekOutput(string name) => null;
+        public void CopyOutput(string name, ref Tensor tensor) { }
         public void Dispose() { }
     }
 }
