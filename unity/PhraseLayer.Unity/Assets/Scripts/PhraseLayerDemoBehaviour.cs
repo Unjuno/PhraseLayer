@@ -22,6 +22,7 @@ namespace PhraseLayer.Unity
         private LanguagePipeline pipeline;
         private MixedLanguagePlan currentPlan;
         private LearningEncounterSession currentEncounter;
+        private ITranslationEngine translationEngineOverride;
         private string status = "Preparing PhraseLayer...";
         private string learningStatus = "No learning evidence recorded yet.";
         private Vector2 scroll;
@@ -30,6 +31,7 @@ namespace PhraseLayer.Unity
         public string DisplayText => currentPlan != null ? currentPlan.DisplayText : sourceText;
         public MixedLanguagePlan CurrentPlan => currentPlan;
         public LanguagePipeline Pipeline => pipeline;
+        public bool UsesTranslationEngineOverride => translationEngineOverride != null;
 
         private async void Start()
         {
@@ -45,6 +47,18 @@ namespace PhraseLayer.Unity
                 liveReadMode.ConfigureLanguagePipeline(pipeline);
         }
 
+        /// <summary>
+        /// Injects a reviewed translation engine before Start. A runtime bootstrap can call this from Awake so the
+        /// same semantic/learner pipeline uses Marian instead of the fixed demo dictionary. If changed after Start,
+        /// the demo pipeline is rebuilt and the caller may invoke ReplanAsync to refresh the current encounter.
+        /// </summary>
+        public void SetTranslationEngine(ITranslationEngine translationEngine)
+        {
+            translationEngineOverride = translationEngine ?? throw new ArgumentNullException(nameof(translationEngine));
+            if (pipeline != null)
+                BuildPipeline();
+        }
+
         public async Task ReplanAsync()
         {
             if (pipeline == null) BuildPipeline();
@@ -57,10 +71,11 @@ namespace PhraseLayer.Unity
                     currentPlan,
                     new LearnerAdaptationEngine(learner));
                 status = string.Format(
-                    "Mode: {0}  Target: {1:P0}  Selected: {2:P0}",
+                    "Mode: {0}  Target: {1:P0}  Selected: {2:P0}{3}",
                     assistanceMode,
                     currentPlan.Assistance.TargetRatio,
-                    currentPlan.Assistance.SelectedRatio);
+                    currentPlan.Assistance.SelectedRatio,
+                    translationEngineOverride != null ? "  Translation: injected runtime" : "  Translation: demo dictionary");
             }
             catch (Exception exception)
             {
@@ -145,20 +160,25 @@ namespace PhraseLayer.Unity
                 "fell asleep"
             });
 
-            var translations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            ITranslationEngine translationEngine = translationEngineOverride;
+            if (translationEngine == null)
             {
-                { "so i went home", "だから家に帰って" },
-                { "was tired", "疲れていた" },
-                { "went home", "家に帰った" },
-                { "fell asleep", "眠ってしまった" },
-                { "immediately", "すぐ" }
-            };
+                var translations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "so i went home", "だから家に帰って" },
+                    { "was tired", "疲れていた" },
+                    { "went home", "家に帰った" },
+                    { "fell asleep", "眠ってしまった" },
+                    { "immediately", "すぐ" }
+                };
+                translationEngine = new DictionaryTranslationEngine(translations);
+            }
 
             pipeline = new LanguagePipeline(
                 segmenter,
                 learner,
                 new AssistancePlanner(),
-                new DictionaryTranslationEngine(translations));
+                translationEngine);
 
             if (liveReadMode != null)
             {
