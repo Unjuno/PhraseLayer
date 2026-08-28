@@ -19,13 +19,13 @@ namespace PhraseLayer.Unity
     public sealed class UnityMarianTranslationBootstrapBehaviour : MonoBehaviour
     {
         [SerializeField] private PhraseLayerDemoBehaviour demo = null;
+        [SerializeField] private string lastStatus = "Marian runtime not initialized.";
+
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         [SerializeField] private string tokenizerResourceRoot = "LocalTranslationAssets";
         [SerializeField] private int maximumSourceTokens = 128;
         [SerializeField] private int maximumTargetTokens = 128;
         [SerializeField] private bool useDeviceResidentCache = true;
-        [SerializeField] private string lastStatus = "Marian runtime not initialized.";
-
-#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         [SerializeField] private ModelAsset encoderModel = null;
         [SerializeField] private ModelAsset decoderModel = null;
         [SerializeField] private ModelAsset decoderWithPastModel = null;
@@ -172,7 +172,7 @@ namespace PhraseLayer.Unity
                 "Marian translation bootstrap disabled: expected com.unity.ai.inference in the reviewed 2.2.x range.";
             if (demo != null)
                 demo.enabled = false;
-            Debug.LogError(lastStatus, this);
+            Debug.Log(lastStatus, this);
         }
 #endif
     }
