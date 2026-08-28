@@ -118,6 +118,17 @@ namespace UnityEngine
         public int height { get; set; }
     }
 
+    public class TextAsset : Object
+    {
+        public byte[] bytes { get; set; } = Array.Empty<byte>();
+        public string text { get; set; } = string.Empty;
+    }
+
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null;
+    }
+
     public class Material : Object { }
 
     public class Font : Object

@@ -27,7 +27,18 @@ jobs:
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: python tools/test_prepare_unity_ocr_assets.py
+      - run: python tools/test_prepare_unity_tokenizer_runtime.py
+      - run: python tools/test_prepare_unity_marian_tokenizer_assets.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
       - run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --no-restore
+      - run: dotnet restore tests/PhraseLayer.Tokenization.Microsoft.Tests/PhraseLayer.Tokenization.Microsoft.Tests.csproj
+      - run: dotnet build src/PhraseLayer.Tokenization.Microsoft/PhraseLayer.Tokenization.Microsoft.csproj -c Release --no-restore
+      - run: dotnet test tests/PhraseLayer.Tokenization.Microsoft.Tests/PhraseLayer.Tokenization.Microsoft.Tests.csproj -c Release --no-restore
+      - name: Verify Unity tokenizer staging from real build output
+        run: |
+          python tools/prepare_unity_tokenizer_runtime.py \
+            --build-output src/PhraseLayer.Tokenization.Microsoft/bin/Release/netstandard2.1 \
+            --destination "$RUNNER_TEMP/LocalTokenizerRuntime" \
+            --manifest "$RUNNER_TEMP/unity-tokenizer-runtime.manifest.json"
       - run: dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
