@@ -1,10 +1,19 @@
 # Runtime dependency notes
 
-## Microsoft.ML.Tokenizers 2.0.0
+## Microsoft.ML.Tokenizers 1.0.3
 
-PhraseLayer currently evaluates `Microsoft.ML.Tokenizers` 2.0.0 as the managed SentencePiece implementation behind the optional `PhraseLayer.Tokenization.Microsoft` adapter.
+PhraseLayer pins `Microsoft.ML.Tokenizers` 1.0.3 as the managed SentencePiece implementation behind the optional `PhraseLayer.Tokenization.Microsoft` adapter, subject to CI proving the required SentencePiece API and Unigram behavior.
 
-The package is MIT licensed and supports .NET Standard 2.0, but its .NET Standard dependency closure includes Google.Protobuf and several modern `System.*` / `Microsoft.Bcl.*` support packages. Ordinary .NET compatibility does not prove that Unity 6000.0.66f2 and Android IL2CPP can import that exact closure safely.
+The package is MIT licensed and supports .NET Standard 2.0. Its .NET Standard dependency closure is substantially smaller than 2.0.0 and is centered on:
+
+- `Google.Protobuf >= 3.27.1`;
+- `Microsoft.Bcl.HashCode >= 6.0.0`;
+- `Microsoft.Bcl.Memory >= 9.0.0`;
+- `System.Text.Json >= 8.0.5`.
+
+The initially evaluated 2.0.0 package pulled `System.Text.Json 9` and other newer support packages into the validation graph. In the net8 integration-test build this produced an assembly conflict warning against the platform `System.Text.Json 8` reference. PhraseLayer therefore tests 1.0.3 as the lower-dependency pin instead of accepting that conflict by default.
+
+Ordinary .NET compatibility still does not prove that Unity 6000.0.66f2 and Android IL2CPP can import the dependency closure safely.
 
 Therefore:
 
