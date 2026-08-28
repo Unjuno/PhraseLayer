@@ -14,12 +14,14 @@ PhraseLayer.Core
 PhraseLayer.Tokenization.Microsoft
   MicrosoftMlSentencePieceProcessor
           ↓
-Microsoft.ML.Tokenizers 2.0.0
+Microsoft.ML.Tokenizers 1.0.3
 ```
 
 `MicrosoftMlSentencePieceProcessor` loads the supplied SentencePiece protobuf bytes through `SentencePieceTokenizer.Create(Stream, addBeginningOfSentence: false, addEndOfSentence: false)`.
 
 The Microsoft tokenizer parses the model type and embedded normalization rules from the `.spm` file. PhraseLayer consumes `EncodedToken.Value` as SentencePiece piece strings, then the existing Core `MarianSentencePieceTokenizer` maps those piece strings through Marian's external `vocab.json` before adding the Marian EOS token. SentencePiece internal ids are never assumed to equal Marian model ids.
+
+Unknown surface text is also handled at this boundary deliberately. A SentencePiece implementation may return surface pieces that are not literal `<unk>` strings. Core therefore maps any piece absent from Marian's external `vocab.json` to the configured Marian `<unk>` id. Tests verify the external-vocabulary result rather than relying on one library's spelling of an unknown surface piece.
 
 ## Why the adapter is separate from Core
 
@@ -46,7 +48,9 @@ unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime/
 
 It deliberately excludes `PhraseLayer.Core.dll`, because Unity already consumes Core through the local `com.unjuno.phraselayer.core` package. The staging tool deletes previously staged DLLs first so a package upgrade cannot leave stale dependency binaries behind. It also produces a SHA-256 evidence manifest under the ignored `artifacts/` directory.
 
-The current package dependency closure must still pass a real Unity 6000.0.66f2 import test. In particular, the .NET Standard dependency set used by `Microsoft.ML.Tokenizers 2.0.0` must not be assumed compatible merely because ordinary .NET CI succeeds.
+The adapter pins `Microsoft.ML.Tokenizers 1.0.3` rather than 2.0.0 because the newer package pulled a `System.Text.Json 9` dependency into the .NET 8 validation graph and produced an assembly-version conflict warning. Version 1.0.3 has a materially smaller .NET Standard dependency closure. This pin is accepted only if CI proves that the required SentencePiece Unigram/Create(Stream) API and integration tests still pass.
+
+The managed dependency closure must still pass a real Unity 6000.0.66f2 import test. Ordinary .NET CI success is not sufficient evidence of Unity/IL2CPP compatibility.
 
 ## Local Marian tokenizer assets
 
@@ -83,7 +87,7 @@ Implemented automated gates:
 
 1. synthetic SentencePiece Unigram ModelProto is parsed by the real `Microsoft.ML.Tokenizers` library;
 2. embedded whitespace normalization and piece round-trip are checked;
-3. unknown input remains explicit rather than guessed;
+3. unknown surface pieces are checked at the Marian external-vocabulary mapping boundary;
 4. external Marian vocabulary mapping remains in Core;
 5. managed runtime staging requires the adapter, Microsoft tokenizer, and Google.Protobuf assemblies;
 6. stale staged DLLs are deleted;
