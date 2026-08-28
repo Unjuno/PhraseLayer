@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
+using PhraseLayer.Core.Translation;
 using PhraseLayer.Tokenization.Microsoft;
 using Xunit;
 
@@ -35,13 +37,29 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
         }
 
         [Fact]
-        public void UnknownInputRemainsAnExplicitUnknownPiece()
+        public void UnknownSurfacePiecesMapThroughExternalMarianVocabularyToUnknownId()
         {
             var processor = new MicrosoftMlSentencePieceProcessor(BuildSimpleUnigramModel());
+            var externalVocabulary = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                { "</s>", 0 },
+                { "<unk>", 1 },
+                { "▁hello", 2 },
+                { "▁world", 3 },
+                { "<pad>", 46275 },
+            };
+            var marian = new MarianSentencePieceTokenizer(
+                processor,
+                processor,
+                externalVocabulary);
 
-            var pieces = processor.EncodePieces("mystery");
+            var surfacePieces = processor.EncodePieces("mystery");
+            var encoded = marian.EncodeSource("mystery", maximumTokens: 32);
 
-            Assert.Contains("<unk>", pieces);
+            Assert.NotEmpty(surfacePieces);
+            Assert.DoesNotContain("<unk>", surfacePieces);
+            Assert.Equal(0, encoded.TokenIds[encoded.TokenIds.Count - 1]);
+            Assert.All(encoded.TokenIds.Take(encoded.TokenIds.Count - 1), tokenId => Assert.Equal(1, tokenId));
         }
 
         [Fact]
