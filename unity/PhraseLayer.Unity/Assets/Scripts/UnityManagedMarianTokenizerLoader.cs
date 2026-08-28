@@ -22,8 +22,8 @@ namespace PhraseLayer.Unity
             byte[] sourceSentencePieceModel,
             byte[] targetSentencePieceModel,
             string vocabularyJson,
-            out ITranslationTokenizer? tokenizer,
-            out string? error)
+            out ITranslationTokenizer tokenizer,
+            out string error)
         {
             tokenizer = null;
             error = null;
@@ -93,8 +93,8 @@ namespace PhraseLayer.Unity
 
         public static bool TryCreateFromResources(
             string resourceRoot,
-            out ITranslationTokenizer? tokenizer,
-            out string? error)
+            out ITranslationTokenizer tokenizer,
+            out string error)
         {
             tokenizer = null;
             error = null;
@@ -118,7 +118,7 @@ namespace PhraseLayer.Unity
             return TryCreate(source.bytes, target.bytes, vocabulary.text, out tokenizer, out error);
         }
 
-        private static Type? ResolveFactoryType()
+        private static Type ResolveFactoryType()
         {
             return Type.GetType(FactoryTypeName, throwOnError: false);
         }
