@@ -11,7 +11,8 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Scene-facing preflight for the three-model Marian ONNX export. This validates imported Unity ModelAsset
-    /// input/output names against the Core graph contract before a translation backend allocates Workers.
+    /// input/output names against the Core graph contract and the exact inputs the current backend can bind before
+    /// a translation backend allocates Workers.
     /// </summary>
     public sealed class UnityMarianOnnxContractProbeBehaviour : MonoBehaviour
     {
@@ -79,10 +80,12 @@ namespace PhraseLayer.Unity
             if (decoderModelAsset == null) throw new ArgumentNullException(nameof(decoderModelAsset));
             if (decoderWithPastModelAsset == null) throw new ArgumentNullException(nameof(decoderWithPastModelAsset));
 
-            return OpusMtEnJaMarianOnnxContract.ValidateBundle(
+            var report = OpusMtEnJaMarianOnnxContract.ValidateBundle(
                 BuildSignature("encoder_model.onnx", ModelLoader.Load(encoderModelAsset)),
                 BuildSignature("decoder_model.onnx", ModelLoader.Load(decoderModelAsset)),
                 BuildSignature("decoder_with_past_model.onnx", ModelLoader.Load(decoderWithPastModelAsset)));
+            OpusMtEnJaMarianOnnxExecutionContract.ValidateSupportedInputs(report);
+            return report;
         }
 
         private static MarianOnnxGraphSignature BuildSignature(string graphName, Model model)
