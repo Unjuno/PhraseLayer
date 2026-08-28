@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using PhraseLayer.Core.Translation;
 
 namespace UnityEngine
 {
     public class Object { }
     public class Component : Object { }
-    public class Behaviour : Component { }
+    public class Behaviour : Component { public bool enabled { get; set; } = true; }
     public class MonoBehaviour : Behaviour { }
 
     [AttributeUsage(AttributeTargets.Field)]
@@ -15,6 +16,8 @@ namespace UnityEngine
     {
         public static void Log(object message) { }
         public static void Log(object message, Object context) { }
+        public static void LogError(object message, Object context) { }
+        public static void LogException(Exception exception, Object context) { }
     }
 }
 
@@ -103,5 +106,28 @@ namespace Unity.InferenceEngine
         public Tensor PeekOutput(string name) => null;
         public void CopyOutput(string name, ref Tensor tensor) { }
         public void Dispose() { }
+    }
+}
+
+namespace PhraseLayer.Unity
+{
+    using UnityEngine;
+
+    public sealed class PhraseLayerDemoBehaviour : Behaviour
+    {
+        public void SetTranslationEngine(ITranslationEngine translationEngine) { }
+    }
+
+    public static class UnityManagedMarianTokenizerLoader
+    {
+        public static bool TryCreateFromResources(
+            string resourceRoot,
+            out ITranslationTokenizer tokenizer,
+            out string error)
+        {
+            tokenizer = null;
+            error = "stub";
+            return false;
+        }
     }
 }
