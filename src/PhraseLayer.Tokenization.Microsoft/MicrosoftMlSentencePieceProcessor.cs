@@ -8,7 +8,7 @@ using PhraseLayer.Core.Translation;
 namespace PhraseLayer.Tokenization.Microsoft
 {
     /// <summary>
-    /// Pure-managed SentencePiece adapter backed by Microsoft.ML.Tokenizers 1.0.3.
+    /// Pure-managed SentencePiece adapter backed by Microsoft.ML.Tokenizers 2.0.0.
     /// The exact embedded normalizer and Unigram/BPE model are parsed from the supplied .spm bytes.
     /// BOS/EOS insertion is disabled here because MarianSentencePieceTokenizer owns the Marian model-level EOS policy.
     /// </summary>
