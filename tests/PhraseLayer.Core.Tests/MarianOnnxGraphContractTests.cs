@@ -43,7 +43,8 @@ namespace PhraseLayer.Core.Tests
                     new MarianOnnxGraphSignature("decoder_model.onnx", decoder.Inputs, outputs),
                     BuildDecoderWithPast(includeCrossOutputs: false)));
 
-            Assert.Contains("present.3.encoder.value", error.Message);
+            Assert.Contains("cross-attention cache output pair", error.Message);
+            Assert.Contains("layer 3", error.Message);
         }
 
         [Fact]
