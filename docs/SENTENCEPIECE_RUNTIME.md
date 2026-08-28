@@ -14,7 +14,7 @@ PhraseLayer.Core
 PhraseLayer.Tokenization.Microsoft
   MicrosoftMlSentencePieceProcessor
           ↓
-Microsoft.ML.Tokenizers 1.0.3
+Microsoft.ML.Tokenizers 2.0.0
 ```
 
 `MicrosoftMlSentencePieceProcessor` loads the supplied SentencePiece protobuf bytes through `SentencePieceTokenizer.Create(Stream, addBeginningOfSentence: false, addEndOfSentence: false)`.
@@ -48,7 +48,7 @@ unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime/
 
 It deliberately excludes `PhraseLayer.Core.dll`, because Unity already consumes Core through the local `com.unjuno.phraselayer.core` package. The staging tool deletes previously staged DLLs first so a package upgrade cannot leave stale dependency binaries behind. It also produces a SHA-256 evidence manifest under the ignored `artifacts/` directory.
 
-The adapter pins `Microsoft.ML.Tokenizers 1.0.3` rather than 2.0.0 because the newer package pulled a `System.Text.Json 9` dependency into the .NET 8 validation graph and produced an assembly-version conflict warning. Version 1.0.3 has a materially smaller .NET Standard dependency closure. This pin is accepted only if CI proves that the required SentencePiece Unigram/Create(Stream) API and integration tests still pass.
+`Microsoft.ML.Tokenizers 1.0.3` was tested as a lower-dependency alternative, but CI proved that it does not expose the required `SentencePieceTokenizer.Create(Stream)` API. PhraseLayer therefore keeps 2.0.0 rather than substituting an approximate tokenizer. The 2.0.0 dependency closure includes `System.Text.Json 9` and produced a version-conflict warning in the net8 integration-test graph; that is tracked as a real Unity/IL2CPP import risk rather than hidden or suppressed.
 
 The managed dependency closure must still pass a real Unity 6000.0.66f2 import test. Ordinary .NET CI success is not sufficient evidence of Unity/IL2CPP compatibility.
 
