@@ -13,5 +13,6 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianOnnxContractProbe.cs" Link="UnityRuntime/UnityMarianOnnxContractProbe.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianSeq2SeqGenerationBackend.cs" Link="UnityRuntime/UnityMarianSeq2SeqGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianDeviceResidentGenerationBackend.cs" Link="UnityRuntime/UnityMarianDeviceResidentGenerationBackend.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs" Link="UnityRuntime/UnityMarianTranslationBootstrapBehaviour.cs" />
   </ItemGroup>
 </Project>
