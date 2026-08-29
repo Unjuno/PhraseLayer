@@ -8,6 +8,7 @@ on:
       - "src/PhraseLayer.Tokenization.Microsoft/**"
       - "tools/PhraseLayer.MarianTokenizerParity/**"
       - "tools/generate_marian_tokenizer_reference.py"
+      - "tools/inspect_marian_sentencepiece_reference.py"
       - "tools/requirements-marian-tokenizer-parity.txt"
       - "tests/fixtures/marian-tokenizer-parity-corpus.json"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -20,6 +21,7 @@ on:
       - "src/PhraseLayer.Tokenization.Microsoft/**"
       - "tools/PhraseLayer.MarianTokenizerParity/**"
       - "tools/generate_marian_tokenizer_reference.py"
+      - "tools/inspect_marian_sentencepiece_reference.py"
       - "tools/requirements-marian-tokenizer-parity.txt"
       - "tests/fixtures/marian-tokenizer-parity-corpus.json"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -69,6 +71,11 @@ jobs:
           cmp \
             "$RUNNER_TEMP/live-snapshot.json" \
             "models/evidence/opus-mt-en-jap.${{ steps.model.outputs.revision }}.snapshot.json"
+      - name: Inspect exact source SentencePiece model
+        run: |
+          python tools/inspect_marian_sentencepiece_reference.py \
+            --model "$RUNNER_TEMP/opus-mt-en-jap-small/source.spm" \
+            --output "$RUNNER_TEMP/marian-sentencepiece-diagnostic.json"
       - name: Generate Transformers MarianTokenizer reference
         env:
           HF_HUB_OFFLINE: "1"
@@ -90,7 +97,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: marian-tokenizer-parity-reference
-          path: ${{ runner.temp }}/marian-tokenizer-reference.json
+          name: marian-tokenizer-parity-evidence
+          path: |
+            ${{ runner.temp }}/marian-tokenizer-reference.json
+            ${{ runner.temp }}/marian-sentencepiece-diagnostic.json
           if-no-files-found: warn
           retention-days: 7
