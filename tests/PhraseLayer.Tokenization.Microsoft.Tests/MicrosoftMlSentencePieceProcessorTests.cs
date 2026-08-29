@@ -27,6 +27,16 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
         }
 
         [Fact]
+        public void SentencePieceSegmentationIsNotPreSplitAtSymbolOrCjkBoundaries()
+        {
+            var processor = new MicrosoftMlSentencePieceProcessor(BuildBoundarySensitiveUnigramModel());
+
+            var pieces = processor.EncodePieces("0% 東京 $9");
+
+            Assert.Equal(new[] { "▁0%", "▁東京", "▁$9" }, pieces);
+        }
+
+        [Fact]
         public void InternalSentencePieceIdsCanBeResolvedWithoutAssumingMarianIds()
         {
             var processor = new MicrosoftMlSentencePieceProcessor(BuildSimpleUnigramModel());
@@ -84,6 +94,25 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
 
         private static byte[] BuildSimpleUnigramModel()
         {
+            return BuildUnigramModel(new[]
+            {
+                ("▁hello", -0.1f),
+                ("▁world", -0.1f),
+            });
+        }
+
+        private static byte[] BuildBoundarySensitiveUnigramModel()
+        {
+            return BuildUnigramModel(new[]
+            {
+                ("▁0%", -0.1f),
+                ("▁東京", -0.1f),
+                ("▁$9", -0.1f),
+            });
+        }
+
+        private static byte[] BuildUnigramModel(IReadOnlyList<(string Piece, float Score)> normalPieces)
+        {
             var trainer = new ProtoWriter();
             trainer.WriteInt32(3, 1);  // TrainerSpec.model_type = UNIGRAM
             trainer.WriteInt32(40, 0); // unk_id
@@ -104,8 +133,8 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
             model.WriteMessage(1, BuildPiece("<unk>", 0f, 2));
             model.WriteMessage(1, BuildPiece("<s>", 0f, 3));
             model.WriteMessage(1, BuildPiece("</s>", 0f, 3));
-            model.WriteMessage(1, BuildPiece("▁hello", -0.1f, 1));
-            model.WriteMessage(1, BuildPiece("▁world", -0.1f, 1));
+            foreach (var item in normalPieces)
+                model.WriteMessage(1, BuildPiece(item.Piece, item.Score, 1));
             model.WriteMessage(2, trainer.ToArray());
             model.WriteMessage(3, normalizer.ToArray());
             return model.ToArray();
