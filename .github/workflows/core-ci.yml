@@ -30,6 +30,7 @@ jobs:
       - run: python tools/test_prepare_unity_tokenizer_runtime.py
       - run: python tools/test_prepare_unity_marian_tokenizer_assets.py
       - run: python tools/test_validate_marian_snapshot_contract.py
+      - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_inspect_marian_onnx_bundle.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
