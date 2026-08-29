@@ -17,6 +17,8 @@ spec.loader.exec_module(subject)
 
 REVISION = "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
 EVIDENCE_RELATIVE = f"models/evidence/opus-mt-en-jap.{REVISION}.snapshot.json"
+WEIGHT_EVIDENCE_RELATIVE = f"models/evidence/opus-mt-en-jap.{REVISION}.source-weight.json"
+WEIGHT_IDENTITY_STATUS = "upstream-lfs-pointer-history-observed; local-file-hash-required-before-export"
 METADATA_NAMES = [
     "README.md",
     "config.json",
@@ -61,6 +63,16 @@ def create_fixture(root: pathlib.Path):
             "weights_downloaded": False,
         },
     }
+    weight_evidence = {
+        "schema_version": 1,
+        "model_id": "Helsinki-NLP/opus-mt-en-jap",
+        "revision": REVISION,
+        "identity_source": "upstream-lfs-pointer-history",
+        "local_file_hash_required_before_export": True,
+        "weight_downloaded": False,
+        "bundled": False,
+        "artifact": weight,
+    }
     lock = {
         "candidates": [
             {
@@ -82,16 +94,21 @@ def create_fixture(root: pathlib.Path):
                     "artifact": weight["name"],
                     "artifact_size_bytes": weight["size_bytes"],
                     "artifact_sha256": weight["sha256"],
+                    "identity_status": WEIGHT_IDENTITY_STATUS,
+                    "evidence_manifest": WEIGHT_EVIDENCE_RELATIVE,
                 },
             }
         ]
     }
     lock_path = root / "models" / "models.lock.json"
     evidence_path = root / EVIDENCE_RELATIVE
+    weight_evidence_path = root / WEIGHT_EVIDENCE_RELATIVE
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    weight_evidence_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    weight_evidence_path.write_text(json.dumps(weight_evidence), encoding="utf-8")
     return source_dir, lock_path
 
 
@@ -120,6 +137,17 @@ class MarianOnnxExportTests(unittest.TestCase):
             source_dir, lock_path = create_fixture(root)
             (source_dir / "pytorch_model.bin").write_bytes(b"wrong weight")
             with self.assertRaisesRegex(subject.MarianExportError, "weight does not match"):
+                subject.validate_local_source_snapshot(source_dir, lock_path, root)
+
+    def test_weight_evidence_drift_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            source_dir, lock_path = create_fixture(root)
+            weight_evidence_path = root / WEIGHT_EVIDENCE_RELATIVE
+            weight_evidence = json.loads(weight_evidence_path.read_text(encoding="utf-8"))
+            weight_evidence["identity_source"] = "unreviewed"
+            weight_evidence_path.write_text(json.dumps(weight_evidence), encoding="utf-8")
+            with self.assertRaisesRegex(subject.MarianExportError, "source-weight evidence identity_source drift"):
                 subject.validate_local_source_snapshot(source_dir, lock_path, root)
 
     def test_export_command_is_three_graph_offline_baseline_shape(self):
