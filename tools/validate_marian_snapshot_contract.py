@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Validate a local revision-pinned Helsinki-NLP/opus-mt-en-jap snapshot.
+"""Validate a local revision-pinned Helsinki-NLP/opus-mt-en-jap metadata/tokenizer snapshot.
 
-This tool deliberately does not download or bundle model weights. It validates the small source/tokenizer/config
+This tool deliberately does not download or bundle model weights. It validates the small model-card/config/tokenizer
 artifacts that define PhraseLayer's reviewed Marian runtime contract and emits an evidence manifest containing
 SHA-256 hashes. The caller must supply the full 40-character upstream commit revision obtained from a trusted
 snapshot mechanism; short branch aliases are rejected.
@@ -26,8 +26,10 @@ EXPECTED_HEADS = 8
 EXPECTED_MAX_LENGTH = 512
 EXPECTED_SOURCE_LANGUAGE = "en"
 EXPECTED_TARGET_LANGUAGE = "jap"
+EXPECTED_LICENSE = "apache-2.0"
 
 REQUIRED_SMALL_ARTIFACTS = (
+    "README.md",
     "config.json",
     "generation_config.json",
     "tokenizer_config.json",
@@ -67,6 +69,35 @@ def _sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _validate_model_card(path: pathlib.Path) -> None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise SnapshotContractError(f"failed to parse README.md: {exc}") from exc
+
+    lines = text.splitlines()
+    _require(lines and lines[0].strip() == "---", "README.md must start with YAML front matter")
+    try:
+        closing = next(index for index in range(1, len(lines)) if lines[index].strip() == "---")
+    except StopIteration as exc:
+        raise SnapshotContractError("README.md YAML front matter is not terminated") from exc
+
+    license_values = []
+    for line in lines[1:closing]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        if key.strip() == "license":
+            license_values.append(value.strip().strip("'\"").lower())
+
+    _require(len(license_values) == 1, "README.md must declare exactly one license in front matter")
+    _require(
+        license_values[0] == EXPECTED_LICENSE,
+        f"README.md: license expected {EXPECTED_LICENSE!r} but found {license_values[0]!r}",
+    )
 
 
 def _validate_config(config: Mapping[str, Any]) -> None:
@@ -120,8 +151,10 @@ def _validate_vocabulary(vocabulary: Any) -> None:
         f"vocab.json expected {EXPECTED_VOCABULARY_SIZE} entries but found {len(vocabulary)}",
     )
     ids = list(vocabulary.values())
-    _require(all(isinstance(value, int) and not isinstance(value, bool) for value in ids),
-             "vocab.json ids must all be integers")
+    _require(
+        all(isinstance(value, int) and not isinstance(value, bool) for value in ids),
+        "vocab.json ids must all be integers",
+    )
     _require(
         len(set(ids)) == EXPECTED_VOCABULARY_SIZE,
         "vocab.json token ids must be unique",
@@ -157,6 +190,7 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
     _require(isinstance(generation_config, dict), "generation_config.json must contain an object")
     _require(isinstance(tokenizer_config, dict), "tokenizer_config.json must contain an object")
 
+    _validate_model_card(paths["README.md"])
     _validate_config(config)
     _validate_generation_config(generation_config)
     _validate_tokenizer_config(tokenizer_config)
@@ -177,6 +211,7 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
         "schema_version": 1,
         "model_id": "Helsinki-NLP/opus-mt-en-jap",
         "revision": revision,
+        "license": EXPECTED_LICENSE,
         "languages": {
             "source": EXPECTED_SOURCE_LANGUAGE,
             "target": EXPECTED_TARGET_LANGUAGE,

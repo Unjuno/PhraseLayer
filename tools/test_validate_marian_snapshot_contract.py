@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import copy
 import importlib.util
 import json
 import pathlib
@@ -68,8 +67,21 @@ def reviewed_vocabulary():
     return vocabulary
 
 
-def write_snapshot(root: pathlib.Path, *, config=None, generation=None, tokenizer=None, vocabulary=None):
+def reviewed_readme():
+    return "---\ntags:\n- translation\nlicense: apache-2.0\n---\n\n### opus-mt-en-jap\n"
+
+
+def write_snapshot(
+    root: pathlib.Path,
+    *,
+    config=None,
+    generation=None,
+    tokenizer=None,
+    vocabulary=None,
+    readme=None,
+):
     root.mkdir(parents=True, exist_ok=True)
+    (root / "README.md").write_text(readme if readme is not None else reviewed_readme(), encoding="utf-8")
     (root / "config.json").write_text(
         json.dumps(config if config is not None else reviewed_config()), encoding="utf-8"
     )
@@ -95,9 +107,10 @@ class MarianSnapshotContractTests(unittest.TestCase):
 
         self.assertEqual("Helsinki-NLP/opus-mt-en-jap", manifest["model_id"])
         self.assertEqual(REVISION, manifest["revision"])
+        self.assertEqual("apache-2.0", manifest["license"])
         self.assertEqual({"source": "en", "target": "jap"}, manifest["languages"])
         self.assertEqual([46275], manifest["generation_policy"]["bad_word_token_ids"])
-        self.assertEqual(6, len(manifest["artifacts"]))
+        self.assertEqual(7, len(manifest["artifacts"]))
         for artifact in manifest["artifacts"]:
             self.assertEqual(64, len(artifact["sha256"]))
             self.assertGreater(artifact["size_bytes"], 0)
@@ -110,6 +123,26 @@ class MarianSnapshotContractTests(unittest.TestCase):
                 subject.validate_snapshot(root, "a863894")
             with self.assertRaisesRegex(subject.SnapshotContractError, "full lowercase 40-character"):
                 subject.validate_snapshot(root, "A" * 40)
+
+    def test_license_drift_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_snapshot(root, readme="---\nlicense: mit\n---\n")
+            with self.assertRaisesRegex(subject.SnapshotContractError, "license expected"):
+                subject.validate_snapshot(root, REVISION)
+
+    def test_missing_or_duplicate_license_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_snapshot(root, readme="---\ntags:\n- translation\n---\n")
+            with self.assertRaisesRegex(subject.SnapshotContractError, "exactly one license"):
+                subject.validate_snapshot(root, REVISION)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            write_snapshot(root, readme="---\nlicense: apache-2.0\nlicense: apache-2.0\n---\n")
+            with self.assertRaisesRegex(subject.SnapshotContractError, "exactly one license"):
+                subject.validate_snapshot(root, REVISION)
 
     def test_language_direction_drift_is_rejected(self):
         tokenizer = reviewed_tokenizer_config()

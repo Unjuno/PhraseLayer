@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "model_id": "Helsinki-NLP/opus-mt-en-jap",
+  "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
+  "artifact": {
+    "name": "pytorch_model.bin",
+    "size_bytes": 273663309,
+    "sha256": "4099e38526c3c99dfb5815483e7b556ae96decdffae66f525adda30d8c160738"
+  },
+  "identity_source": "upstream-lfs-pointer-history",
+  "local_file_hash_required_before_export": true,
+  "weight_downloaded": false,
+  "bundled": false
+}

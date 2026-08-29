@@ -70,8 +70,10 @@
       "id": "opus-mt-en-jap",
       "purpose": "translation-en-ja",
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
+      "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
       "revision_short": "a863894",
-      "revision_status": "upstream-main-short-id-observed; full-40-character-sha-required-before-artifact-staging",
+      "revision_status": "full-40-character-upstream-revision-resolved; seven-file-small-snapshot-contract-validated-and-fingerprinted",
+      "evidence_manifest": "models/evidence/opus-mt-en-jap.a863894cdd2b80f3bc1c5966734aee9ffec207d1.snapshot.json",
       "architecture": "MarianMTModel",
       "model_type": "marian",
       "source_language": "en",
@@ -88,7 +90,52 @@
       "pad_token_id": 46275,
       "decoder_start_token_id": 46275,
       "configured_num_beams": 4,
+      "metadata_snapshot_artifacts": [
+        {
+          "artifact": "README.md",
+          "artifact_size_bytes": 830,
+          "artifact_sha256": "041dc07bb7d13cb29ec0514bcf6ed20433eaf9d9a60c9ca7dffbad0d82ca4aee"
+        },
+        {
+          "artifact": "config.json",
+          "artifact_size_bytes": 1382,
+          "artifact_sha256": "12ae90385b9a78eb6be670ea49c8e1379ffb99c0598fccb637ad08b393e79a5c"
+        },
+        {
+          "artifact": "generation_config.json",
+          "artifact_size_bytes": 293,
+          "artifact_sha256": "9c80a2f4beac1d45f4f7388bc34d9a9602cfc86b443a6e3e0587a48f718ae698"
+        },
+        {
+          "artifact": "tokenizer_config.json",
+          "artifact_size_bytes": 43,
+          "artifact_sha256": "b9f71a590f833210b914f40b4d5153822e0a2d6e70ca58088e1fd8218b012c81"
+        },
+        {
+          "artifact": "source.spm",
+          "artifact_size_bytes": 508602,
+          "artifact_sha256": "375cbed8885a6d369e0493acfc69a066010a86f98f9bac02430cbeb1726934a6"
+        },
+        {
+          "artifact": "target.spm",
+          "artifact_size_bytes": 1021944,
+          "artifact_sha256": "7d5ec21daca7dccb7a9df371b699def40ddd9d0c24cef855e44e31a39b96af55"
+        },
+        {
+          "artifact": "vocab.json",
+          "artifact_size_bytes": 1642424,
+          "artifact_sha256": "9d75e73cc4484a38cd8d90960517fef2d119b93975efad6607d835ce08acdcf9"
+        }
+      ],
+      "source_weight_artifact": {
+        "artifact": "pytorch_model.bin",
+        "artifact_size_bytes": 273663309,
+        "artifact_sha256": "4099e38526c3c99dfb5815483e7b556ae96decdffae66f525adda30d8c160738",
+        "evidence_manifest": "models/evidence/opus-mt-en-jap.a863894cdd2b80f3bc1c5966734aee9ffec207d1.source-weight.json",
+        "identity_status": "upstream-lfs-pointer-history-observed; local-file-hash-required-before-export"
+      },
       "source_snapshot_artifacts": [
+        "README.md",
         "config.json",
         "generation_config.json",
         "tokenizer_config.json",
@@ -109,7 +156,7 @@
       },
       "format": "pytorch-source; reviewed-export-target=onnx",
       "license": "Apache-2.0",
-      "license_status": "upstream-metadata-observed; revision-level-review-pending; redistribution-review-pending",
+      "license_status": "upstream-model-card-license-verified-at-pinned-revision; redistribution-review-pending",
       "runtime_target": "com.unity.ai.inference@2.2.1",
       "runtime_compatibility": "unverified-real-unity-import-and-quest-execution-required",
       "quantization": "unverified",

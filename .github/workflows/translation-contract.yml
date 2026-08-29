@@ -5,18 +5,42 @@ on:
     branches: ["agent/**"]
     paths:
       - "models/models.lock.json"
+      - "models/evidence/**"
       - "src/PhraseLayer.Core/**"
       - "tests/PhraseLayer.Core.Tests/**"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
+      - "tools/validate_marian_snapshot_contract.py"
+      - "tools/test_validate_marian_snapshot_contract.py"
+      - "tools/fetch_marian_snapshot_metadata.py"
+      - "tools/test_fetch_marian_snapshot_metadata.py"
+      - "tools/validate_marian_lock_evidence.py"
+      - "tools/test_validate_marian_lock_evidence.py"
+      - "tools/export_marian_onnx.py"
+      - "tools/test_export_marian_onnx.py"
+      - "tools/requirements-marian-export.txt"
+      - "tools/inspect_marian_onnx_bundle.py"
+      - "tools/test_inspect_marian_onnx_bundle.py"
       - ".github/workflows/translation-contract.yml"
   pull_request:
     paths:
       - "models/models.lock.json"
+      - "models/evidence/**"
       - "src/PhraseLayer.Core/**"
       - "tests/PhraseLayer.Core.Tests/**"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
+      - "tools/validate_marian_snapshot_contract.py"
+      - "tools/test_validate_marian_snapshot_contract.py"
+      - "tools/fetch_marian_snapshot_metadata.py"
+      - "tools/test_fetch_marian_snapshot_metadata.py"
+      - "tools/validate_marian_lock_evidence.py"
+      - "tools/test_validate_marian_lock_evidence.py"
+      - "tools/export_marian_onnx.py"
+      - "tools/test_export_marian_onnx.py"
+      - "tools/requirements-marian-export.txt"
+      - "tools/inspect_marian_onnx_bundle.py"
+      - "tools/test_inspect_marian_onnx_bundle.py"
       - ".github/workflows/translation-contract.yml"
 
 concurrency:
@@ -32,3 +56,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/test_prepare_marian_translation.py
+      - run: python tools/test_validate_marian_snapshot_contract.py
+      - run: python tools/test_fetch_marian_snapshot_metadata.py
+      - run: python tools/test_validate_marian_lock_evidence.py
+      - run: python tools/validate_marian_lock_evidence.py
+      - run: python tools/test_export_marian_onnx.py
+      - run: python tools/test_inspect_marian_onnx_bundle.py
