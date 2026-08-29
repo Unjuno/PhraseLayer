@@ -1,13 +1,6 @@
 name: Marian Snapshot Probe
 
 on:
-  push:
-    branches: ["agent/marian-pinned-snapshot"]
-    paths:
-      - "tools/fetch_marian_snapshot_metadata.py"
-      - "tools/validate_marian_snapshot_contract.py"
-      - "models/models.lock.json"
-      - ".github/workflows/marian-snapshot-probe.yml"
   workflow_dispatch:
 
 concurrency:
@@ -22,21 +15,48 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Validate committed lock/evidence binding
+        run: python tools/validate_marian_lock_evidence.py
+      - name: Read exact pinned revision from lock
+        id: lock
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          lock = json.loads(Path("models/models.lock.json").read_text(encoding="utf-8"))
+          candidate = next(item for item in lock["candidates"] if item["id"] == "opus-mt-en-jap")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print("revision=" + candidate["revision"], file=output)
+              print("evidence=" + candidate["evidence_manifest"], file=output)
+          PY
       - name: Install pinned Hub client
         run: python -m pip install --disable-pip-version-check "huggingface_hub==1.29.0"
-      - name: Resolve current reviewed upstream revision
+      - name: Stage exact pinned metadata/tokenizer snapshot
         run: |
           python tools/fetch_marian_snapshot_metadata.py \
-            --revision main \
-            --expected-prefix a863894 \
-            --resolve-only
-      - name: Stage and validate small revision-pinned snapshot
-        run: |
-          python tools/fetch_marian_snapshot_metadata.py \
-            --revision main \
-            --expected-prefix a863894 \
+            --revision "${{ steps.lock.outputs.revision }}" \
+            --expected-prefix "${{ steps.lock.outputs.revision }}" \
             --destination "$RUNNER_TEMP/opus-mt-en-jap-small" \
             --output-manifest "$RUNNER_TEMP/opus-mt-en-jap.snapshot.json"
+      - name: Compare live snapshot to committed evidence
+        env:
+          COMMITTED_EVIDENCE: ${{ steps.lock.outputs.evidence }}
+          LIVE_EVIDENCE: ${{ runner.temp }}/opus-mt-en-jap.snapshot.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          committed = json.loads(Path(os.environ["COMMITTED_EVIDENCE"]).read_text(encoding="utf-8"))
+          live = json.loads(Path(os.environ["LIVE_EVIDENCE"]).read_text(encoding="utf-8"))
+          if committed != live:
+              raise SystemExit("Pinned Marian Hub snapshot no longer matches committed evidence")
+          print("PASS: exact pinned Marian snapshot matches committed evidence")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: opus-mt-en-jap-snapshot-evidence
