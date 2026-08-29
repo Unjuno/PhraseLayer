@@ -172,7 +172,7 @@ namespace PhraseLayer.Unity
                 "Marian translation bootstrap disabled: expected com.unity.ai.inference in the reviewed 2.2.x range.";
             if (demo != null)
                 demo.enabled = false;
-            Debug.Log(lastStatus, this);
+            Debug.Log(lastStatus);
         }
 #endif
     }
