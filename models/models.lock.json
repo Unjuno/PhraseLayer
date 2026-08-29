@@ -131,6 +131,7 @@
         "artifact": "pytorch_model.bin",
         "artifact_size_bytes": 273663309,
         "artifact_sha256": "4099e38526c3c99dfb5815483e7b556ae96decdffae66f525adda30d8c160738",
+        "evidence_manifest": "models/evidence/opus-mt-en-jap.a863894cdd2b80f3bc1c5966734aee9ffec207d1.source-weight.json",
         "identity_status": "upstream-lfs-pointer-history-observed; local-file-hash-required-before-export"
       },
       "source_snapshot_artifacts": [
