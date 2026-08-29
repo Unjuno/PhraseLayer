@@ -24,6 +24,8 @@ EXPECTED_MODEL_DIMENSION = 512
 EXPECTED_LAYERS = 6
 EXPECTED_HEADS = 8
 EXPECTED_MAX_LENGTH = 512
+EXPECTED_SOURCE_LANGUAGE = "en"
+EXPECTED_TARGET_LANGUAGE = "jap"
 
 REQUIRED_SMALL_ARTIFACTS = (
     "config.json",
@@ -74,6 +76,7 @@ def _validate_config(config: Mapping[str, Any]) -> None:
         "config.json: architectures must contain MarianMTModel",
     )
     _require_field(config, "model_type", "marian", "config.json")
+    _require_field(config, "is_encoder_decoder", True, "config.json")
     _require_field(config, "vocab_size", EXPECTED_VOCABULARY_SIZE, "config.json")
     _require_field(config, "decoder_vocab_size", EXPECTED_VOCABULARY_SIZE, "config.json")
     _require_field(config, "d_model", EXPECTED_MODEL_DIMENSION, "config.json")
@@ -82,6 +85,8 @@ def _validate_config(config: Mapping[str, Any]) -> None:
     _require_field(config, "encoder_attention_heads", EXPECTED_HEADS, "config.json")
     _require_field(config, "decoder_attention_heads", EXPECTED_HEADS, "config.json")
     _require_field(config, "max_position_embeddings", EXPECTED_MAX_LENGTH, "config.json")
+    _require_field(config, "max_length", EXPECTED_MAX_LENGTH, "config.json")
+    _require_field(config, "bad_words_ids", [[EXPECTED_PAD]], "config.json")
     _require_field(config, "bos_token_id", EXPECTED_EOS, "config.json")
     _require_field(config, "eos_token_id", EXPECTED_EOS, "config.json")
     _require_field(config, "forced_eos_token_id", EXPECTED_EOS, "config.json")
@@ -103,6 +108,11 @@ def _validate_generation_config(config: Mapping[str, Any]) -> None:
     _require_field(config, "renormalize_logits", True, "generation_config.json")
 
 
+def _validate_tokenizer_config(config: Mapping[str, Any]) -> None:
+    _require_field(config, "source_lang", EXPECTED_SOURCE_LANGUAGE, "tokenizer_config.json")
+    _require_field(config, "target_lang", EXPECTED_TARGET_LANGUAGE, "tokenizer_config.json")
+
+
 def _validate_vocabulary(vocabulary: Any) -> None:
     _require(isinstance(vocabulary, dict), "vocab.json must contain an object")
     _require(
@@ -110,7 +120,8 @@ def _validate_vocabulary(vocabulary: Any) -> None:
         f"vocab.json expected {EXPECTED_VOCABULARY_SIZE} entries but found {len(vocabulary)}",
     )
     ids = list(vocabulary.values())
-    _require(all(isinstance(value, int) for value in ids), "vocab.json ids must all be integers")
+    _require(all(isinstance(value, int) and not isinstance(value, bool) for value in ids),
+             "vocab.json ids must all be integers")
     _require(
         len(set(ids)) == EXPECTED_VOCABULARY_SIZE,
         "vocab.json token ids must be unique",
@@ -148,6 +159,7 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
 
     _validate_config(config)
     _validate_generation_config(generation_config)
+    _validate_tokenizer_config(tokenizer_config)
     _validate_vocabulary(vocabulary)
 
     artifacts = []
@@ -165,6 +177,10 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
         "schema_version": 1,
         "model_id": "Helsinki-NLP/opus-mt-en-jap",
         "revision": revision,
+        "languages": {
+            "source": EXPECTED_SOURCE_LANGUAGE,
+            "target": EXPECTED_TARGET_LANGUAGE,
+        },
         "generation_policy": {
             "upstream_default_beam_width": 4,
             "phraselayer_parity_beam_width": 1,
