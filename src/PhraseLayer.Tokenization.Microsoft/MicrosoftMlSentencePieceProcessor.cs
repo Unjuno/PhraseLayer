@@ -56,7 +56,39 @@ namespace PhraseLayer.Tokenization.Microsoft
                 considerPreTokenization: false,
                 considerNormalization: true);
 
-            return tokens.Select(token => token.Value).ToArray();
+            // Google's SentencePiece processor emits one surface token for a contiguous unknown span even
+            // though every such span carries the single UNK id. Microsoft.ML.Tokenizers' Unigram path emits
+            // one UNK token per unmatched Unicode code point instead. Marian then maps each returned surface
+            // piece through its external vocab.json, so leaving those tokens split changes the model input
+            // length (for example Google emits one UNK for "0%", "$9", "99", or "東京").
+            //
+            // An unknown surface token is observable without assuming the model's numeric UNK id: its Value
+            // is the normalized source surface and is not a literal entry in the loaded SentencePiece
+            // vocabulary. Coalesce only adjacent unknown surfaces carrying the same internal id. Known model
+            // pieces and non-adjacent unknown regions remain unchanged.
+            var pieces = new List<string>(tokens.Count);
+            var previousWasUnknownSurface = false;
+            var previousTokenId = -1;
+            foreach (var token in tokens)
+            {
+                var isUnknownSurface = !tokenizer.Vocabulary.ContainsKey(token.Value);
+                if (
+                    isUnknownSurface
+                    && previousWasUnknownSurface
+                    && previousTokenId == token.Id)
+                {
+                    pieces[pieces.Count - 1] += token.Value;
+                }
+                else
+                {
+                    pieces.Add(token.Value);
+                }
+
+                previousWasUnknownSurface = isUnknownSurface;
+                previousTokenId = token.Id;
+            }
+
+            return pieces;
         }
 
         public string DecodePieces(IReadOnlyList<string> pieces)
