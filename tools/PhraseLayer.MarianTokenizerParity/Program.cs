@@ -49,7 +49,7 @@ internal static class Program
                 var actualEncoded = tokenizer.EncodeSource(item.Text, MaximumTokens);
                 var actualIds = actualEncoded.TokenIds.ToArray();
 
-                if (actualEncoded.Truncated)
+                if (actualEncoded.WasTruncated)
                     failures.Add($"{item.Id}: managed tokenizer unexpectedly truncated the parity case");
                 if (!actualPieces.SequenceEqual(item.Pieces ?? Array.Empty<string>(), StringComparer.Ordinal))
                     failures.Add(DescribeMismatch(item.Id, "pieces", item.Pieces ?? Array.Empty<string>(), actualPieces));
