@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using PhraseLayer.Core.Translation;
 using PhraseLayer.Tokenization.Microsoft;
 
 internal static class Program
@@ -37,8 +38,14 @@ internal static class Program
             var sourceSpm = File.ReadAllBytes(Path.Combine(snapshotDir.FullName, "source.spm"));
             var targetSpm = File.ReadAllBytes(Path.Combine(snapshotDir.FullName, "target.spm"));
             var vocabularyJson = File.ReadAllText(Path.Combine(snapshotDir.FullName, "vocab.json"));
+            var vocabulary = JsonSerializer.Deserialize<Dictionary<string, int>>(vocabularyJson)
+                ?? throw new InvalidOperationException("Marian vocab.json did not contain a piece-to-id object.");
+            if (vocabulary.Count == 0)
+                throw new InvalidOperationException("Marian vocab.json was empty.");
+
             var sourceProcessor = new MicrosoftMlSentencePieceProcessor(sourceSpm);
-            var tokenizer = MicrosoftMlMarianTokenizerFactory.Create(sourceSpm, targetSpm, vocabularyJson);
+            var targetProcessor = new MicrosoftMlSentencePieceProcessor(targetSpm);
+            var tokenizer = new MarianSentencePieceTokenizer(sourceProcessor, targetProcessor, vocabulary);
 
             var failures = new List<string>();
             foreach (var item in reference.Cases)
