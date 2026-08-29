@@ -6,11 +6,36 @@ on:
 jobs:
   verify:
     runs-on: [self-hosted, unity, unity-6000-0-66f2]
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Unity editor shell
+      - name: Verify local prerequisites
         shell: bash
         run: |
-          chmod +x tools/unity/verify.sh
-          ./tools/unity/verify.sh
+          test -n "${UNITY_EDITOR:-}" || { echo "UNITY_EDITOR must point to Unity 6000.0.66f2" >&2; exit 2; }
+          python3 --version
+          dotnet --version
+      - name: Install pinned tokenizer reference toolchain
+        shell: bash
+        run: |
+          python3 -m pip install --disable-pip-version-check -r tools/requirements-marian-tokenizer-parity.txt
+      - name: Run local Marian parity and real Unity Editor gate
+        shell: bash
+        run: |
+          python3 tools/run_marian_tokenizer_parity_local.py \
+            --skip-bootstrap \
+            --require-unity \
+            --unity-editor "$UNITY_EDITOR" \
+            --work-dir "$RUNNER_TEMP/marian-local-gate"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: self-hosted-unity-marian-local-evidence
+          path: |
+            ${{ runner.temp }}/marian-local-gate/live-snapshot.json
+            ${{ runner.temp }}/marian-local-gate/marian-tokenizer-reference.json
+            ${{ runner.temp }}/marian-local-gate/marian-sentencepiece-diagnostic.json
+            artifacts/tokenizer-runtime/unity-tokenizer-runtime.manifest.json
+            artifacts/translation/unity-marian-tokenizer-assets.manifest.json
+          if-no-files-found: warn
+          retention-days: 7
