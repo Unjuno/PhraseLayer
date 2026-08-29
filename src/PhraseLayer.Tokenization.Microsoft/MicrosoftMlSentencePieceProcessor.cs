@@ -44,12 +44,16 @@ namespace PhraseLayer.Tokenization.Microsoft
             if (text == null) throw new ArgumentNullException(nameof(text));
             if (text.Length == 0) return Array.Empty<string>();
 
+            // SentencePiece owns both normalization and segmentation. Microsoft.ML.Tokenizers' optional
+            // generic pre-tokenizer splits punctuation/symbol and CJK boundaries before the .spm model sees
+            // them (for example "0%", "$9", or "東京"), which diverges from MarianTokenizer. Keep the
+            // embedded SentencePiece normalizer enabled but bypass that extra pre-tokenization stage.
             var tokens = tokenizer.EncodeToTokens(
                 text,
                 out _,
                 addBeginningOfSentence: false,
                 addEndOfSentence: false,
-                considerPreTokenization: true,
+                considerPreTokenization: false,
                 considerNormalization: true);
 
             return tokens.Select(token => token.Value).ToArray();
