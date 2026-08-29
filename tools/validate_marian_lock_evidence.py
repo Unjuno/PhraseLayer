@@ -7,11 +7,12 @@ import argparse
 import json
 import pathlib
 import re
-from typing import Any, Dict, Iterable, List, Mapping
+from typing import Any, Dict, List, Mapping
 
 MODEL_ID = "opus-mt-en-jap"
 UPSTREAM = "Helsinki-NLP/opus-mt-en-jap"
 FULL_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_ALLOW_LIST = [
     "README.md",
     "config.json",
@@ -21,6 +22,11 @@ EXPECTED_ALLOW_LIST = [
     "target.spm",
     "vocab.json",
 ]
+EXPECTED_SOURCE_WEIGHT = {
+    "artifact": "pytorch_model.bin",
+    "artifact_size_bytes": 273663309,
+    "artifact_sha256": "4099e38526c3c99dfb5815483e7b556ae96decdffae66f525adda30d8c160738",
+}
 
 
 class LockEvidenceError(ValueError):
@@ -59,7 +65,7 @@ def _canonical_lock_artifacts(candidate: Mapping[str, Any]) -> List[Dict[str, An
         _require(isinstance(name, str) and name, f"metadata_snapshot_artifacts[{index}] artifact is invalid")
         _require(isinstance(size, int) and not isinstance(size, bool) and size > 0,
                  f"metadata_snapshot_artifacts[{index}] size is invalid")
-        _require(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) is not None,
+        _require(isinstance(sha, str) and SHA256_RE.fullmatch(sha) is not None,
                  f"metadata_snapshot_artifacts[{index}] sha256 is invalid")
         output.append({"name": name, "size_bytes": size, "sha256": sha})
     return output
@@ -77,10 +83,31 @@ def _canonical_evidence_artifacts(evidence: Mapping[str, Any]) -> List[Dict[str,
         _require(isinstance(name, str) and name, f"evidence artifacts[{index}] name is invalid")
         _require(isinstance(size, int) and not isinstance(size, bool) and size > 0,
                  f"evidence artifacts[{index}] size is invalid")
-        _require(isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) is not None,
+        _require(isinstance(sha, str) and SHA256_RE.fullmatch(sha) is not None,
                  f"evidence artifacts[{index}] sha256 is invalid")
         output.append({"name": name, "size_bytes": size, "sha256": sha})
     return output
+
+
+def _validate_source_weight(candidate: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = candidate.get("source_weight_artifact")
+    _require(isinstance(raw, dict), "Marian lock must contain source_weight_artifact")
+    artifact = raw.get("artifact")
+    size = raw.get("artifact_size_bytes")
+    sha = raw.get("artifact_sha256")
+    status = raw.get("identity_status")
+    _require(artifact == EXPECTED_SOURCE_WEIGHT["artifact"], "Marian source weight filename drift")
+    _require(isinstance(size, int) and not isinstance(size, bool) and size > 0,
+             "Marian source weight size is invalid")
+    _require(isinstance(sha, str) and SHA256_RE.fullmatch(sha) is not None,
+             "Marian source weight sha256 is invalid")
+    _require(size == EXPECTED_SOURCE_WEIGHT["artifact_size_bytes"], "Marian source weight size drift")
+    _require(sha == EXPECTED_SOURCE_WEIGHT["artifact_sha256"], "Marian source weight sha256 drift")
+    _require(
+        status == "upstream-lfs-pointer-history-observed; local-file-hash-required-before-export",
+        "Marian source weight identity-status drift",
+    )
+    return {"name": artifact, "size_bytes": size, "sha256": sha, "identity_status": status}
 
 
 def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Path) -> Dict[str, Any]:
@@ -93,6 +120,7 @@ def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Pat
              "Marian lock revision must be a full lowercase 40-character commit SHA")
     _require(candidate.get("upstream") == UPSTREAM, "Marian lock upstream drift")
     _require(candidate.get("bundled") is False, "Marian candidate must remain unbundled")
+    source_weight = _validate_source_weight(candidate)
 
     evidence_relative = candidate.get("evidence_manifest")
     _require(isinstance(evidence_relative, str) and evidence_relative,
@@ -141,6 +169,7 @@ def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Pat
         "evidence_manifest": evidence_relative,
         "artifact_count": len(evidence_artifacts),
         "license": evidence_license,
+        "source_weight": source_weight,
         "weights_downloaded": False,
     }
 
