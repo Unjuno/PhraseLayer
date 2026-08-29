@@ -127,6 +127,12 @@
           "artifact_sha256": "9d75e73cc4484a38cd8d90960517fef2d119b93975efad6607d835ce08acdcf9"
         }
       ],
+      "source_weight_artifact": {
+        "artifact": "pytorch_model.bin",
+        "artifact_size_bytes": 273663309,
+        "artifact_sha256": "4099e38526c3c99dfb5815483e7b556ae96decdffae66f525adda30d8c160738",
+        "identity_status": "upstream-lfs-pointer-history-observed; local-file-hash-required-before-export"
+      },
       "source_snapshot_artifacts": [
         "README.md",
         "config.json",
