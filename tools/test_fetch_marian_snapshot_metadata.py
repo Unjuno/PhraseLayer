@@ -57,6 +57,7 @@ def valid_snapshot_files():
         vocab[f"piece-{token_id}"] = token_id
     vocab["<pad>"] = 46275
     return {
+        "README.md": b"---\ntags:\n- translation\nlicense: apache-2.0\n---\n",
         "config.json": json.dumps(config).encode(),
         "generation_config.json": json.dumps(generation).encode(),
         "tokenizer_config.json": json.dumps(tokenizer).encode(),
@@ -114,7 +115,8 @@ class MarianSnapshotFetchTests(unittest.TestCase):
             self.assertTrue(all(call["revision"] == REVISION for call in calls))
             self.assertFalse((root / "pytorch_model.bin").exists())
             self.assertFalse(manifest["staging"]["weights_downloaded"])
-            self.assertEqual(6, len(manifest["artifacts"]))
+            self.assertEqual("apache-2.0", manifest["license"])
+            self.assertEqual(7, len(manifest["artifacts"]))
 
     def test_existing_weight_in_destination_is_rejected(self):
         files = valid_snapshot_files()
