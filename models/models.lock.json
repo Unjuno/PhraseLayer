@@ -72,7 +72,8 @@
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
       "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
       "revision_short": "a863894",
-      "revision_status": "full-40-character-upstream-main-resolved; six-file-small-snapshot-contract-validated-and-fingerprinted",
+      "revision_status": "full-40-character-upstream-revision-resolved; seven-file-small-snapshot-contract-validated-and-fingerprinted",
+      "evidence_manifest": "models/evidence/opus-mt-en-jap.a863894cdd2b80f3bc1c5966734aee9ffec207d1.snapshot.json",
       "architecture": "MarianMTModel",
       "model_type": "marian",
       "source_language": "en",
@@ -90,6 +91,11 @@
       "decoder_start_token_id": 46275,
       "configured_num_beams": 4,
       "metadata_snapshot_artifacts": [
+        {
+          "artifact": "README.md",
+          "artifact_size_bytes": 830,
+          "artifact_sha256": "041dc07bb7d13cb29ec0514bcf6ed20433eaf9d9a60c9ca7dffbad0d82ca4aee"
+        },
         {
           "artifact": "config.json",
           "artifact_size_bytes": 1382,
@@ -122,6 +128,7 @@
         }
       ],
       "source_snapshot_artifacts": [
+        "README.md",
         "config.json",
         "generation_config.json",
         "tokenizer_config.json",
@@ -142,7 +149,7 @@
       },
       "format": "pytorch-source; reviewed-export-target=onnx",
       "license": "Apache-2.0",
-      "license_status": "upstream-metadata-observed; revision-level-review-pending; redistribution-review-pending",
+      "license_status": "upstream-model-card-license-verified-at-pinned-revision; redistribution-review-pending",
       "runtime_target": "com.unity.ai.inference@2.2.1",
       "runtime_compatibility": "unverified-real-unity-import-and-quest-execution-required",
       "quantization": "unverified",
