@@ -2,9 +2,9 @@
 """Resolve and stage only the small reviewed metadata/tokenizer files for OPUS-MT en->ja.
 
 This tool intentionally never downloads model weights. It resolves a Hub revision to a full 40-character commit
-SHA, downloads an explicit six-file allow-list, and delegates contract validation/fingerprinting to
-validate_marian_snapshot_contract.py. A discovery ref such as `main` or the currently observed short SHA may be
-used, but the emitted evidence always records the resolved full SHA.
+SHA, downloads an explicit seven-file allow-list (model card + config/tokenizer artifacts), and delegates contract
+validation/fingerprinting to validate_marian_snapshot_contract.py. A discovery ref such as `main` or the currently
+observed short SHA may be used, but the emitted evidence always records the resolved full SHA.
 """
 
 from __future__ import annotations
@@ -14,11 +14,12 @@ import importlib.util
 import json
 import pathlib
 import re
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Optional
 
 MODEL_ID = "Helsinki-NLP/opus-mt-en-jap"
 FULL_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 SMALL_ARTIFACTS = (
+    "README.md",
     "config.json",
     "generation_config.json",
     "tokenizer_config.json",
@@ -98,7 +99,6 @@ def stage_small_snapshot(
             ) from exc
         download_file = hf_hub_download
 
-    staged = []
     for filename in SMALL_ARTIFACTS:
         resolved_path = pathlib.Path(
             download_file(
@@ -117,7 +117,6 @@ def stage_small_snapshot(
             target.write_bytes(resolved_path.read_bytes())
         if target.stat().st_size <= 0:
             raise SnapshotFetchError(f"staged artifact is empty: {filename}")
-        staged.append(filename)
 
     unexpected_weight_names = {
         "pytorch_model.bin",
@@ -180,6 +179,7 @@ def main() -> None:
                 "model_id": MODEL_ID,
                 "revision": full_revision,
                 "artifact_count": len(manifest["artifacts"]),
+                "license": manifest["license"],
                 "weights_downloaded": False,
             },
             sort_keys=True,
