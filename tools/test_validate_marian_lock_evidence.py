@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import copy
 import importlib.util
 import json
 import pathlib
@@ -16,6 +15,8 @@ spec.loader.exec_module(subject)
 
 REVISION = "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
 EVIDENCE_PATH = f"models/evidence/opus-mt-en-jap.{REVISION}.snapshot.json"
+WEIGHT_EVIDENCE_PATH = f"models/evidence/opus-mt-en-jap.{REVISION}.source-weight.json"
+WEIGHT = {"name": "pytorch_model.bin", "size_bytes": 23, "sha256": "a" * 64}
 
 
 def artifacts():
@@ -47,8 +48,23 @@ def evidence():
     }
 
 
-def lock(evidence_doc=None):
+def weight_evidence():
+    return {
+        "schema_version": 1,
+        "model_id": subject.UPSTREAM,
+        "revision": REVISION,
+        "artifact": dict(WEIGHT),
+        "identity_source": "upstream-lfs-pointer-history",
+        "local_file_hash_required_before_export": True,
+        "weight_downloaded": False,
+        "bundled": False,
+    }
+
+
+def lock(evidence_doc=None, weight_doc=None):
     evidence_doc = evidence_doc or evidence()
+    weight_doc = weight_doc or weight_evidence()
+    artifact = weight_doc["artifact"]
     return {
         "candidates": [
             {
@@ -66,18 +82,29 @@ def lock(evidence_doc=None):
                     }
                     for item in evidence_doc["artifacts"]
                 ],
+                "source_weight_artifact": {
+                    "artifact": artifact["name"],
+                    "artifact_size_bytes": artifact["size_bytes"],
+                    "artifact_sha256": artifact["sha256"],
+                    "evidence_manifest": WEIGHT_EVIDENCE_PATH,
+                    "identity_status": subject.EXPECTED_WEIGHT_STATUS,
+                },
             }
         ]
     }
 
 
-def write_fixture(root: pathlib.Path, lock_doc, evidence_doc):
+def write_fixture(root: pathlib.Path, lock_doc, evidence_doc, weight_doc=None):
+    weight_doc = weight_doc or weight_evidence()
     lock_path = root / "models" / "models.lock.json"
     evidence_path = root / EVIDENCE_PATH
+    weight_path = root / WEIGHT_EVIDENCE_PATH
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    weight_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text(json.dumps(lock_doc), encoding="utf-8")
     evidence_path.write_text(json.dumps(evidence_doc), encoding="utf-8")
+    weight_path.write_text(json.dumps(weight_doc), encoding="utf-8")
     return lock_path
 
 
@@ -86,11 +113,13 @@ class MarianLockEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             evidence_doc = evidence()
-            lock_path = write_fixture(root, lock(evidence_doc), evidence_doc)
+            weight_doc = weight_evidence()
+            lock_path = write_fixture(root, lock(evidence_doc, weight_doc), evidence_doc, weight_doc)
             report = subject.validate_lock_evidence(lock_path, root)
 
         self.assertEqual(REVISION, report["revision"])
         self.assertEqual(7, report["artifact_count"])
+        self.assertEqual("pytorch_model.bin", report["source_weight"]["name"])
         self.assertFalse(report["weights_downloaded"])
 
     def test_revision_mismatch_fails(self):
@@ -110,6 +139,27 @@ class MarianLockEvidenceTests(unittest.TestCase):
             lock_doc["candidates"][0]["metadata_snapshot_artifacts"][2]["artifact_sha256"] = "f" * 64
             lock_path = write_fixture(root, lock_doc, evidence_doc)
             with self.assertRaisesRegex(subject.LockEvidenceError, "do not exactly match"):
+                subject.validate_lock_evidence(lock_path, root)
+
+    def test_source_weight_hash_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            evidence_doc = evidence()
+            weight_doc = weight_evidence()
+            lock_doc = lock(evidence_doc, weight_doc)
+            lock_doc["candidates"][0]["source_weight_artifact"]["artifact_sha256"] = "b" * 64
+            lock_path = write_fixture(root, lock_doc, evidence_doc, weight_doc)
+            with self.assertRaisesRegex(subject.LockEvidenceError, "does not exactly match"):
+                subject.validate_lock_evidence(lock_path, root)
+
+    def test_source_weight_evidence_requires_local_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            evidence_doc = evidence()
+            weight_doc = weight_evidence()
+            weight_doc["local_file_hash_required_before_export"] = False
+            lock_path = write_fixture(root, lock(), evidence_doc, weight_doc)
+            with self.assertRaisesRegex(subject.LockEvidenceError, "require local-file hash"):
                 subject.validate_lock_evidence(lock_path, root)
 
     def test_allow_list_drift_fails(self):
@@ -145,7 +195,7 @@ class MarianLockEvidenceTests(unittest.TestCase):
             lock_path = root / "models" / "models.lock.json"
             lock_path.parent.mkdir(parents=True, exist_ok=True)
             lock_path.write_text(json.dumps(lock()), encoding="utf-8")
-            with self.assertRaisesRegex(subject.LockEvidenceError, "does not exist"):
+            with self.assertRaisesRegex(subject.LockEvidenceError, "source-weight evidence manifest does not exist|evidence manifest does not exist"):
                 subject.validate_lock_evidence(lock_path, root)
 
 
