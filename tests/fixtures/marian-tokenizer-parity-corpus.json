@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "read-mode-prose", "text": "I was tired, so I went home."},
+    {"id": "straight-apostrophe", "text": "Don't touch the door."},
+    {"id": "curly-apostrophe", "text": "Don’t touch the door."},
+    {"id": "nfc-accent", "text": "Café is open."},
+    {"id": "nfd-accent", "text": "Café is open."},
+    {"id": "numbers-time", "text": "Gate 12 closes at 21:45."},
+    {"id": "repeated-whitespace", "text": "Keep   left\tand right."},
+    {"id": "line-break", "text": "Line one\nLine two"},
+    {"id": "symbols-price", "text": "50% OFF — $9.99!"},
+    {"id": "wifi-label", "text": "Wi‑Fi / Bluetooth: ON"},
+    {"id": "sign", "text": "No parking after 6 PM."},
+    {"id": "mixed-script", "text": "Tokyo 東京 Station"},
+    {"id": "trademark", "text": "Pokémon™ Center"}
+  ]
+}

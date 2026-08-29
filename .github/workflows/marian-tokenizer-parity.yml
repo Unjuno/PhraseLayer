@@ -1,0 +1,96 @@
+name: Marian Tokenizer Parity
+
+on:
+  push:
+    branches: ["agent/marian-tokenizer-parity"]
+    paths:
+      - "src/PhraseLayer.Core/MarianSentencePieceTokenizer.cs"
+      - "src/PhraseLayer.Tokenization.Microsoft/**"
+      - "tools/PhraseLayer.MarianTokenizerParity/**"
+      - "tools/generate_marian_tokenizer_reference.py"
+      - "tools/requirements-marian-tokenizer-parity.txt"
+      - "tests/fixtures/marian-tokenizer-parity-corpus.json"
+      - "tools/fetch_marian_snapshot_metadata.py"
+      - "models/models.lock.json"
+      - "models/evidence/**"
+      - ".github/workflows/marian-tokenizer-parity.yml"
+  pull_request:
+    paths:
+      - "src/PhraseLayer.Core/MarianSentencePieceTokenizer.cs"
+      - "src/PhraseLayer.Tokenization.Microsoft/**"
+      - "tools/PhraseLayer.MarianTokenizerParity/**"
+      - "tools/generate_marian_tokenizer_reference.py"
+      - "tools/requirements-marian-tokenizer-parity.txt"
+      - "tests/fixtures/marian-tokenizer-parity-corpus.json"
+      - "tools/fetch_marian_snapshot_metadata.py"
+      - "models/models.lock.json"
+      - "models/evidence/**"
+      - ".github/workflows/marian-tokenizer-parity.yml"
+
+concurrency:
+  group: marian-tokenizer-parity-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Read pinned Marian revision
+        id: model
+        shell: bash
+        run: |
+          revision="$(python - <<'PY'
+          import json
+          lock = json.load(open('models/models.lock.json', encoding='utf-8'))
+          matches = [item for item in lock['candidates'] if item.get('id') == 'opus-mt-en-jap']
+          if len(matches) != 1:
+              raise SystemExit('expected exactly one opus-mt-en-jap lock entry')
+          print(matches[0]['revision'])
+          PY
+          )"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Install pinned tokenizer reference toolchain
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-marian-tokenizer-parity.txt
+      - name: Stage exact small snapshot
+        run: |
+          python tools/fetch_marian_snapshot_metadata.py \
+            --revision "${{ steps.model.outputs.revision }}" \
+            --destination "$RUNNER_TEMP/opus-mt-en-jap-small" \
+            --output-manifest "$RUNNER_TEMP/live-snapshot.json"
+      - name: Verify live snapshot against committed evidence
+        run: |
+          cmp \
+            "$RUNNER_TEMP/live-snapshot.json" \
+            "models/evidence/opus-mt-en-jap.${{ steps.model.outputs.revision }}.snapshot.json"
+      - name: Generate Transformers MarianTokenizer reference
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: |
+          python tools/generate_marian_tokenizer_reference.py \
+            --snapshot-dir "$RUNNER_TEMP/opus-mt-en-jap-small" \
+            --corpus tests/fixtures/marian-tokenizer-parity-corpus.json \
+            --revision "${{ steps.model.outputs.revision }}" \
+            --output "$RUNNER_TEMP/marian-tokenizer-reference.json"
+      - name: Compare managed tokenizer against trusted reference
+        run: |
+          dotnet run \
+            --project tools/PhraseLayer.MarianTokenizerParity/PhraseLayer.MarianTokenizerParity.csproj \
+            -c Release -- \
+            --snapshot-dir "$RUNNER_TEMP/opus-mt-en-jap-small" \
+            --reference "$RUNNER_TEMP/marian-tokenizer-reference.json" \
+            --revision "${{ steps.model.outputs.revision }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marian-tokenizer-parity-reference
+          path: ${{ runner.temp }}/marian-tokenizer-reference.json
+          if-no-files-found: warn
+          retention-days: 7
