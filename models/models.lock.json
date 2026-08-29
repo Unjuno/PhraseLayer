@@ -54,7 +54,7 @@
         "effective_token_count": 6905,
         "generated_artifact": "ppocr_keys.txt",
         "generated_artifact_size_bytes": 27153,
-        "generated_artifact_sha256": "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc",
+        "generated_artifact_sha256": "46e1b34ef45684cb46d75d355341fe7f0a2c38d6ee02e63ae6b3878019fc",
         "generated_manifest": "ppocr_keys.manifest.json"
       },
       "format": "onnx",
@@ -70,8 +70,9 @@
       "id": "opus-mt-en-jap",
       "purpose": "translation-en-ja",
       "upstream": "Helsinki-NLP/opus-mt-en-jap",
+      "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
       "revision_short": "a863894",
-      "revision_status": "upstream-main-short-id-observed; full-40-character-sha-required-before-artifact-staging",
+      "revision_status": "full-40-character-upstream-main-resolved; six-file-small-snapshot-contract-validated-and-fingerprinted",
       "architecture": "MarianMTModel",
       "model_type": "marian",
       "source_language": "en",
@@ -88,6 +89,38 @@
       "pad_token_id": 46275,
       "decoder_start_token_id": 46275,
       "configured_num_beams": 4,
+      "metadata_snapshot_artifacts": [
+        {
+          "artifact": "config.json",
+          "artifact_size_bytes": 1382,
+          "artifact_sha256": "12ae90385b9a78eb6be670ea49c8e1379ffb99c0598fccb637ad08b393e79a5c"
+        },
+        {
+          "artifact": "generation_config.json",
+          "artifact_size_bytes": 293,
+          "artifact_sha256": "9c80a2f4beac1d45f4f7388bc34d9a9602cfc86b443a6e3e0587a48f718ae698"
+        },
+        {
+          "artifact": "tokenizer_config.json",
+          "artifact_size_bytes": 43,
+          "artifact_sha256": "b9f71a590f833210b914f40b4d5153822e0a2d6e70ca58088e1fd8218b012c81"
+        },
+        {
+          "artifact": "source.spm",
+          "artifact_size_bytes": 508602,
+          "artifact_sha256": "375cbed8885a6d369e0493acfc69a066010a86f98f9bac02430cbeb1726934a6"
+        },
+        {
+          "artifact": "target.spm",
+          "artifact_size_bytes": 1021944,
+          "artifact_sha256": "7d5ec21daca7dccb7a9df371b699def40ddd9d0c24cef855e44e31a39b96af55"
+        },
+        {
+          "artifact": "vocab.json",
+          "artifact_size_bytes": 1642424,
+          "artifact_sha256": "9d75e73cc4484a38cd8d90960517fef2d119b93975efad6607d835ce08acdcf9"
+        }
+      ],
       "source_snapshot_artifacts": [
         "config.json",
         "generation_config.json",
