@@ -1,0 +1,69 @@
+{
+  "artifacts": [
+    {
+      "name": "README.md",
+      "sha256": "041dc07bb7d13cb29ec0514bcf6ed20433eaf9d9a60c9ca7dffbad0d82ca4aee",
+      "size_bytes": 830
+    },
+    {
+      "name": "config.json",
+      "sha256": "12ae90385b9a78eb6be670ea49c8e1379ffb99c0598fccb637ad08b393e79a5c",
+      "size_bytes": 1382
+    },
+    {
+      "name": "generation_config.json",
+      "sha256": "9c80a2f4beac1d45f4f7388bc34d9a9602cfc86b443a6e3e0587a48f718ae698",
+      "size_bytes": 293
+    },
+    {
+      "name": "tokenizer_config.json",
+      "sha256": "b9f71a590f833210b914f40b4d5153822e0a2d6e70ca58088e1fd8218b012c81",
+      "size_bytes": 43
+    },
+    {
+      "name": "source.spm",
+      "sha256": "375cbed8885a6d369e0493acfc69a066010a86f98f9bac02430cbeb1726934a6",
+      "size_bytes": 508602
+    },
+    {
+      "name": "target.spm",
+      "sha256": "7d5ec21daca7dccb7a9df371b699def40ddd9d0c24cef855e44e31a39b96af55",
+      "size_bytes": 1021944
+    },
+    {
+      "name": "vocab.json",
+      "sha256": "9d75e73cc4484a38cd8d90960517fef2d119b93975efad6607d835ce08acdcf9",
+      "size_bytes": 1642424
+    }
+  ],
+  "generation_policy": {
+    "bad_word_token_ids": [
+      46275
+    ],
+    "forced_eos_token_id": 0,
+    "phraselayer_parity_beam_width": 1,
+    "renormalize_logits": true,
+    "upstream_default_beam_width": 4
+  },
+  "languages": {
+    "source": "en",
+    "target": "jap"
+  },
+  "license": "apache-2.0",
+  "model_id": "Helsinki-NLP/opus-mt-en-jap",
+  "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
+  "schema_version": 1,
+  "staging": {
+    "allow_list": [
+      "README.md",
+      "config.json",
+      "generation_config.json",
+      "tokenizer_config.json",
+      "source.spm",
+      "target.spm",
+      "vocab.json"
+    ],
+    "mode": "huggingface-small-artifacts-only",
+    "weights_downloaded": false
+  }
+}
