@@ -37,6 +37,17 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
         }
 
         [Fact]
+        public void AdjacentUnknownSurfaceTokensAreCoalescedLikeGoogleSentencePiece()
+        {
+            var processor = new MicrosoftMlSentencePieceProcessor(BuildSimpleUnigramModel());
+
+            var pieces = processor.EncodePieces("東京");
+
+            Assert.Single(pieces);
+            Assert.Equal("▁東京", pieces[0]);
+        }
+
+        [Fact]
         public void InternalSentencePieceIdsCanBeResolvedWithoutAssumingMarianIds()
         {
             var processor = new MicrosoftMlSentencePieceProcessor(BuildSimpleUnigramModel());
@@ -47,7 +58,7 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
         }
 
         [Fact]
-        public void UnknownSurfacePiecesMapThroughExternalMarianVocabularyToUnknownId()
+        public void UnknownSurfacePiecesMapThroughExternalMarianVocabularyToOneUnknownIdPerSpan()
         {
             var processor = new MicrosoftMlSentencePieceProcessor(BuildSimpleUnigramModel());
             var externalVocabulary = new Dictionary<string, int>(StringComparer.Ordinal)
@@ -66,10 +77,9 @@ namespace PhraseLayer.Tokenization.Microsoft.Tests
             var surfacePieces = processor.EncodePieces("mystery");
             var encoded = marian.EncodeSource("mystery", maximumTokens: 32);
 
-            Assert.NotEmpty(surfacePieces);
+            Assert.Single(surfacePieces);
             Assert.DoesNotContain("<unk>", surfacePieces);
-            Assert.Equal(0, encoded.TokenIds[encoded.TokenIds.Count - 1]);
-            Assert.All(encoded.TokenIds.Take(encoded.TokenIds.Count - 1), tokenId => Assert.Equal(1, tokenId));
+            Assert.Equal(new[] { 1, 0 }, encoded.TokenIds);
         }
 
         [Fact]
