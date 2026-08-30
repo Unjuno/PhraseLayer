@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping
 
 
 class TokenizerInspectionError(ValueError):
@@ -29,18 +29,20 @@ def _component_summary(value: Any) -> Any:
         children = value.get("pretokenizers", value.get("decoders", value.get("normalizers")))
         _require(isinstance(children, list), "Sequence tokenizer component children are missing")
         result["children"] = [_component_summary(child) for child in children]
-    for field in (
-        "prefix",
-        "suffix",
-        "replacement",
-        "prepend_scheme",
-        "cleanup",
-        "add_prefix_space",
-        "trim_offsets",
-        "use_regex",
-    ):
-        if field in value:
-            result[field] = value[field]
+    # Preserve all scalar/list/dict parameters that determine normalization or decode behavior.
+    # Exclude only the already-recursed child arrays and the type discriminator.
+    excluded = {"type", "pretokenizers", "decoders", "normalizers"}
+    for field, field_value in value.items():
+        if field in excluded:
+            continue
+        if isinstance(field_value, (str, int, float, bool)) or field_value is None:
+            result[field] = field_value
+        elif isinstance(field_value, (list, dict)):
+            result[field] = field_value
+        else:
+            raise TokenizerInspectionError(
+                f"unsupported non-JSON tokenizer component parameter {field} on {component_type}"
+            )
     return result
 
 
@@ -66,6 +68,7 @@ def inspect_tokenizer(tokenizer: Mapping[str, Any]) -> Dict[str, Any]:
     _require(isinstance(added, list), "tokenizer added_tokens must be a list")
     added_by_id: Dict[int, str] = {}
     special_count = 0
+    non_special_added = []
     for index, item in enumerate(added):
         _require(isinstance(item, dict), f"added_tokens[{index}] must be an object")
         token_id = item.get("id")
@@ -76,6 +79,8 @@ def inspect_tokenizer(tokenizer: Mapping[str, Any]) -> Dict[str, Any]:
         added_by_id[token_id] = content
         if item.get("special") is True:
             special_count += 1
+        else:
+            non_special_added.append({"id": token_id, "content": content})
 
     interesting_ids = [0, 1, 2, 3, 32000, 32767]
     interesting_tokens = {
@@ -98,6 +103,7 @@ def inspect_tokenizer(tokenizer: Mapping[str, Any]) -> Dict[str, Any]:
         "added_tokens": {
             "count": len(added),
             "special_count": special_count,
+            "non_special": non_special_added,
             "interesting_ids": interesting_tokens,
         },
     }
@@ -108,6 +114,8 @@ def inspect_tokenizer(tokenizer: Mapping[str, Any]) -> Dict[str, Any]:
         "end_of_word_suffix",
         "byte_fallback",
         "fuse_unk",
+        "dropout",
+        "ignore_merges",
     ):
         if field in model:
             result["model"][field] = model[field]
