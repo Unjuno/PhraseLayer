@@ -6,7 +6,11 @@ on:
     paths:
       - ".github/workflows/moonshine-tokenizer-probe.yml"
       - "tools/inspect_moonshine_tokenizer.py"
+      - "tools/prepare_moonshine_token_decoder_assets.py"
+      - "tools/build_moonshine_decoder_parity_cases.py"
       - "tools/fetch_moonshine_snapshot_metadata.py"
+      - "src/PhraseLayer.Core/MoonshineBinaryTokenDecoder.cs"
+      - "tests/PhraseLayer.MoonshineDecoderParity/**"
       - "models/models.lock.json"
       - "models/evidence/moonshine-tiny.*.snapshot.json"
 
@@ -22,6 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
       - name: Validate lock and committed evidence
         run: |
           python tools/validate_moonshine_evidence.py
@@ -39,8 +46,8 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               print("revision=" + candidate["revision"], file=output)
           PY
-      - name: Install pinned Hub client
-        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2"
+      - name: Install pinned Hub/tokenizer reference clients
+        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2" "tokenizers==0.22.1"
       - name: Stage exact tokenizer snapshot
         run: |
           python tools/fetch_moonshine_snapshot_metadata.py \
@@ -52,9 +59,28 @@ jobs:
           python tools/inspect_moonshine_tokenizer.py \
             --tokenizer "$RUNNER_TEMP/moonshine-tiny-small/tokenizer.json" \
             --output "$RUNNER_TEMP/moonshine-tiny.tokenizer-contract.json"
+      - name: Prepare native-compatible decoder asset
+        run: |
+          python tools/prepare_moonshine_token_decoder_assets.py \
+            --tokenizer "$RUNNER_TEMP/moonshine-tiny-small/tokenizer.json" \
+            --output "$RUNNER_TEMP/moonshine-tiny.tokens.bin" \
+            --manifest "$RUNNER_TEMP/moonshine-tiny.tokens.manifest.json"
+      - name: Build trusted reference decode cases
+        run: |
+          python tools/build_moonshine_decoder_parity_cases.py \
+            --tokenizer "$RUNNER_TEMP/moonshine-tiny-small/tokenizer.json" \
+            --output "$RUNNER_TEMP/moonshine-tiny.decode-cases.json"
+      - name: Compare managed decoder with tokenizers reference
+        run: |
+          dotnet run --project tests/PhraseLayer.MoonshineDecoderParity/PhraseLayer.MoonshineDecoderParity.csproj -c Release -- \
+            "$RUNNER_TEMP/moonshine-tiny.tokens.bin" \
+            "$RUNNER_TEMP/moonshine-tiny.decode-cases.json"
       - uses: actions/upload-artifact@v4
         with:
           name: moonshine-tiny-tokenizer-contract
-          path: ${{ runner.temp }}/moonshine-tiny.tokenizer-contract.json
+          path: |
+            ${{ runner.temp }}/moonshine-tiny.tokenizer-contract.json
+            ${{ runner.temp }}/moonshine-tiny.tokens.manifest.json
+            ${{ runner.temp }}/moonshine-tiny.decode-cases.json
           if-no-files-found: error
           retention-days: 7
