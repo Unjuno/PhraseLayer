@@ -45,6 +45,8 @@ class MoonshineSnapshotFetchTests(unittest.TestCase):
 
             self.assertEqual(list(subject.SMALL_ARTIFACTS), calls)
             self.assertEqual(list(subject.SMALL_ARTIFACTS), manifest["staging"]["allow_list"])
+            self.assertEqual(32000, manifest["tokenizer_contract"]["base_vocabulary_size"])
+            self.assertEqual(768, manifest["tokenizer_contract"]["added_token_entries"])
             self.assertFalse(manifest["staging"]["weights_downloaded"])
             self.assertFalse((destination / "model.safetensors").exists())
 
@@ -104,7 +106,11 @@ class MoonshineSnapshotFetchTests(unittest.TestCase):
             "padding_value": 0.0,
         })
         MoonshineSnapshotFetchTests._write_json(root / "tokenizer.json", {
-            "model": {"vocab": list(range(32768))}
+            "model": {"vocab": list(range(32000))},
+            "added_tokens": [
+                {"id": token_id, "content": f"<extra-{token_id}>"}
+                for token_id in range(32000, 32768)
+            ],
         })
 
     @staticmethod
