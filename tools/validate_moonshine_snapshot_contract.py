@@ -14,7 +14,7 @@ import hashlib
 import json
 import pathlib
 import re
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Tuple
 
 MODEL_ID = "moonshine-ai/moonshine-tiny"
 EXPECTED_REVISION = "390624ed33d594443aa4aa221f5b9f283b545b5a"
@@ -52,19 +52,38 @@ def _sha256(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def _extract_tokenizer_vocab_size(tokenizer: Mapping[str, Any]) -> int:
+def _extract_tokenizer_id_space(tokenizer: Mapping[str, Any]) -> Tuple[int, int, int]:
     model = tokenizer.get("model")
     _require(isinstance(model, dict), "tokenizer.json model block is missing")
     vocab = model.get("vocab")
     if isinstance(vocab, dict):
-        ids = list(vocab.values())
-        _require(all(isinstance(item, int) and not isinstance(item, bool) for item in ids),
-                 "tokenizer.json vocabulary ids must be integers")
-        _require(len(set(ids)) == len(ids), "tokenizer.json vocabulary ids must be unique")
-        return len(vocab)
-    if isinstance(vocab, list):
-        return len(vocab)
-    raise SnapshotContractError("tokenizer.json model.vocab must be an object or list")
+        base_ids = list(vocab.values())
+        _require(all(isinstance(item, int) and not isinstance(item, bool) for item in base_ids),
+                 "tokenizer.json base vocabulary ids must be integers")
+    elif isinstance(vocab, list):
+        # Some tokenizer model families store vocabulary entries in an ordered list; their list index is the id.
+        base_ids = list(range(len(vocab)))
+    else:
+        raise SnapshotContractError("tokenizer.json model.vocab must be an object or list")
+    _require(len(set(base_ids)) == len(base_ids), "tokenizer.json base vocabulary ids must be unique")
+
+    added = tokenizer.get("added_tokens", [])
+    _require(isinstance(added, list), "tokenizer.json added_tokens must be a list")
+    added_ids = []
+    for index, item in enumerate(added):
+        _require(isinstance(item, dict), f"tokenizer.json added_tokens[{index}] must be an object")
+        token_id = item.get("id")
+        _require(isinstance(token_id, int) and not isinstance(token_id, bool),
+                 f"tokenizer.json added_tokens[{index}].id must be an integer")
+        added_ids.append(token_id)
+    _require(len(set(added_ids)) == len(added_ids), "tokenizer.json added token ids must be unique")
+
+    all_ids = set(base_ids)
+    all_ids.update(added_ids)
+    expected_ids = set(range(32768))
+    _require(all_ids == expected_ids,
+             "Moonshine tokenizer id-space drift: base + added tokens must cover exactly ids 0..32767")
+    return len(base_ids), len(added_ids), len(all_ids)
 
 
 def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, Any]:
@@ -121,13 +140,9 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
     _require(preprocessor.get("return_attention_mask") is True, "Moonshine attention-mask drift")
     _require(preprocessor.get("padding_value") == 0.0, "Moonshine padding-value drift")
 
-    tokenizer_vocab_size = _extract_tokenizer_vocab_size(tokenizer)
-    _require(tokenizer_vocab_size == 32768,
-             f"Moonshine tokenizer vocabulary drift: expected 32768, got {tokenizer_vocab_size}")
+    base_vocab_size, added_token_count, tokenizer_id_count = _extract_tokenizer_id_space(tokenizer)
 
     readme = paths["README.md"].read_text(encoding="utf-8")
-    # Hugging Face model-card front matter at the reviewed English snapshot declares MIT.
-    # Accept common YAML casing/spacing while requiring the value itself exactly.
     _require(re.search(r"(?mi)^license\s*:\s*mit\s*$", readme) is not None,
              "Moonshine pinned model card must declare license: mit")
 
@@ -160,6 +175,13 @@ def validate_snapshot(snapshot_dir: pathlib.Path, revision: str) -> Dict[str, An
             "pad_token_id": 2,
             "max_length": 194,
         },
+        "tokenizer_contract": {
+            "base_vocabulary_size": base_vocab_size,
+            "added_token_entries": added_token_count,
+            "unique_token_id_count": tokenizer_id_count,
+            "minimum_token_id": 0,
+            "maximum_token_id": 32767,
+        },
         "artifacts": artifacts,
         "weights_downloaded": False,
     }
@@ -179,6 +201,7 @@ def main() -> None:
         "model_id": report["model_id"],
         "revision": report["revision"],
         "artifact_count": len(report["artifacts"]),
+        "tokenizer_id_count": report["tokenizer_contract"]["unique_token_id_count"],
         "weights_downloaded": report["weights_downloaded"],
     }, sort_keys=True))
 
