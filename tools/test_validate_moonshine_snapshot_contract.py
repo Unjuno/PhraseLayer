@@ -28,6 +28,9 @@ class MoonshineSnapshotContractTests(unittest.TestCase):
             self.assertEqual(REVISION, report["revision"])
             self.assertEqual("mit", report["license"])
             self.assertEqual(16000, report["audio_contract"]["sampling_rate"])
+            self.assertEqual(32000, report["tokenizer_contract"]["base_vocabulary_size"])
+            self.assertEqual(768, report["tokenizer_contract"]["added_token_entries"])
+            self.assertEqual(32768, report["tokenizer_contract"]["unique_token_id_count"])
             self.assertEqual(5, len(report["artifacts"]))
             self.assertFalse(report["weights_downloaded"])
             self.assertTrue(all(len(item["sha256"]) == 64 for item in report["artifacts"]))
@@ -71,11 +74,11 @@ class MoonshineSnapshotContractTests(unittest.TestCase):
             with self.assertRaisesRegex(subject.SnapshotContractError, "architecture"):
                 subject.validate_snapshot(root, REVISION)
 
-    def test_vocab_and_license_drift_are_rejected(self) -> None:
+    def test_token_id_space_and_license_drift_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = pathlib.Path(raw)
-            self._write_snapshot(root, vocab_size=32767)
-            with self.assertRaisesRegex(subject.SnapshotContractError, "tokenizer vocabulary"):
+            self._write_snapshot(root, total_token_ids=32767)
+            with self.assertRaisesRegex(subject.SnapshotContractError, "id-space"):
                 subject.validate_snapshot(root, REVISION)
 
         with tempfile.TemporaryDirectory() as raw:
@@ -94,7 +97,7 @@ class MoonshineSnapshotContractTests(unittest.TestCase):
                 subject.validate_snapshot(root, REVISION)
 
     @staticmethod
-    def _write_snapshot(root: pathlib.Path, vocab_size: int = 32768) -> None:
+    def _write_snapshot(root: pathlib.Path, total_token_ids: int = 32768) -> None:
         (root / "README.md").write_text("---\nlanguage: en\nlicense: mit\n---\n", encoding="utf-8")
         MoonshineSnapshotContractTests._write_json(root / "config.json", {
             "architectures": ["MoonshineForConditionalGeneration"],
@@ -128,10 +131,14 @@ class MoonshineSnapshotContractTests(unittest.TestCase):
             "return_attention_mask": True,
             "padding_value": 0.0,
         })
-        # The validator accepts either the real tokenizer's vocab object or a list. A compact synthetic
-        # list keeps this fixture dependency-free while still exercising the 32,768-entry contract.
+        base_size = min(32000, total_token_ids)
+        added = [
+            {"id": token_id, "content": f"<extra-{token_id}>"}
+            for token_id in range(base_size, total_token_ids)
+        ]
         MoonshineSnapshotContractTests._write_json(root / "tokenizer.json", {
-            "model": {"vocab": list(range(vocab_size))}
+            "model": {"vocab": list(range(base_size))},
+            "added_tokens": added,
         })
 
     @staticmethod
