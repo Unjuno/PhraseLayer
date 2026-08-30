@@ -59,7 +59,8 @@ namespace PhraseLayer.Core.Tests
                 AssistancePolicy.ForMode(AssistanceMode.Balanced));
 
             Assert.NotNull(result.LanguagePlan);
-            Assert.Equal("Please 立ち入らない", result.LanguagePlan!.DisplayText);
+            Assert.Equal(result.Observation.Text, result.LanguagePlan!.SourceText);
+            Assert.Equal("Please keep off", result.LanguagePlan.SourceText);
         }
 
         [Fact]
