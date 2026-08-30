@@ -1,0 +1,282 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using PhraseLayer.Core.Assistance;
+using PhraseLayer.Core.Inputs;
+
+namespace PhraseLayer.Core.Pipeline
+{
+    public sealed class ListenModeObservationResult
+    {
+        public ListenModeObservationResult(
+            AudioChunk audio,
+            AsrObservation observation,
+            MixedLanguagePlan? languagePlan)
+        {
+            Audio = audio ?? throw new ArgumentNullException(nameof(audio));
+            Observation = observation ?? throw new ArgumentNullException(nameof(observation));
+            if (languagePlan != null && !string.Equals(languagePlan.SourceText, observation.Text, StringComparison.Ordinal))
+                throw new ArgumentException("Listen Mode language plan must match the ASR transcript.", nameof(languagePlan));
+
+            LanguagePlan = languagePlan;
+        }
+
+        public AudioChunk Audio { get; }
+        public AsrObservation Observation { get; }
+        public MixedLanguagePlan? LanguagePlan { get; }
+        public bool HasLanguagePlan => LanguagePlan != null;
+    }
+
+    /// <summary>
+    /// ASR → adaptive-language handoff for one utterance/window. Partial ASR observations are exposed to
+    /// the caller but are not translated by default, avoiding expensive translation churn while a transcript
+    /// is still changing. Set planPartialObservations only for a UI that explicitly wants partial mixed text.
+    /// </summary>
+    public sealed class ListenModeObservationProcessor
+    {
+        private readonly IAsrEngine asr;
+        private readonly LanguagePipeline language;
+        private readonly bool planPartialObservations;
+
+        public ListenModeObservationProcessor(
+            IAsrEngine asr,
+            LanguagePipeline language,
+            bool planPartialObservations = false)
+        {
+            this.asr = asr ?? throw new ArgumentNullException(nameof(asr));
+            this.language = language ?? throw new ArgumentNullException(nameof(language));
+            this.planPartialObservations = planPartialObservations;
+        }
+
+        public async Task<ListenModeObservationResult> ProcessAsync(
+            AudioChunk audio,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (audio == null) throw new ArgumentNullException(nameof(audio));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var observation = await asr.TranscribeAsync(audio, cancellationToken);
+            MixedLanguagePlan? plan = null;
+            if (!string.IsNullOrWhiteSpace(observation.Text) &&
+                (observation.IsFinal || planPartialObservations))
+            {
+                plan = await language.PlanAsync(
+                    observation.Text,
+                    policy,
+                    observation.Text,
+                    cancellationToken);
+            }
+
+            return new ListenModeObservationResult(audio, observation, plan);
+        }
+    }
+
+    public enum LiveListenModeProcessingStatus
+    {
+        Processed = 0,
+        Superseded = 1,
+        StaleInput = 2
+    }
+
+    public sealed class LiveListenModeProcessingResult
+    {
+        public LiveListenModeProcessingResult(
+            LiveListenModeProcessingStatus status,
+            long audioTimestampMicroseconds,
+            ListenModeObservationResult? output)
+        {
+            if (audioTimestampMicroseconds < 0)
+                throw new ArgumentOutOfRangeException(nameof(audioTimestampMicroseconds));
+            if (status == LiveListenModeProcessingStatus.Processed && output == null)
+                throw new ArgumentException("Processed Listen Mode results require output.", nameof(output));
+            if (status != LiveListenModeProcessingStatus.Processed && output != null)
+                throw new ArgumentException("Skipped Listen Mode results must not carry output.", nameof(output));
+
+            Status = status;
+            AudioTimestampMicroseconds = audioTimestampMicroseconds;
+            Output = output;
+        }
+
+        public LiveListenModeProcessingStatus Status { get; }
+        public long AudioTimestampMicroseconds { get; }
+        public ListenModeObservationResult? Output { get; }
+        public bool WasProcessed => Status == LiveListenModeProcessingStatus.Processed;
+    }
+
+    /// <summary>
+    /// Latest-utterance/window-wins coordinator for live Listen Mode.
+    ///
+    /// This coordinator treats each submitted AudioChunk as a complete ASR work item (for example a VAD-delimited
+    /// utterance or rolling recognition window). A newer timestamp cancels older work. Even if an ASR/translation
+    /// adapter ignores cancellation, the generation gate prevents an older transcript from replacing a newer one.
+    /// Continuous microphone buffering and VAD are intentionally outside Core and feed this boundary.
+    /// </summary>
+    public sealed class LiveListenModeCoordinator : IDisposable
+    {
+        private readonly ListenModeObservationProcessor processor;
+        private readonly object gate = new object();
+        private CancellationTokenSource? activeCancellation;
+        private long latestAcceptedTimestampMicroseconds = -1;
+        private long generation;
+        private bool disposed;
+
+        public LiveListenModeCoordinator(ListenModeObservationProcessor processor)
+        {
+            this.processor = processor ?? throw new ArgumentNullException(nameof(processor));
+        }
+
+        public long? LatestAcceptedTimestampMicroseconds
+        {
+            get
+            {
+                lock (gate)
+                {
+                    return latestAcceptedTimestampMicroseconds < 0
+                        ? (long?)null
+                        : latestAcceptedTimestampMicroseconds;
+                }
+            }
+        }
+
+        public async Task<LiveListenModeProcessingResult> SubmitAsync(
+            AudioChunk audio,
+            AssistancePolicy policy,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (audio == null) throw new ArgumentNullException(nameof(audio));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+            if (audio.TimestampMicroseconds < 0)
+                throw new ArgumentOutOfRangeException(nameof(audio), "Audio timestamps must be non-negative.");
+            cancellationToken.ThrowIfCancellationRequested();
+
+            CancellationTokenSource localCancellation;
+            CancellationTokenSource? previousCancellation;
+            long localGeneration;
+            lock (gate)
+            {
+                ThrowIfDisposed();
+                if (audio.TimestampMicroseconds <= latestAcceptedTimestampMicroseconds)
+                {
+                    return new LiveListenModeProcessingResult(
+                        LiveListenModeProcessingStatus.StaleInput,
+                        audio.TimestampMicroseconds,
+                        null);
+                }
+
+                latestAcceptedTimestampMicroseconds = audio.TimestampMicroseconds;
+                localGeneration = ++generation;
+                previousCancellation = activeCancellation;
+                localCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                activeCancellation = localCancellation;
+            }
+
+            CancelAndDispose(previousCancellation);
+            var localToken = localCancellation.Token;
+            ListenModeObservationResult output;
+            try
+            {
+                output = await processor.ProcessAsync(audio, policy, localToken);
+            }
+            catch (OperationCanceledException) when (
+                localToken.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                return new LiveListenModeProcessingResult(
+                    LiveListenModeProcessingStatus.Superseded,
+                    audio.TimestampMicroseconds,
+                    null);
+            }
+            finally
+            {
+                var disposeLocal = false;
+                lock (gate)
+                {
+                    if (ReferenceEquals(activeCancellation, localCancellation))
+                    {
+                        activeCancellation = null;
+                        disposeLocal = true;
+                    }
+                }
+                if (disposeLocal) localCancellation.Dispose();
+            }
+
+            lock (gate)
+            {
+                if (disposed ||
+                    localGeneration != generation ||
+                    audio.TimestampMicroseconds != latestAcceptedTimestampMicroseconds)
+                {
+                    return new LiveListenModeProcessingResult(
+                        LiveListenModeProcessingStatus.Superseded,
+                        audio.TimestampMicroseconds,
+                        null);
+                }
+            }
+
+            return new LiveListenModeProcessingResult(
+                LiveListenModeProcessingStatus.Processed,
+                audio.TimestampMicroseconds,
+                output);
+        }
+
+        public void CancelActive()
+        {
+            CancellationTokenSource? cancellation;
+            lock (gate)
+            {
+                ThrowIfDisposed();
+                generation++;
+                cancellation = activeCancellation;
+                activeCancellation = null;
+            }
+            CancelAndDispose(cancellation);
+        }
+
+        public void Reset()
+        {
+            CancellationTokenSource? cancellation;
+            lock (gate)
+            {
+                ThrowIfDisposed();
+                generation++;
+                cancellation = activeCancellation;
+                activeCancellation = null;
+                latestAcceptedTimestampMicroseconds = -1;
+            }
+            CancelAndDispose(cancellation);
+        }
+
+        public void Dispose()
+        {
+            CancellationTokenSource? cancellation;
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                generation++;
+                cancellation = activeCancellation;
+                activeCancellation = null;
+            }
+            CancelAndDispose(cancellation);
+        }
+
+        private static void CancelAndDispose(CancellationTokenSource? cancellation)
+        {
+            if (cancellation == null) return;
+            try
+            {
+                cancellation.Cancel();
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (disposed) throw new ObjectDisposedException(nameof(LiveListenModeCoordinator));
+        }
+    }
+}
