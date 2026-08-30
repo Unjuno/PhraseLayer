@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using PhraseLayer.Core.Audio;
 using Xunit;
 
@@ -52,7 +53,7 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public void GreedyRuntimeCanUseManagedBinaryDecoderEndToEnd()
+        public async Task GreedyRuntimeCanUseManagedBinaryDecoderEndToEnd()
         {
             var entries = EmptyReviewedVocabulary();
             entries[3] = Encoding.UTF8.GetBytes("▁hello");
@@ -63,8 +64,8 @@ namespace PhraseLayer.Core.Tests
                 decoder,
                 maximumGenerationLength: 8);
 
-            var observation = runtime.TranscribePreparedAsync(
-                new PhraseLayer.Core.Inputs.AudioChunk(new float[160], 16000, 1)).GetAwaiter().GetResult();
+            var observation = await runtime.TranscribePreparedAsync(
+                new PhraseLayer.Core.Inputs.AudioChunk(new float[160], 16000, 1));
 
             Assert.True(observation.IsFinal);
             Assert.Equal("hello world", observation.Text);
@@ -110,11 +111,11 @@ namespace PhraseLayer.Core.Tests
         {
             private readonly int[] tokens;
             public ScriptedBackend(params int[] tokens) { this.tokens = tokens; }
-            public System.Threading.Tasks.Task<IAudioSeq2SeqGenerationSession> StartAsync(
+            public Task<IAudioSeq2SeqGenerationSession> StartAsync(
                 PhraseLayer.Core.Inputs.AudioChunk monoAudio,
                 System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
             {
-                return System.Threading.Tasks.Task.FromResult<IAudioSeq2SeqGenerationSession>(new Session(tokens));
+                return Task.FromResult<IAudioSeq2SeqGenerationSession>(new Session(tokens));
             }
 
             private sealed class Session : IAudioSeq2SeqGenerationSession
@@ -122,7 +123,7 @@ namespace PhraseLayer.Core.Tests
                 private readonly int[] tokens;
                 private int index;
                 public Session(int[] tokens) { this.tokens = tokens; }
-                public System.Threading.Tasks.Task<AsrDecoderStepResult> DecodeNextAsync(
+                public Task<AsrDecoderStepResult> DecodeNextAsync(
                     int previousTokenId,
                     System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
                 {
@@ -130,7 +131,7 @@ namespace PhraseLayer.Core.Tests
                     var logits = new float[MoonshineTinyAsrContract.VocabularySize];
                     var token = tokens[index++];
                     logits[token] = 1f;
-                    return System.Threading.Tasks.Task.FromResult(new AsrDecoderStepResult(logits));
+                    return Task.FromResult(new AsrDecoderStepResult(logits));
                 }
                 public void Dispose() { }
             }
