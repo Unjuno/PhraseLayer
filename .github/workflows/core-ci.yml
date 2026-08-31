@@ -38,6 +38,7 @@ jobs:
       - run: python tools/test_validate_moonshine_snapshot_contract.py
       - run: python tools/test_fetch_moonshine_snapshot_metadata.py
       - run: python tools/test_fetch_moonshine_weight_metadata.py
+      - run: python tools/test_validate_moonshine_local_source.py
       - run: python tools/test_validate_moonshine_evidence.py
       - run: python tools/validate_moonshine_evidence.py
       - run: python tools/test_validate_moonshine_lock_evidence.py
