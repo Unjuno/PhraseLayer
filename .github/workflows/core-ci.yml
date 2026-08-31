@@ -44,6 +44,7 @@ jobs:
       - run: python tools/validate_moonshine_lock_evidence.py
       - run: python tools/test_inspect_moonshine_tokenizer.py
       - run: python tools/test_prepare_moonshine_token_decoder_assets.py
+      - run: python tools/test_inspect_moonshine_v1_onnx_bundle.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
       - run: dotnet build src/PhraseLayer.Core/PhraseLayer.Core.csproj -c Release --no-restore
       - run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --no-restore
