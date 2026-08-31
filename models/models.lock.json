@@ -168,7 +168,7 @@
       "purpose": "asr-en-offline",
       "upstream": "moonshine-ai/moonshine-tiny",
       "revision": "390624ed33d594443aa4aa221f5b9f283b545b5a",
-      "revision_status": "full-40-character-upstream-revision-resolved; five-file-small-snapshot-contract-validated-and-fingerprinted",
+      "revision_status": "full-40-character-upstream-revision-resolved; five-file-small-snapshot-contract-and-source-weight-identity-validated",
       "evidence_manifest": "models/evidence/moonshine-tiny.390624ed33d594443aa4aa221f5b9f283b545b5a.snapshot.json",
       "architecture": "MoonshineForConditionalGeneration",
       "model_type": "moonshine",
@@ -216,13 +216,28 @@
           "artifact_sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
         }
       ],
-      "format": "transformers-source; export-target-unreviewed",
+      "source_weight_artifact": {
+        "artifact": "model.safetensors",
+        "artifact_size_bytes": 108389192,
+        "artifact_sha256": "867cd2215804859c55aa972d740bd5002be149b4e7526328c895d2408848c736",
+        "evidence_manifest": "models/evidence/moonshine-tiny.390624ed33d594443aa4aa221f5b9f283b545b5a.source-weight.json",
+        "identity_status": "huggingface-head-metadata-etag-observed; local-file-hash-required-before-export"
+      },
+      "source_snapshot_artifacts": [
+        "README.md",
+        "config.json",
+        "generation_config.json",
+        "preprocessor_config.json",
+        "tokenizer.json",
+        "model.safetensors"
+      ],
+      "format": "transformers-source; export-target-under-review",
       "license": "MIT",
       "license_status": "upstream-model-card-license-verified-at-pinned-revision; redistribution-review-pending",
       "runtime_target": "backend-neutral-core; Unity adapter pending",
       "runtime_compatibility": "unverified-real-onnx-export-unity-import-and-quest-execution-required",
       "quantization": "unverified",
-      "source_precision": "unverified",
+      "source_precision": "safetensors-source; tensor-dtype-inspection-pending",
       "bundled": false
     },
     {
