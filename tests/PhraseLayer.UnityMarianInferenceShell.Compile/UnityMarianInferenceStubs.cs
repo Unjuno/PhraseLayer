@@ -8,6 +8,12 @@ namespace UnityEngine
     public class Component : Object { }
     public class Behaviour : Component { public bool enabled { get; set; } = true; }
     public class MonoBehaviour : Behaviour { }
+    public sealed class TextAsset : Object
+    {
+        public TextAsset() : this(Array.Empty<byte>()) { }
+        public TextAsset(byte[] value) { bytes = value ?? Array.Empty<byte>(); }
+        public byte[] bytes { get; }
+    }
 
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class SerializeField : Attribute { }
