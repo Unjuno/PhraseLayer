@@ -15,6 +15,11 @@ namespace UnityEngine
         public byte[] bytes { get; }
     }
 
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null;
+    }
+
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class SerializeField : Attribute { }
 
