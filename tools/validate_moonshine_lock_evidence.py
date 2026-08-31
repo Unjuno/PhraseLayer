@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Mapping
 MODEL_ID = "moonshine-tiny"
 UPSTREAM = "moonshine-ai/moonshine-tiny"
 REVISION = "390624ed33d594443aa4aa221f5b9f283b545b5a"
+SOURCE_WEIGHT_NAME = "model.safetensors"
+SOURCE_WEIGHT_SIZE = 108389192
+SOURCE_WEIGHT_SHA256 = "867cd2215804859c55aa972d740bd5002be149b4e7526328c895d2408848c736"
+SOURCE_WEIGHT_EVIDENCE = f"models/evidence/moonshine-tiny.{REVISION}.source-weight.json"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 EXPECTED_ALLOW_LIST = [
     "README.md",
@@ -80,6 +84,42 @@ def _evidence_artifacts(evidence: Mapping[str, Any]) -> List[Dict[str, Any]]:
                  f"evidence artifacts[{index}] sha256 is invalid")
         result.append({"name": name, "size_bytes": size, "sha256": sha})
     return result
+
+
+def _validate_source_weight(candidate: Mapping[str, Any], repository_root: pathlib.Path) -> Dict[str, Any]:
+    lock_weight = candidate.get("source_weight_artifact")
+    _require(isinstance(lock_weight, dict), "Moonshine lock source_weight_artifact must be an object")
+    expected_lock = {
+        "artifact": SOURCE_WEIGHT_NAME,
+        "artifact_size_bytes": SOURCE_WEIGHT_SIZE,
+        "artifact_sha256": SOURCE_WEIGHT_SHA256,
+        "evidence_manifest": SOURCE_WEIGHT_EVIDENCE,
+        "identity_status": "huggingface-head-metadata-etag-observed; local-file-hash-required-before-export",
+    }
+    _require(lock_weight == expected_lock, "Moonshine source weight lock drift")
+
+    evidence_path = repository_root / SOURCE_WEIGHT_EVIDENCE
+    _require(evidence_path.is_file(), f"Moonshine source weight evidence does not exist: {SOURCE_WEIGHT_EVIDENCE}")
+    evidence = _load_json(evidence_path)
+    _require(isinstance(evidence, dict), "Moonshine source weight evidence must contain an object")
+    _require(evidence.get("schema_version") == 1, "Moonshine source weight evidence schema drift")
+    _require(evidence.get("model_id") == UPSTREAM, "Moonshine source weight model_id drift")
+    _require(evidence.get("revision") == REVISION, "Moonshine source weight revision drift")
+    _require(evidence.get("identity_source") == "huggingface-head-metadata-etag",
+             "Moonshine source weight identity source drift")
+    _require(evidence.get("local_file_hash_required_before_export") is True,
+             "Moonshine source weight must require a local hash before export")
+    _require(evidence.get("weight_downloaded") is False,
+             "Moonshine source weight evidence must prove weight_downloaded=false")
+    _require(evidence.get("bundled") is False,
+             "Moonshine source weight evidence must prove bundled=false")
+    artifact = evidence.get("artifact")
+    _require(artifact == {
+        "name": SOURCE_WEIGHT_NAME,
+        "size_bytes": SOURCE_WEIGHT_SIZE,
+        "sha256": SOURCE_WEIGHT_SHA256,
+    }, "Moonshine source weight artifact evidence drift")
+    return dict(artifact)
 
 
 def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Path) -> Dict[str, Any]:
@@ -151,6 +191,7 @@ def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Pat
              "Moonshine evidence artifact order/set drift")
     _require(lock_artifacts == evidence_artifacts,
              "Moonshine models.lock metadata_snapshot_artifacts do not exactly match committed evidence")
+    source_weight = _validate_source_weight(candidate, repository_root)
 
     return {
         "candidate": MODEL_ID,
@@ -159,6 +200,7 @@ def validate_lock_evidence(lock_path: pathlib.Path, repository_root: pathlib.Pat
         "evidence_manifest": evidence_relative,
         "artifact_count": len(evidence_artifacts),
         "tokenizer_id_count": tokenizer["unique_token_id_count"],
+        "source_weight": source_weight,
         "weights_downloaded": False,
     }
 
