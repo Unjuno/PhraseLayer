@@ -23,6 +23,9 @@ namespace PhraseLayer.Core.Audio
         public const int DecoderLayerCount = 6;
         public const int EncoderAttentionHeadCount = 8;
         public const int DecoderAttentionHeadCount = 8;
+        // Deployment graph helpers use the shorter plural form. Keep it as an exact alias so
+        // graph/runtime code cannot drift from the reviewed model metadata constant above.
+        public const int DecoderAttentionHeads = DecoderAttentionHeadCount;
         public const int MaximumPositionEmbeddings = 194;
         public const int MaximumGenerationLength = 194;
         public const int BosTokenId = 1;
