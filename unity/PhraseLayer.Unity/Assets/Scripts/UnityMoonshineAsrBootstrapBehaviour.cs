@@ -27,6 +27,7 @@ namespace PhraseLayer.Unity
         [SerializeField] private ModelAsset uncachedDecoderModel = null;
         [SerializeField] private ModelAsset cachedDecoderModel = null;
         [SerializeField] private TextAsset tokenDecoderAsset = null;
+        [SerializeField] private string tokenDecoderResourcePath = "LocalAsrAssets/moonshine-tiny.tokens";
         [SerializeField] private int maximumGenerationLength = MoonshineTinyAsrContract.MaximumGenerationLength;
         [SerializeField] private bool useGpuCompute = true;
 
@@ -50,6 +51,13 @@ namespace PhraseLayer.Unity
             uncachedDecoderModel = uncachedDecoder ?? throw new ArgumentNullException(nameof(uncachedDecoder));
             cachedDecoderModel = cachedDecoder ?? throw new ArgumentNullException(nameof(cachedDecoder));
             tokenDecoderAsset = tokenDecoder ?? throw new ArgumentNullException(nameof(tokenDecoder));
+        }
+
+        public void SetTokenDecoderResourcePath(string resourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(resourcePath))
+                throw new ArgumentException("Moonshine token decoder resource path must not be empty.", nameof(resourcePath));
+            tokenDecoderResourcePath = resourcePath;
         }
 
         public void SetGenerationLimit(int maximumTokens)
@@ -88,12 +96,24 @@ namespace PhraseLayer.Unity
                 throw new InvalidOperationException(
                     "Moonshine ASR bootstrap requires preprocess, encoder, uncached decoder, and cached decoder ModelAssets.");
             }
-            if (tokenDecoderAsset == null || tokenDecoderAsset.bytes == null || tokenDecoderAsset.bytes.Length == 0)
-                throw new InvalidOperationException("Moonshine ASR bootstrap requires the generated token decoder binary asset.");
+
+            var decoderAsset = tokenDecoderAsset;
+            if (decoderAsset == null)
+            {
+                if (string.IsNullOrWhiteSpace(tokenDecoderResourcePath))
+                    throw new InvalidOperationException("Moonshine token decoder resource path is empty.");
+                decoderAsset = Resources.Load<TextAsset>(tokenDecoderResourcePath);
+            }
+            if (decoderAsset == null || decoderAsset.bytes == null || decoderAsset.bytes.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "Moonshine ASR bootstrap requires the generated token decoder binary asset at Resources/" +
+                    tokenDecoderResourcePath + ".bytes or an explicit TextAsset reference.");
+            }
             if (maximumGenerationLength <= 0 || maximumGenerationLength > MoonshineTinyAsrContract.MaximumGenerationLength)
                 throw new InvalidOperationException("Moonshine ASR maximum generation length is outside the reviewed contract.");
 
-            var decoder = new MoonshineBinaryTokenDecoder(tokenDecoderAsset.bytes);
+            var decoder = new MoonshineBinaryTokenDecoder(decoderAsset.bytes);
             var backend = new UnityMoonshineV1GenerationBackend(
                 preprocessModel,
                 encoderModel,
@@ -110,9 +130,10 @@ namespace PhraseLayer.Unity
                 backendLease = disposableBackend;
                 asrEngine = engine;
                 lastStatus = string.Format(
-                    "Moonshine offline ASR ready: 16 kHz; greedy; max={0}; backend={1}; deployment=v1-reference-four-graph.",
+                    "Moonshine offline ASR ready: 16 kHz; greedy; max={0}; backend={1}; deployment=v1-reference-four-graph; tokens={2}.",
                     maximumGenerationLength,
-                    useGpuCompute ? "GPUCompute" : "CPU");
+                    useGpuCompute ? "GPUCompute" : "CPU",
+                    tokenDecoderAsset != null ? "scene-asset" : tokenDecoderResourcePath);
                 Debug.Log(lastStatus, this);
             }
             catch
