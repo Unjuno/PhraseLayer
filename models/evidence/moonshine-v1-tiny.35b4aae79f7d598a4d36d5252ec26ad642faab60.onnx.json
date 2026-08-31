@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "model_id": "moonshine-ai/moonshine",
+  "revision": "35b4aae79f7d598a4d36d5252ec26ad642faab60",
+  "variant": "tiny",
+  "purpose": "asr-en-offline-reference-deployment",
+  "license": "mit",
+  "license_status": "upstream-repository-license-observed; redistribution-review-pending",
+  "bundle_kind": "moonshine-v1-four-graph",
+  "binding": "positional",
+  "sample_rate": 16000,
+  "hidden_size": 288,
+  "vocabulary_size": 32768,
+  "cache_state_count": 24,
+  "decoder_attention_heads": 8,
+  "decoder_head_dimension": 36,
+  "artifacts": [
+    {
+      "name": "onnx/tiny/preprocess.onnx",
+      "size_bytes": 6800738,
+      "sha256": "f33addce61a143460fe753b5ee5b7db255e5140b5b779c065b94f6c83ff0bf4e"
+    },
+    {
+      "name": "onnx/tiny/encode.onnx",
+      "size_bytes": 30095274,
+      "sha256": "36ba25e28e9dc3899b2e8f63e4031ef445a5a91d31b4cc18f0771b8a26993fd6"
+    },
+    {
+      "name": "onnx/tiny/uncached_decode.onnx",
+      "size_bytes": 127620212,
+      "sha256": "fe688629b801f7e91983d87fbe6bf8f07cfc5340f4c2c3b340f67cf4827af3cb"
+    },
+    {
+      "name": "onnx/tiny/cached_decode.onnx",
+      "size_bytes": 119667327,
+      "sha256": "3d27f1a476d7615a2eaf33aed3c30d181557258f8c83a9308ba0c7ca13b07189"
+    }
+  ],
+  "runtime_contract": {
+    "preprocess": "float32 [B,S] -> float32 [B,T,288]",
+    "encode": "float32 [B,T,288] + int32 [1] -> float32 [B,T,288]",
+    "uncached_decode": "int32 token + float32 encoder + int32 token_length -> float32 logits[...,32768] + 24 float cache states",
+    "cached_decode": "int32 token + float32 encoder + int32 token_length + 24 float cache states -> float32 logits[...,32768] + 24 float cache states",
+    "cache_rank": 4,
+    "observed_cache_trailing_dimensions": [8, 36]
+  },
+  "source_relation": "Published Moonshine v1 reference deployment graphs. Numerical equivalence to moonshine-ai/moonshine-tiny Transformers revision 390624ed33d594443aa4aa221f5b9f283b545b5a remains unverified.",
+  "weights_bundled_in_phrase_layer": false,
+  "runtime_compatibility": "hosted-onnx-contract-probe-passed; guarded-unity-api-shell-passed; real-unity-import-and-quest-execution-required"
+}
