@@ -164,6 +164,14 @@ namespace PhraseLayer.Unity
         public bool IsSupported => false;
         public bool IsReady => false;
         public string LastStatus => lastStatus;
+        public IAsrEngine AsrEngine => throw new NotSupportedException(
+            "Moonshine ASR requires com.unity.ai.inference in the reviewed 2.2.x range.");
+
+        public bool TryGetAsrEngine(out IAsrEngine engine)
+        {
+            engine = null;
+            return false;
+        }
 
         private void Awake()
         {
