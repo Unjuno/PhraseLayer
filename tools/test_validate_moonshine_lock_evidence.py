@@ -15,6 +15,7 @@ SPEC.loader.exec_module(subject)
 
 REVISION = subject.REVISION
 EVIDENCE_RELATIVE = f"models/evidence/moonshine-tiny.{REVISION}.snapshot.json"
+SOURCE_WEIGHT_EVIDENCE = subject.SOURCE_WEIGHT_EVIDENCE
 
 
 class MoonshineLockEvidenceTests(unittest.TestCase):
@@ -27,6 +28,7 @@ class MoonshineLockEvidenceTests(unittest.TestCase):
             self.assertEqual(REVISION, report["revision"])
             self.assertEqual(5, report["artifact_count"])
             self.assertEqual(32768, report["tokenizer_id_count"])
+            self.assertEqual(subject.SOURCE_WEIGHT_SHA256, report["source_weight"]["sha256"])
             self.assertFalse(report["weights_downloaded"])
 
     def test_revision_or_artifact_hash_drift_is_rejected(self) -> None:
@@ -72,11 +74,31 @@ class MoonshineLockEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = pathlib.Path(raw)
             lock = self._write_fixture(root)
-            evidence = root / EVIDENCE_RELATIVE
+            payload = json.loads(lock.read_text(encoding="utf-8"))
+            payload["candidates"][0]["source_weight_artifact"]["artifact_sha256"] = "f" * 64
+            lock.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(subject.LockEvidenceError, "source weight lock"):
+                subject.validate_lock_evidence(lock, root)
+
+    def test_source_weight_evidence_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            lock = self._write_fixture(root)
+            evidence = root / SOURCE_WEIGHT_EVIDENCE
             payload = json.loads(evidence.read_text(encoding="utf-8"))
-            payload["weights_downloaded"] = True
+            payload["artifact"]["size_bytes"] += 1
             evidence.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(subject.LockEvidenceError, "weights_downloaded"):
+            with self.assertRaisesRegex(subject.LockEvidenceError, "artifact evidence"):
+                subject.validate_lock_evidence(lock, root)
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            lock = self._write_fixture(root)
+            evidence = root / SOURCE_WEIGHT_EVIDENCE
+            payload = json.loads(evidence.read_text(encoding="utf-8"))
+            payload["local_file_hash_required_before_export"] = False
+            evidence.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(subject.LockEvidenceError, "local hash"):
                 subject.validate_lock_evidence(lock, root)
 
     @staticmethod
@@ -127,6 +149,23 @@ class MoonshineLockEvidenceTests(unittest.TestCase):
         }
         evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
+        source_weight_path = root / SOURCE_WEIGHT_EVIDENCE
+        source_weight_path.parent.mkdir(parents=True, exist_ok=True)
+        source_weight_path.write_text(json.dumps({
+            "schema_version": 1,
+            "model_id": subject.UPSTREAM,
+            "revision": REVISION,
+            "artifact": {
+                "name": subject.SOURCE_WEIGHT_NAME,
+                "size_bytes": subject.SOURCE_WEIGHT_SIZE,
+                "sha256": subject.SOURCE_WEIGHT_SHA256,
+            },
+            "identity_source": "huggingface-head-metadata-etag",
+            "local_file_hash_required_before_export": True,
+            "weight_downloaded": False,
+            "bundled": False,
+        }), encoding="utf-8")
+
         candidate_artifacts = [
             {
                 "artifact": item["name"],
@@ -152,6 +191,13 @@ class MoonshineLockEvidenceTests(unittest.TestCase):
                 "pad_token_id": 2,
                 "max_generation_length": 194,
                 "metadata_snapshot_artifacts": candidate_artifacts,
+                "source_weight_artifact": {
+                    "artifact": subject.SOURCE_WEIGHT_NAME,
+                    "artifact_size_bytes": subject.SOURCE_WEIGHT_SIZE,
+                    "artifact_sha256": subject.SOURCE_WEIGHT_SHA256,
+                    "evidence_manifest": SOURCE_WEIGHT_EVIDENCE,
+                    "identity_status": "huggingface-head-metadata-etag-observed; local-file-hash-required-before-export",
+                },
                 "bundled": False,
             }],
         }
