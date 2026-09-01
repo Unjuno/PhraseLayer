@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/quest3-read-mode-smoke.yml"
 RUNNER = ROOT / "tools/run_quest_read_mode_smoke.py"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
+OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
 GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
 GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrGpuPreprocessProbe.cs"
 BUILD_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeFixtureAndroidBuild.cs"
@@ -28,6 +29,7 @@ def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     runner = RUNNER.read_text(encoding="utf-8")
     build_sh = BUILD_SH.read_text(encoding="utf-8")
+    ocr_inference_sh = OCR_INFERENCE_SH.read_text(encoding="utf-8")
     gpu_preprocess_sh = GPU_PREPROCESS_SH.read_text(encoding="utf-8")
     gpu_preprocess_cs = GPU_PREPROCESS_CS.read_text(encoding="utf-8")
     build_cs = BUILD_CS.read_text(encoding="utf-8")
@@ -38,6 +40,8 @@ def validate() -> dict[str, object]:
         'default: "Quest 3"',
         "python tools/stage_models.py --purpose-prefix ocr- --include-support",
         "python tools/prepare_unity_ocr_assets.py",
+        "Require real Unity pinned PP-OCR synthetic inference",
+        "verify-local-ocr-inference.sh",
         "python tools/validate_ppocr_gpu_preprocess_gate.py",
         "Require real Unity PP-OCR GPU preprocess parity",
         "verify-ppocr-gpu-preprocess.sh",
@@ -48,6 +52,8 @@ def validate() -> dict[str, object]:
         'assert data["product_translation_gate"] is False',
         'assert data["deterministic_single_scene_build"] is True',
         'assert data["project_paths_anchored_to_application_data_path"] is True',
+        'assert visual_data["font_staged_bytes_verified"] is True',
+        'assert visual_data["mask_shader_reasserted"] is True',
         "python tools/run_quest_read_mode_smoke.py",
         'assert data["readiness"]["ocr_smoke_passed"] is True',
         'assert data["readiness"]["read_mode_smoke_passed"] is True',
@@ -109,6 +115,15 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
+        "Required staged PP-OCR asset is missing or empty",
+        "Intentionally no -nographics",
+        "PhraseLayerLocalOcrAssets.RunLocalInferenceProbeBatch",
+        "real Unity pinned PP-OCR detector+recognizer synthetic GPU inference gate",
+    ):
+        require(ocr_inference_sh, fragment, "PP-OCR real Unity inference shell")
+
+    for fragment in (
+        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
         "Intentionally no -nographics",
         "PhraseLayerPaddleOcrGpuPreprocessProbe.RunBatch",
         "real Unity PP-OCR GPU texture -> tensor -> normalization parity probe",
@@ -158,6 +173,7 @@ def validate() -> dict[str, object]:
         "failure_json_required": True,
         "installed_camera_permissions_required": True,
         "pinned_ocr_staged": True,
+        "real_unity_pinned_ocr_inference_required": True,
         "real_unity_gpu_preprocess_parity_required": True,
         "captured_camera_pose_required": True,
         "mruk_live_depth_surface_required": True,
