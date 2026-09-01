@@ -24,6 +24,8 @@ on:
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
       - "tools/validate_marian_android_fixture_gate.py"
+      - "tools/inspect_android_apk_structure.py"
+      - "tools/test_inspect_android_apk_structure.py"
       - "tools/unity/verify-local-marian-translation.sh"
       - "tools/unity/build-marian-product-android-fixture.sh"
       - "tools/validate_marian_snapshot_contract.py"
@@ -61,6 +63,8 @@ on:
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
       - "tools/validate_marian_android_fixture_gate.py"
+      - "tools/inspect_android_apk_structure.py"
+      - "tools/test_inspect_android_apk_structure.py"
       - "tools/unity/verify-local-marian-translation.sh"
       - "tools/unity/build-marian-product-android-fixture.sh"
       - "tools/validate_marian_snapshot_contract.py"
@@ -97,6 +101,7 @@ jobs:
       - run: python tools/test_generate_marian_reference_fixture.py
       - run: python tools/validate_marian_unity_product_gate.py
       - run: python tools/validate_marian_android_fixture_gate.py
+      - run: python tools/test_inspect_android_apk_structure.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_validate_marian_lock_evidence.py
