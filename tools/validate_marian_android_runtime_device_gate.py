@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/marian-android-runtime-smoke.yml"
 RUNNER = ROOT / "tools/run_marian_android_runtime_smoke.py"
 SMOKE_BEHAVIOUR = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/MarianAndroidRuntimeSmokeTestBehaviour.cs"
+DEMO_BEHAVIOUR = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/PhraseLayerDemoBehaviour.cs"
 SCENE_SETUP = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs"
 BUILD = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs"
 GUARDED_CSPROJ = ROOT / "tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj"
@@ -33,6 +34,7 @@ def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     runner = RUNNER.read_text(encoding="utf-8")
     smoke = SMOKE_BEHAVIOUR.read_text(encoding="utf-8")
+    demo = DEMO_BEHAVIOUR.read_text(encoding="utf-8")
     scene = SCENE_SETUP.read_text(encoding="utf-8")
     build = BUILD.read_text(encoding="utf-8")
     guarded = GUARDED_CSPROJ.read_text(encoding="utf-8")
@@ -40,9 +42,10 @@ def validate() -> dict[str, object]:
     for fragment in (
         'FixtureSource = "keep off"',
         'ReferenceResourcePath = "LocalTranslationAssets/marian-reference"',
+        "InitializeBootstrap()",
         "bootstrap.Initialize()",
-        "bootstrap.IsSupported || !bootstrap.IsReady",
-        "demo.UsesTranslationEngineOverride",
+        "bootstrapReady = bootstrap.IsSupported && bootstrap.IsReady",
+        "translationOverride = demo.UsesTranslationEngineOverride",
         "demo.SetSourceText(FixtureSource)",
         "await demo.ReplanAsync()",
         "plan.Assistance.Decisions.Count != 1",
@@ -50,6 +53,9 @@ def validate() -> dict[str, object]:
         "plan.Segments[0].SourceText, FixtureSource",
         "plan.DisplayText, expectedTranslation",
         'BuildReport(\n                    "PASS"',
+        'BuildReport(\n                    "FAIL_EXCEPTION"',
+        'Append(" bootstrap_ready=").Append(bootstrapReady ? "true" : "false")',
+        'Append(" translation_override=").Append(translationOverride ? "true" : "false")',
         'builder.AppendLine("PhraseLayer Marian Android runtime smoke " + status)',
         "reference_match=",
         "UnityMarianDeviceResidentGenerationBackend",
@@ -58,6 +64,18 @@ def validate() -> dict[str, object]:
         "failure_type=",
     ):
         require(smoke, fragment, "Marian Android runtime smoke behaviour")
+
+    # Until the runtime smoke has its own explicit fixture-configuration API, pin every demo default it relies on.
+    # Any future demo-profile or assistance-policy change must therefore update this gate deliberately rather than
+    # silently turning the device smoke into an unassisted/no-op run.
+    for fragment in (
+        "private AssistanceMode assistanceMode = AssistanceMode.Balanced",
+        "ConfigureLearner(DemoLearnerProfile.Intermediate)",
+        '"keep off"',
+        'learner.SetUnderstanding("keep off", 0.05)',
+        "AssistancePolicy.ForMode(assistanceMode)",
+    ):
+        require(demo, fragment, "PhraseLayer demo deterministic Marian runtime fixture dependency")
 
     for fragment in (
         "demo.SetAutoRunOnStart(false)",
@@ -158,6 +176,8 @@ def validate() -> dict[str, object]:
         "arm64_android_device_required": True,
         "quest_device_required": False,
         "semantic_span_pipeline_runtime_required": True,
+        "deterministic_demo_dependencies_pinned": True,
+        "truthful_runtime_readiness_report_required": True,
         "exact_offline_reference_match_required": True,
         "device_resident_backend_required": True,
         "managed_tokenizer_runtime_required": True,
