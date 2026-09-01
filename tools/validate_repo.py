@@ -279,6 +279,7 @@ for package, expected in {
     "com.meta.xr.mrutilitykit": "85.0.0",
     "com.unity.ai.inference": "2.2.1",
     "com.unity.xr.management": "4.5.4",
+    "com.unity.xr.meta-openxr": "2.2.1",
     "com.unity.xr.openxr": "1.15.1",
     "com.unity.ugui": "2.0.0",
 }.items():
