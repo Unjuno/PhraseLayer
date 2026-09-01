@@ -10,6 +10,9 @@ on:
       - "tools/fetch_moonshine_beckett_fixture.py"
       - "tools/run_moonshine_v1_onnx_reference.py"
       - "tools/test_run_moonshine_v1_onnx_reference.py"
+      - "tools/validate_moonshine_v1_reference_trace.py"
+      - "tools/test_validate_moonshine_v1_reference_trace.py"
+      - "models/evidence/moonshine-v1-tiny.*.json"
       - "src/PhraseLayer.Core/MoonshineOnnxGraphContract.cs"
       - "src/PhraseLayer.Core/MoonshineGreedyAsrRuntime.cs"
 
@@ -29,6 +32,8 @@ jobs:
           python tools/test_inspect_moonshine_v1_onnx_bundle.py
           python tools/test_fetch_moonshine_beckett_fixture.py
           python tools/test_run_moonshine_v1_onnx_reference.py
+          python tools/test_validate_moonshine_v1_reference_trace.py
+          python tools/validate_moonshine_v1_reference_trace.py
       - name: Install pinned probe dependencies
         run: |
           python -m pip install --disable-pip-version-check \
@@ -80,18 +85,10 @@ jobs:
             --output-json "$RUNNER_TEMP/beckett.reference-trace.json" \
             --output-tokens "$RUNNER_TEMP/beckett.reference-tokens.txt" \
             --output-transcript "$RUNNER_TEMP/beckett.reference-transcript.txt"
-      - name: Assert canonical fixture transcript
+      - name: Compare fresh reference with committed evidence
         run: |
-          python - <<'PY'
-          import re
-          from pathlib import Path
-          expected = "Ever tried, ever failed. No matter. Try again. Fail again. Fail better."
-          actual = Path("${{ runner.temp }}/beckett.reference-transcript.txt").read_text(encoding="utf-8").strip()
-          normalize = lambda value: " ".join(re.findall(r"[a-z0-9]+", value.lower()))
-          if normalize(actual) != normalize(expected):
-              raise SystemExit(f"Moonshine reference transcript drift: {actual!r}")
-          print("PASS: canonical Beckett transcript", actual)
-          PY
+          python tools/validate_moonshine_v1_reference_trace.py \
+            --actual-trace "$RUNNER_TEMP/beckett.reference-trace.json"
       - uses: actions/upload-artifact@v4
         with:
           name: moonshine-v1-reference-parity
