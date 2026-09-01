@@ -35,6 +35,7 @@ jobs:
       - run: python tools/test_validate_marian_lock_evidence.py
       - run: python tools/validate_marian_lock_evidence.py
       - run: python tools/test_export_marian_onnx.py
+      - run: python tools/test_prepare_unity_marian_onnx_assets.py
       - run: python tools/test_inspect_marian_onnx_bundle.py
       - run: python tools/test_validate_moonshine_snapshot_contract.py
       - run: python tools/test_fetch_moonshine_snapshot_metadata.py
