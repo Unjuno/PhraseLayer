@@ -3,7 +3,7 @@
 
 This gate intentionally validates the hardware/visual vertical slice only. The APK uses the explicit
 DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR and the
-full camera -> OCR -> adaptive plan -> world fit -> source mask -> Japanese world-text smoke marker.
+full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese world-text marker.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ OCR_PASS_MARKER = "PhraseLayer Quest OCR smoke test PASS"
 READ_MODE_PASS_MARKER = "PhraseLayer Quest Read Mode smoke test PASS"
 READ_MODE_TIMEOUT_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT"
 READ_MODE_EXCEPTION_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_EXCEPTION"
+SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"
 FATAL_MARKER = "FATAL EXCEPTION"
 
 
@@ -85,6 +86,7 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
     return {
         "ocr_smoke_passed": OCR_PASS_MARKER in logcat,
         "read_mode_smoke_passed": READ_MODE_PASS_MARKER in logcat,
+        "mruk_environment_raycast_observed": SURFACE_RUNTIME_MARKER in logcat,
         "read_mode_timeout": READ_MODE_TIMEOUT_MARKER in logcat,
         "read_mode_exception": READ_MODE_EXCEPTION_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
@@ -169,7 +171,11 @@ def wait_for_read_mode_pass(
             raise SmokeError("instrumented Quest Read Mode smoke reported FAIL_TIMEOUT")
         if last_readiness["read_mode_exception"]:
             raise SmokeError("instrumented Quest Read Mode smoke reported FAIL_EXCEPTION")
-        if last_readiness["ocr_smoke_passed"] and last_readiness["read_mode_smoke_passed"]:
+        if (
+            last_readiness["ocr_smoke_passed"]
+            and last_readiness["read_mode_smoke_passed"]
+            and last_readiness["mruk_environment_raycast_observed"]
+        ):
             return last_log, last_readiness
         time.sleep(1.0)
     return last_log, last_readiness
@@ -228,13 +234,14 @@ def main() -> None:
             pid,
             args.smoke_timeout_seconds,
         )
-        if not (readiness["ocr_smoke_passed"] and readiness["read_mode_smoke_passed"]):
-            missing = [
-                name
-                for name in ("ocr_smoke_passed", "read_mode_smoke_passed")
-                if not readiness[name]
-            ]
-            raise SmokeError("Quest Read Mode PASS markers missing: " + ", ".join(missing))
+        required = (
+            "ocr_smoke_passed",
+            "read_mode_smoke_passed",
+            "mruk_environment_raycast_observed",
+        )
+        if not all(readiness[name] for name in required):
+            missing = [name for name in required if not readiness[name]]
+            raise SmokeError("Quest Read Mode PASS evidence missing: " + ", ".join(missing))
     finally:
         try:
             latest_log = process_logcat(args.adb, serial, pid)
@@ -266,6 +273,7 @@ def main() -> None:
         },
         "readiness": readiness,
         "ocr_runtime": "PaddleOCR",
+        "surface_runtime": "MRUKEnvironmentRaycast",
         "translation_runtime": "DemoDictionaryFixture",
         "product_translation_gate": False,
         "expected_device_model": args.expected_device_model,
@@ -279,7 +287,7 @@ def main() -> None:
         },
         "files": {"logcat": log_path.name},
         "scope": (
-            "Real Quest camera/OCR + surface fit/tracking + source mask + Japanese world-text vertical slice. "
+            "Real Quest camera/OCR + MRUK live-depth surface fit/tracking + source mask + Japanese world-text vertical slice. "
             "Translation remains the explicit demo dictionary fixture; Marian product translation, visual quality, "
             "stereo comfort, endurance, thermal and performance remain separate gates."
         ),
