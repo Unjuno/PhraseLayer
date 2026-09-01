@@ -131,6 +131,16 @@ namespace UnityEngine
 
     public class Material : Object { }
 
+    public class Mesh : Object
+    {
+        public string name { get; set; }
+        public Vector3[] vertices { get; set; } = Array.Empty<Vector3>();
+        public Vector3[] normals { get; set; } = Array.Empty<Vector3>();
+        public Vector2[] uv { get; set; } = Array.Empty<Vector2>();
+        public int[] triangles { get; set; } = Array.Empty<int>();
+        public void RecalculateBounds() { }
+    }
+
     public class Font : Object
     {
         public Material material { get; } = new Material();
@@ -142,6 +152,11 @@ namespace UnityEngine
     }
 
     public class MeshRenderer : Renderer { }
+
+    public class MeshFilter : Component
+    {
+        public Mesh sharedMesh { get; set; }
+    }
 
     public class TextMesh : Component
     {
