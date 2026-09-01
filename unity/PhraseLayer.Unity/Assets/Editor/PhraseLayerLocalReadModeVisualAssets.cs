@@ -23,6 +23,11 @@ namespace PhraseLayer.Unity.Editor
         [MenuItem("PhraseLayer/Read Mode/Stage Local Visual Assets And Recreate Demo")]
         public static void StageAndCreateDemoScene()
         {
+            StageAndCreateDemoScene(false);
+        }
+
+        public static void StageAndCreateDemoScene(bool autoRunQuestReadModeSmoke)
+        {
             var source = Environment.GetEnvironmentVariable(FontSourceEnvironment);
             if (string.IsNullOrWhiteSpace(source))
             {
@@ -66,12 +71,13 @@ namespace PhraseLayer.Unity.Editor
             EditorUtility.SetDirty(material);
             AssetDatabase.SaveAssets();
 
-            WriteEvidence(source, fontAssetPath, material);
-            PhraseLayerEditorSetup.CreateDemoScene(font, material);
+            WriteEvidence(source, fontAssetPath, material, autoRunQuestReadModeSmoke);
+            PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke);
             AssetDatabase.SaveAssets();
             Debug.Log(
                 "PhraseLayer local Read Mode visual assets PASS: font=" + fontAssetPath +
                 "; mask=" + MaskMaterialPath +
+                "; smoke_autorun=" + (autoRunQuestReadModeSmoke ? "true" : "false") +
                 "; evidence=" + EvidencePath +
                 ". Font bytes remain under the git-ignored LocalReadModeAssets directory.");
         }
@@ -80,7 +86,7 @@ namespace PhraseLayer.Unity.Editor
         {
             try
             {
-                StageAndCreateDemoScene();
+                StageAndCreateDemoScene(false);
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
@@ -90,19 +96,24 @@ namespace PhraseLayer.Unity.Editor
             }
         }
 
-        private static void WriteEvidence(string sourcePath, string fontAssetPath, Material material)
+        private static void WriteEvidence(
+            string sourcePath,
+            string fontAssetPath,
+            Material material,
+            bool autoRunQuestReadModeSmoke)
         {
             var info = new FileInfo(sourcePath);
             var hash = Sha256(sourcePath);
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-visual-assets\",\n  \"font_asset_path\": \"{0}\",\n  \"font_source_file_name\": \"{1}\",\n  \"font_size_bytes\": {2},\n  \"font_sha256\": \"{3}\",\n  \"mask_material_path\": \"{4}\",\n  \"mask_shader\": \"{5}\",\n  \"mask_color_rgba\": [1.0, 1.0, 1.0, 1.0]\n}}\n",
+                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-visual-assets\",\n  \"font_asset_path\": \"{0}\",\n  \"font_source_file_name\": \"{1}\",\n  \"font_size_bytes\": {2},\n  \"font_sha256\": \"{3}\",\n  \"mask_material_path\": \"{4}\",\n  \"mask_shader\": \"{5}\",\n  \"mask_color_rgba\": [1.0, 1.0, 1.0, 1.0],\n  \"quest_read_mode_smoke_autorun\": {6}\n}}\n",
                 EscapeJson(fontAssetPath),
                 EscapeJson(info.Name),
                 info.Length,
                 hash,
                 EscapeJson(MaskMaterialPath),
-                EscapeJson(material.shader == null ? SourceMaskShaderName : material.shader.name));
+                EscapeJson(material.shader == null ? SourceMaskShaderName : material.shader.name),
+                autoRunQuestReadModeSmoke ? "true" : "false");
             File.WriteAllText(Path.Combine(Application.dataPath, "LocalReadModeAssets", "read-mode-visual-assets.json"), json);
             AssetDatabase.ImportAsset(EvidencePath, ImportAssetOptions.ForceUpdate);
         }
