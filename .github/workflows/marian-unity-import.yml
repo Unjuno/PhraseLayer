@@ -1,0 +1,47 @@
+name: Marian Unity Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_dir:
+        description: "Absolute path on the self-hosted runner to the exact pinned opus-mt-en-jap source snapshot"
+        required: true
+        type: string
+
+jobs:
+  import:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install pinned Marian export environment
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-marian-export.txt
+      - name: Validate local source, export, inspect, and stage Marian runtime
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_SOURCE_DIR: ${{ inputs.source_dir }}
+          PHRASELAYER_MARIAN_WORK_DIR: ${{ runner.temp }}/marian-unity
+        run: |
+          chmod +x tools/unity/stage-marian-runtime.sh
+          ./tools/unity/stage-marian-runtime.sh
+      - name: Verify Unity 6000.0.66f2 Marian import and tokenizer runtime
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-marian-translation.sh
+          ./tools/unity/verify-marian-translation.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marian-unity-import-evidence
+          path: |
+            ${{ runner.temp }}/marian-unity/marian-export.json
+            ${{ runner.temp }}/marian-unity/marian-tokenizer-assets.json
+            ${{ runner.temp }}/marian-unity/marian-tokenizer-runtime.json
+          if-no-files-found: warn
+          retention-days: 7
