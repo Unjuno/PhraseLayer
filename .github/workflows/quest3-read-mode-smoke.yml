@@ -1,0 +1,147 @@
+name: Quest 3 Read Mode Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      japanese_font_source:
+        description: "Absolute path on the self-hosted runner to a license-reviewed Japanese-capable .ttf or .otf"
+        required: true
+        type: string
+      device_serial:
+        description: "Optional adb serial when more than one device is attached"
+        required: false
+        default: ""
+        type: string
+      expected_device_model:
+        description: "Required ro.product.model for the attached headset"
+        required: true
+        default: "Quest 3"
+        type: string
+      smoke_timeout_seconds:
+        description: "Maximum seconds to wait for real OCR + world fit + source mask + Japanese world text PASS"
+        required: true
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quest-read-mode-smoke:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2, quest3, adb]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate host-side Read Mode gate contracts
+        shell: bash
+        run: |
+          python tools/validate_read_mode_mask_gate.py
+          python tools/validate_quest_read_mode_smoke_harness.py
+          python tools/validate_read_mode_visual_asset_staging.py
+          python tools/test_run_quest_read_mode_smoke.py
+
+      - name: Download exact pinned PP-OCR assets
+        shell: bash
+        run: |
+          python tools/stage_models.py --purpose-prefix ocr- --include-support
+
+      - name: Verify and stage PP-OCR into Unity
+        shell: bash
+        run: |
+          python tools/prepare_unity_ocr_assets.py
+
+      - name: Build instrumented Read Mode Android ARM64 IL2CPP fixture
+        shell: bash
+        env:
+          PHRASELAYER_JAPANESE_FONT_SOURCE: ${{ inputs.japanese_font_source }}
+          PHRASELAYER_READ_MODE_FIXTURE_APK_PATH: ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
+        run: |
+          chmod +x tools/unity/build-android-read-mode-fixture.sh
+          ./tools/unity/build-android-read-mode-fixture.sh
+
+      - name: Verify Read Mode fixture build evidence before device install
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          evidence = root / "PhraseLayer.read-mode-fixture-build-evidence.json"
+          apk = root / "PhraseLayerReadModeFixture.apk"
+          assert apk.is_file() and apk.stat().st_size > 0
+          data = json.loads(evidence.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-read-mode-quest-fixture-build"
+          assert data["result"] == "Succeeded"
+          assert data["target"] == "Android"
+          assert data["architecture"] == "ARM64"
+          assert data["scripting_backend"] == "IL2CPP"
+          assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["translation_runtime"] == "DemoDictionaryFixture"
+          assert data["product_translation_gate"] is False
+          assert data["quest_read_mode_smoke_autorun"] is True
+          assert data["source_mask_shader"] == "PhraseLayer/SourceMask"
+          assert data["apk_size_bytes"] == apk.stat().st_size
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+      - name: Install, launch, and require end-to-end Quest Read Mode PASS
+        shell: bash
+        run: |
+          SERIAL_ARGS=()
+          if [[ -n "${{ inputs.device_serial }}" ]]; then
+            SERIAL_ARGS+=(--serial "${{ inputs.device_serial }}")
+          fi
+          python tools/run_quest_read_mode_smoke.py \
+            --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            --expected-device-model "${{ inputs.expected_device_model }}" \
+            --smoke-timeout-seconds "${{ inputs.smoke_timeout_seconds }}" \
+            --output-dir "$RUNNER_TEMP/quest-read-mode-smoke" \
+            "${SERIAL_ARGS[@]}"
+
+      - name: Require complete Quest Read Mode success evidence
+        if: success()
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            "$RUNNER_TEMP/PhraseLayer.read-mode-fixture-build-evidence.json" \
+            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-smoke.json" \
+            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-logcat.txt"; do
+            test -s "$file" || { echo "Missing required Read Mode evidence: $file" >&2; exit 1; }
+          done
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "quest-read-mode-smoke" / "quest-read-mode-smoke.json"
+          data = json.loads(evidence.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-quest-read-mode-hardware-visual-smoke"
+          assert data["readiness"]["ocr_smoke_passed"] is True
+          assert data["readiness"]["read_mode_smoke_passed"] is True
+          assert data["readiness"]["fatal_exception"] is False
+          assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["translation_runtime"] == "DemoDictionaryFixture"
+          assert data["product_translation_gate"] is False
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+      - name: Upload Quest 3 Read Mode evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-quest3-read-mode-evidence
+          path: |
+            ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
+            ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
+            unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
+            unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
+            ${{ runner.temp }}/quest-read-mode-smoke/**
+          if-no-files-found: warn
+          retention-days: 7
