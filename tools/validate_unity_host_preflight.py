@@ -11,6 +11,7 @@ EDITOR = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerUnityHostPrefl
 SHELL = ROOT / "tools/unity/run-host-preflight.sh"
 READ_WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 MARIAN_WORKFLOW = ROOT / ".github/workflows/marian-unity-host-gate.yml"
+QUEST_WORKFLOW = ROOT / ".github/workflows/quest3-read-mode-smoke.yml"
 
 
 class GateError(ValueError):
@@ -32,13 +33,16 @@ def validate() -> dict[str, object]:
     shell = SHELL.read_text(encoding="utf-8")
     read_workflow = READ_WORKFLOW.read_text(encoding="utf-8")
     marian_workflow = MARIAN_WORKFLOW.read_text(encoding="utf-8")
+    quest_workflow = QUEST_WORKFLOW.read_text(encoding="utf-8")
 
     for fragment in (
         'ExpectedUnityVersion = "6000.0.66f2"',
         "Application.unityVersion",
         "BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android)",
+        "IsInferenceCompileGateActive()",
         "#if PHRASELAYER_UNITY_AI_INFERENCE_2_2",
-        "inferenceCompileGateActive = true",
+        "return true;",
+        "return false;",
         "Packages\", \"manifest.json",
         "ProjectSettings\", \"ProjectVersion.txt",
         "Application.dataPath",
@@ -70,6 +74,7 @@ def validate() -> dict[str, object]:
     for workflow, label in (
         (read_workflow, "Read Mode host workflow"),
         (marian_workflow, "Marian host workflow"),
+        (quest_workflow, "Quest Read Mode workflow"),
     ):
         for fragment in (
             "Run real Unity host capability preflight",
@@ -95,6 +100,7 @@ def validate() -> dict[str, object]:
         "android_build_support_required": True,
         "inference_compile_gate_required": True,
         "local_paths_redacted": True,
+        "host_workflows_covered": 3,
         "adb_dependency": False,
         "quest_execution": False,
     }
