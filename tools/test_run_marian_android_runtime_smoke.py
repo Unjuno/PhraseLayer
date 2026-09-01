@@ -47,7 +47,17 @@ def main() -> None:
     assert passed["exact_reference_match_observed"] is True
     assert passed["product_translation_gate_observed"] is True
     assert passed["device_resident_backend_observed"] is True
+    assert passed["successful_pipeline_state_observed"] is True
     assert passed["fatal_exception"] is False
+
+    misleading = module.readiness_from_logcat(
+        "PhraseLayer Marian Android runtime smoke PASS\n"
+        "elapsed_ms=1234.5 bootstrap_ready=false translation_override=false assisted_units=0 segments=0 reference_match=true display_length=0\n"
+        "translation_runtime=MarianOpusMtEnJa generation_backend=UnityMarianDeviceResidentGenerationBackend tokenizer_runtime=Microsoft.ML.Tokenizers semantic_span_pipeline=true product_translation_gate=true\n"
+    )
+    assert misleading["runtime_smoke_passed"] is True
+    assert misleading["exact_reference_match_observed"] is True
+    assert misleading["successful_pipeline_state_observed"] is False
 
     failed = module.readiness_from_logcat(
         "PhraseLayer Marian Android runtime smoke FAIL_EXCEPTION\nFATAL EXCEPTION\n"
@@ -61,17 +71,19 @@ def main() -> None:
         "09-02 12:00:00.002 100 100 I Unity : translation_runtime=MarianOpusMtEnJa generation_backend=UnityMarianDeviceResidentGenerationBackend tokenizer_runtime=Microsoft.ML.Tokenizers semantic_span_pipeline=true product_translation_gate=true\n"
         "09-02 12:00:00.003 100 100 I Unity : fixture_source=keep-off translated_text=<redacted; exact offline reference match required>\n"
         "09-02 12:00:00.004 100 100 I Unity : translated_text=PRIVATE OUTPUT\n"
-        "09-02 12:00:00.005 100 100 I Unity : elapsed_ms=1234.5 bootstrap_ready=true translation_override=true assisted_units=1 segments=1 reference_match=true display_length=4 secret=LEAK\n"
-        "09-02 12:00:00.006 100 100 E AndroidRuntime : FATAL EXCEPTION: main private-stack\n"
+        "09-02 12:00:00.005 100 100 I Unity : elapsed_ms=55.0 bootstrap_ready=false translation_override=false assisted_units=0 segments=0 reference_match=false display_length=0\n"
+        "09-02 12:00:00.006 100 100 I Unity : elapsed_ms=1234.5 bootstrap_ready=true translation_override=true assisted_units=1 segments=1 reference_match=true display_length=4 secret=LEAK\n"
+        "09-02 12:00:00.007 100 100 E AndroidRuntime : FATAL EXCEPTION: main private-stack\n"
     )
     sanitized = module.sanitize_logcat_diagnostics(raw_log)
     lines = sanitized.splitlines()
     assert "PhraseLayer Marian Android runtime smoke PASS" in lines
     assert "elapsed_ms=1234.5 bootstrap_ready=true translation_override=true assisted_units=1 segments=1 reference_match=true display_length=4" in lines
+    assert "elapsed_ms=55.0 bootstrap_ready=false translation_override=false assisted_units=0 segments=0 reference_match=false display_length=0" in lines
     assert "translation_runtime=MarianOpusMtEnJa generation_backend=UnityMarianDeviceResidentGenerationBackend tokenizer_runtime=Microsoft.ML.Tokenizers semantic_span_pipeline=true product_translation_gate=true" in lines
     assert "fixture_source=keep-off translated_text=<redacted; exact offline reference match required>" in lines
     assert "FATAL EXCEPTION" in lines
-    assert len(lines) == 5
+    assert len(lines) == 6
     assert "PRIVATE OUTPUT" not in sanitized
     assert "LEAK" not in sanitized
     assert "private-stack" not in sanitized
@@ -89,19 +101,22 @@ def main() -> None:
     source = MODULE_PATH.read_text(encoding="utf-8")
     assert 'DEFAULT_PACKAGE = "com.unjuno.phraselayer.marianfixture"' in source
     assert 'PASS_MARKER = "PhraseLayer Marian Android runtime smoke PASS"' in source
-    assert '"android_runtime_execution_performed": True' in source
+    assert 'SUCCESS_STATE_MARKER = "bootstrap_ready=true translation_override=true assisted_units=1 segments=1 reference_match=true"' in source
+    assert '"android_runtime_execution_performed": runtime_started' in source
     assert '"quest_device_execution_performed": False' in source
     assert '"network_required": False' in source
     assert '"raw_process_logcat_written_to_disk": False' in source
     assert '"raw_process_logcat_uploaded": False' in source
+    assert '"raw_command_stderr_in_failure_evidence": False' in source
     assert 'pattern.fullmatch(candidate)' in source
     assert 'diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat)' in source
+    assert 'completed.stderr.strip()' not in source
     assert 'logcat.txt' not in source
     assert '"adb_serial": serial' not in source
 
     print(
-        "PASS: Marian Android runtime smoke device selection, ARM64 requirement, PASS markers, full-grammar diagnostics, "
-        "translated-text privacy, serial redaction and product-gate evidence contracts"
+        "PASS: Marian Android runtime smoke device selection, ARM64 requirement, coherent PASS state, truthful execution evidence, "
+        "full-grammar diagnostics, translated-text privacy, serial redaction and product-gate evidence contracts"
     )
 
 
