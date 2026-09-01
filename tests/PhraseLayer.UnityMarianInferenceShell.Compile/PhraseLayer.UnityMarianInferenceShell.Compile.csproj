@@ -16,6 +16,7 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianDeviceResidentGenerationBackend.cs" Link="UnityRuntime/UnityMarianDeviceResidentGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs" Link="UnityRuntime/UnityMarianTranslationBootstrapBehaviour.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs" Link="UnityEditor/PhraseLayerLocalMarianAssets.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs" Link="UnityEditor/PhraseLayerMarianParityEvidence.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerMarianProductFixtureSetup.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerMarianProductAndroidBuild.cs" />
   </ItemGroup>
