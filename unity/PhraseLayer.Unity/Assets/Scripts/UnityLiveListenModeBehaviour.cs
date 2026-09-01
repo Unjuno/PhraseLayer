@@ -15,9 +15,9 @@ namespace PhraseLayer.Unity
     ///
     /// The adapter lazily waits for the demo LanguagePipeline and Moonshine bootstrap, avoiding Unity Start-order
     /// coupling. Core's latest-timestamp-wins coordinator prevents stale ASR work from replacing newer speech.
-    /// Timing fields intentionally measure the whole submitted Listen Mode pipeline, not ASR alone; they are a
-    /// measurement hook for real-device validation and must not be treated as Quest performance evidence until
-    /// captured on the target headset.
+    /// Timing fields separate ASR from adaptive language planning while also retaining the end-to-end submission
+    /// time. They are measurement hooks for real-device validation and must not be treated as Quest performance
+    /// evidence until captured on the target headset.
     /// </summary>
     public sealed class UnityLiveListenModeBehaviour : MonoBehaviour
     {
@@ -29,6 +29,9 @@ namespace PhraseLayer.Unity
         [SerializeField] private string latestDisplayText = string.Empty;
         [SerializeField] private string lastStatus = "Listen Mode is waiting for runtime dependencies.";
         [SerializeField] private double latestAudioDurationSeconds;
+        [SerializeField] private double latestAsrMilliseconds;
+        [SerializeField] private double latestLanguagePlanMilliseconds;
+        [SerializeField] private double latestCoreProcessingMilliseconds;
         [SerializeField] private double latestPipelineMilliseconds;
         [SerializeField] private double latestProcessingToAudioRatio;
         [SerializeField] private long processedUtteranceCount;
@@ -45,6 +48,9 @@ namespace PhraseLayer.Unity
         public MixedLanguagePlan LatestPlan => latestPlan;
         public bool IsReady => coordinator != null;
         public double LatestAudioDurationSeconds => latestAudioDurationSeconds;
+        public double LatestAsrMilliseconds => latestAsrMilliseconds;
+        public double LatestLanguagePlanMilliseconds => latestLanguagePlanMilliseconds;
+        public double LatestCoreProcessingMilliseconds => latestCoreProcessingMilliseconds;
         public double LatestPipelineMilliseconds => latestPipelineMilliseconds;
         public double LatestProcessingToAudioRatio => latestProcessingToAudioRatio;
         public long ProcessedUtteranceCount => processedUtteranceCount;
@@ -156,23 +162,31 @@ namespace PhraseLayer.Unity
                 processedUtteranceCount = checked(processedUtteranceCount + 1);
 
                 var output = result.Output;
+                latestAsrMilliseconds = output.Timings.AsrMilliseconds;
+                latestLanguagePlanMilliseconds = output.Timings.LanguagePlanMilliseconds;
+                latestCoreProcessingMilliseconds = output.Timings.TotalMilliseconds;
                 latestTranscript = output.Observation.Text;
                 latestPlan = output.LanguagePlan;
                 latestDisplayText = latestPlan != null ? latestPlan.DisplayText : latestTranscript;
                 lastStatus = string.Format(
                     CultureInfo.InvariantCulture,
-                    "Listen Mode processed {0:F2}s in {1:F1}ms (pipeline/audio={2:F3}): transcript={3}; adaptive-plan={4}.",
+                    "Listen Mode processed {0:F2}s in {1:F1}ms (ASR={2:F1}ms, plan={3:F1}ms, pipeline/audio={4:F3}): transcript={5}; adaptive-plan={6}.",
                     latestAudioDurationSeconds,
                     latestPipelineMilliseconds,
+                    latestAsrMilliseconds,
+                    latestLanguagePlanMilliseconds,
                     latestProcessingToAudioRatio,
                     string.IsNullOrWhiteSpace(latestTranscript) ? "empty" : "final",
                     latestPlan != null ? "yes" : "no");
                 Debug.Log(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "PHRASELAYER_LISTEN_METRIC utterance={0} audio_s={1:F6} pipeline_ms={2:F3} processing_to_audio={3:F6} transcript_chars={4} adaptive_plan={5}",
+                        "PHRASELAYER_LISTEN_METRIC utterance={0} audio_s={1:F6} asr_ms={2:F3} plan_ms={3:F3} core_ms={4:F3} pipeline_ms={5:F3} processing_to_audio={6:F6} transcript_chars={7} adaptive_plan={8}",
                         processedUtteranceCount,
                         latestAudioDurationSeconds,
+                        latestAsrMilliseconds,
+                        latestLanguagePlanMilliseconds,
+                        latestCoreProcessingMilliseconds,
                         latestPipelineMilliseconds,
                         latestProcessingToAudioRatio,
                         latestTranscript != null ? latestTranscript.Length : 0,
