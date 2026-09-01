@@ -179,7 +179,7 @@ jobs:
             "$RUNNER_TEMP/read-mode-apk-fingerprint.json" \
             "$RUNNER_TEMP/read-mode-apk-structure.json" \
             "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-smoke.json" \
-            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-logcat.txt"; do
+            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-diagnostics.txt"; do
             test -s "$file" || { echo "Missing required Read Mode evidence: $file" >&2; exit 1; }
           done
           python - <<'PY'
@@ -189,9 +189,11 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"])
           evidence = root / "quest-read-mode-smoke" / "quest-read-mode-smoke.json"
+          diagnostics_path = root / "quest-read-mode-smoke" / "quest-read-mode-diagnostics.txt"
           fingerprint = json.loads((root / "read-mode-apk-fingerprint.json").read_text(encoding="utf-8"))
           structure = json.loads((root / "read-mode-apk-structure.json").read_text(encoding="utf-8"))
           data = json.loads(evidence.read_text(encoding="utf-8"))
+          diagnostics = diagnostics_path.read_text(encoding="utf-8")
           assert data["purpose"] == "phrase-layer-quest-read-mode-hardware-visual-smoke"
           assert data["readiness"]["ocr_smoke_passed"] is True
           assert data["readiness"]["read_mode_smoke_passed"] is True
@@ -212,6 +214,14 @@ jobs:
           assert data["captured_pose_projection_required"] is True
           assert data["camera_timestamp_pose_binding_implemented"] is True
           assert data["camera_pixel_pose_sync_verified"] is False
+          assert data["log_privacy"]["raw_process_logcat_written_to_disk"] is False
+          assert data["log_privacy"]["raw_process_logcat_uploaded"] is False
+          assert data["log_privacy"]["sanitized_diagnostics_allowlist"] is True
+          assert data["log_privacy"]["recognized_text_allowed_in_diagnostics"] is False
+          assert data["log_privacy"]["display_text_allowed_in_diagnostics"] is False
+          assert data["files"]["sanitized_diagnostics"] == "quest-read-mode-diagnostics.txt"
+          assert "recognized_text=" not in diagnostics
+          assert "display_text=" not in diagnostics
           assert fingerprint["uploaded"] is False
           assert fingerprint["ocr_model_redistribution_review"] == "pending"
           assert data["apk"]["sha256"] == fingerprint["sha256"]
@@ -238,6 +248,7 @@ jobs:
             ${{ runner.temp }}/read-mode-apk-structure.json
             unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
             unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
-            ${{ runner.temp }}/quest-read-mode-smoke/**
+            ${{ runner.temp }}/quest-read-mode-smoke/quest-read-mode-smoke.json
+            ${{ runner.temp }}/quest-read-mode-smoke/quest-read-mode-diagnostics.txt
           if-no-files-found: warn
           retention-days: 7
