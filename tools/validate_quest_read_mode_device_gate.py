@@ -72,10 +72,10 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         'DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodefixture"',
-        '"ocr_runtime": \\"PaddleOCR\\"',
-        '\"translation_runtime\\": \\"DemoDictionaryFixture\\"',
-        '\"product_translation_gate\\": false',
-        '\"quest_read_mode_smoke_autorun\\": true',
+        '\\"ocr_runtime\\": \\"PaddleOCR\\"',
+        '\\"translation_runtime\\": \\"DemoDictionaryFixture\\"',
+        '\\"product_translation_gate\\": false',
+        '\\"quest_read_mode_smoke_autorun\\": true',
         'PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP)',
         'PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64',
     ):
