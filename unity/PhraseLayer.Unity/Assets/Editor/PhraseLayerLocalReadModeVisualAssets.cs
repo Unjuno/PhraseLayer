@@ -52,6 +52,14 @@ namespace PhraseLayer.Unity.Editor
             if (!string.Equals(source, Path.GetFullPath(fontAbsolutePath), StringComparison.OrdinalIgnoreCase))
                 File.Copy(source, fontAbsolutePath, true);
 
+            var sourceHash = Sha256(source);
+            var stagedHash = Sha256(fontAbsolutePath);
+            if (!string.Equals(sourceHash, stagedHash, StringComparison.Ordinal))
+            {
+                throw new IOException(
+                    "Reviewed Japanese font staging changed the source bytes; refusing to create the Read Mode fixture.");
+            }
+
             AssetDatabase.ImportAsset(fontAssetPath, ImportAssetOptions.ForceUpdate);
             var font = AssetDatabase.LoadAssetAtPath<Font>(fontAssetPath);
             if (font == null)
@@ -67,11 +75,20 @@ namespace PhraseLayer.Unity.Editor
                 material = new Material(shader);
                 AssetDatabase.CreateAsset(material, MaskMaterialPath);
             }
+
+            // Re-assert the committed shader every staging run. A git-ignored .mat can survive between runs, so
+            // merely updating its color would otherwise allow a stale local shader assignment to escape the gate.
+            material.shader = shader;
             material.color = Color.white;
             EditorUtility.SetDirty(material);
             AssetDatabase.SaveAssets();
+            if (material.shader == null || !string.Equals(material.shader.name, SourceMaskShaderName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Read Mode source-mask material did not retain the committed shader after staging: " + SourceMaskShaderName);
+            }
 
-            WriteEvidence(source, fontAssetPath, material, autoRunQuestReadModeSmoke);
+            WriteEvidence(source, sourceHash, fontAssetPath, material, autoRunQuestReadModeSmoke);
             PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke);
             AssetDatabase.SaveAssets();
             Debug.Log(
@@ -98,19 +115,19 @@ namespace PhraseLayer.Unity.Editor
 
         private static void WriteEvidence(
             string sourcePath,
+            string sourceHash,
             string fontAssetPath,
             Material material,
             bool autoRunQuestReadModeSmoke)
         {
             var info = new FileInfo(sourcePath);
-            var hash = Sha256(sourcePath);
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-visual-assets\",\n  \"font_asset_path\": \"{0}\",\n  \"font_source_file_name\": \"{1}\",\n  \"font_size_bytes\": {2},\n  \"font_sha256\": \"{3}\",\n  \"mask_material_path\": \"{4}\",\n  \"mask_shader\": \"{5}\",\n  \"mask_color_rgba\": [1.0, 1.0, 1.0, 1.0],\n  \"quest_read_mode_smoke_autorun\": {6}\n}}\n",
+                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-visual-assets\",\n  \"font_asset_path\": \"{0}\",\n  \"font_source_file_name\": \"{1}\",\n  \"font_size_bytes\": {2},\n  \"font_sha256\": \"{3}\",\n  \"font_staged_bytes_verified\": true,\n  \"mask_material_path\": \"{4}\",\n  \"mask_shader\": \"{5}\",\n  \"mask_shader_reasserted\": true,\n  \"mask_color_rgba\": [1.0, 1.0, 1.0, 1.0],\n  \"quest_read_mode_smoke_autorun\": {6}\n}}\n",
                 EscapeJson(fontAssetPath),
                 EscapeJson(info.Name),
                 info.Length,
-                hash,
+                sourceHash,
                 EscapeJson(MaskMaterialPath),
                 EscapeJson(material.shader == null ? SourceMaskShaderName : material.shader.name),
                 autoRunQuestReadModeSmoke ? "true" : "false");
