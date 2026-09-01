@@ -48,6 +48,7 @@ jobs:
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_quest_read_mode_device_gate.py
           python tools/test_run_quest_read_mode_smoke.py
+          python tools/test_inspect_android_apk_structure.py
 
       - name: Download exact pinned PP-OCR assets
         shell: bash
@@ -80,10 +81,11 @@ jobs:
           chmod +x tools/unity/build-android-read-mode-fixture.sh
           ./tools/unity/build-android-read-mode-fixture.sh
 
-      - name: Verify Read Mode fixture build evidence before device install
+      - name: Verify Read Mode fixture build evidence and inspect local APK before device install
         shell: bash
         run: |
           python - <<'PY'
+          import hashlib
           import json
           import os
           from pathlib import Path
@@ -124,9 +126,30 @@ jobs:
           assert visual_data["mask_shader"] == "PhraseLayer/SourceMask"
           assert visual_data["mask_shader_reasserted"] is True
           assert visual_data["quest_read_mode_smoke_autorun"] is True
+
+          digest = hashlib.sha256()
+          with apk.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          fingerprint = {
+              "schema_version": 1,
+              "purpose": "phrase-layer-local-read-mode-apk-fingerprint",
+              "file_name": apk.name,
+              "size_bytes": apk.stat().st_size,
+              "sha256": digest.hexdigest(),
+              "uploaded": False,
+              "ocr_model_redistribution_review": "pending",
+              "runtime_executed": False,
+          }
+          path = root / "read-mode-apk-fingerprint.json"
+          path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(data, sort_keys=True))
           print(json.dumps(visual_data, sort_keys=True))
+          print(json.dumps(fingerprint, sort_keys=True))
           PY
+          python tools/inspect_android_apk_structure.py \
+            --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            --output "$RUNNER_TEMP/read-mode-apk-structure.json"
 
       - name: Install, launch, and require end-to-end Quest Read Mode PASS
         shell: bash
@@ -153,6 +176,8 @@ jobs:
           for file in \
             "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
             "$RUNNER_TEMP/PhraseLayer.read-mode-fixture-build-evidence.json" \
+            "$RUNNER_TEMP/read-mode-apk-fingerprint.json" \
+            "$RUNNER_TEMP/read-mode-apk-structure.json" \
             "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-smoke.json" \
             "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-logcat.txt"; do
             test -s "$file" || { echo "Missing required Read Mode evidence: $file" >&2; exit 1; }
@@ -162,7 +187,10 @@ jobs:
           import os
           from pathlib import Path
 
-          evidence = Path(os.environ["RUNNER_TEMP"]) / "quest-read-mode-smoke" / "quest-read-mode-smoke.json"
+          root = Path(os.environ["RUNNER_TEMP"])
+          evidence = root / "quest-read-mode-smoke" / "quest-read-mode-smoke.json"
+          fingerprint = json.loads((root / "read-mode-apk-fingerprint.json").read_text(encoding="utf-8"))
+          structure = json.loads((root / "read-mode-apk-structure.json").read_text(encoding="utf-8"))
           data = json.loads(evidence.read_text(encoding="utf-8"))
           assert data["purpose"] == "phrase-layer-quest-read-mode-hardware-visual-smoke"
           assert data["readiness"]["ocr_smoke_passed"] is True
@@ -184,17 +212,30 @@ jobs:
           assert data["captured_pose_projection_required"] is True
           assert data["camera_timestamp_pose_binding_implemented"] is True
           assert data["camera_pixel_pose_sync_verified"] is False
+          assert fingerprint["uploaded"] is False
+          assert fingerprint["ocr_model_redistribution_review"] == "pending"
+          assert data["apk"]["sha256"] == fingerprint["sha256"]
+          assert data["apk"]["size_bytes"] == fingerprint["size_bytes"]
+          assert structure["sha256"] == fingerprint["sha256"]
+          assert structure["native_abis"] == ["arm64-v8a"]
+          assert structure["il2cpp_native_library_present"] is True
           print(json.dumps(data, sort_keys=True))
           PY
 
-      - name: Upload Quest 3 Read Mode evidence
+      - name: Remove local Read Mode APK before artifact phase
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"
+
+      - name: Upload safe Quest 3 Read Mode evidence
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phraselayer-quest3-read-mode-evidence
           path: |
-            ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
             ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
+            ${{ runner.temp }}/read-mode-apk-fingerprint.json
+            ${{ runner.temp }}/read-mode-apk-structure.json
             unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
             unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
             ${{ runner.temp }}/quest-read-mode-smoke/**
