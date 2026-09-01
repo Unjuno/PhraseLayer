@@ -3,6 +3,11 @@ name: Moonshine Unity Import
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   import:
     runs-on: [self-hosted, unity, unity-6000-0-66f2]
@@ -79,11 +84,27 @@ jobs:
         run: |
           chmod +x tools/unity/verify-moonshine-parity.sh
           ./tools/unity/verify-moonshine-parity.sh
-      - uses: actions/upload-artifact@v4
+      - name: Require complete Moonshine parity evidence
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/beckett.wav" \
+            "$RUNNER_TEMP/beckett.fixture.json" \
+            "$RUNNER_TEMP/beckett.reference-trace.json" \
+            "$RUNNER_TEMP/beckett.reference-tokens.txt" \
+            "$RUNNER_TEMP/beckett.reference-transcript.txt" \
+            "$RUNNER_TEMP/beckett.unity-tokens.txt" \
+            "$RUNNER_TEMP/beckett.unity-transcript.txt"; do
+            test -s "$file" || { echo "Missing required Moonshine evidence: $file" >&2; exit 1; }
+          done
+      - name: Upload Moonshine Unity parity evidence
+        id: upload-parity
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: moonshine-unity-parity-evidence
           path: |
+            ${{ runner.temp }}/beckett.wav
             ${{ runner.temp }}/beckett.fixture.json
             ${{ runner.temp }}/beckett.reference-trace.json
             ${{ runner.temp }}/beckett.reference-tokens.txt
@@ -92,3 +113,12 @@ jobs:
             ${{ runner.temp }}/beckett.unity-transcript.txt
           if-no-files-found: warn
           retention-days: 7
+      - name: Notify pull request of Moonshine Unity parity artifact
+        if: success()
+        uses: ./.github/actions/notify-pr-artifact
+        with:
+          github-token: ${{ github.token }}
+          artifact-url: ${{ steps.upload-parity.outputs.artifact-url }}
+          artifact-name: moonshine-unity-parity-evidence
+          message: Moonshine Unity parity evidence is ready.
+          contents: Includes `beckett.wav`, the ONNX Runtime reference, and exact Unity token/transcript parity evidence.
