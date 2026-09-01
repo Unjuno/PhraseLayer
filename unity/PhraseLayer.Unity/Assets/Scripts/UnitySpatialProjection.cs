@@ -89,7 +89,8 @@ namespace PhraseLayer.Unity
     /// <summary>
     /// Scene-facing bridge from aligned Read Mode output to platform-neutral projection and physical text-plane policy.
     /// Quest uses MRUK live environment depth by default; Unity Physics remains an explicit controlled-geometry path.
-    /// Center projection is followed by an independent four-corner fit before an in-place target is layout-ready.
+    /// For a real camera frame, planners are rebound to an IViewportRayProvider carrying that frame's cached Meta
+    /// camera pose before center projection or four-corner fitting occurs.
     /// </summary>
     public sealed class UnitySpatialProjectionBehaviour : MonoBehaviour
     {
@@ -100,6 +101,7 @@ namespace PhraseLayer.Unity
         [SerializeField] private float minimumTextExtentMeters = 0.005f;
         [SerializeField] private float minimumSurfaceNormalDot = 0.80f;
 
+        private IViewportRayProvider activeViewportRayProvider;
         private ISurfaceRaycaster activeSurfaceRaycaster;
         private SpatialProjectionPlanner projectionPlanner;
         private WorldTextLayoutPlanner layoutPlanner;
@@ -110,6 +112,8 @@ namespace PhraseLayer.Unity
         public UnityEnvironmentSurfaceRaycaster EnvironmentSurfaceRaycaster => environmentSurfaceRaycaster;
         public UnityPhysicsSurfaceRaycaster SurfaceRaycaster => physicsSurfaceRaycaster;
         public bool UsesEnvironmentRaycast => activeSurfaceRaycaster != null && ReferenceEquals(activeSurfaceRaycaster, environmentSurfaceRaycaster);
+        public bool UsesCapturedCameraPose { get; private set; }
+        public long? LastProjectionFrameTimestampMicroseconds { get; private set; }
 
         public void SetSceneReferences(
             MetaPassthroughCameraBridge viewportRayProvider,
@@ -134,7 +138,7 @@ namespace PhraseLayer.Unity
         public SpatialProjectionPlan Project(ReadModeAlignedResult aligned)
         {
             if (aligned == null) throw new ArgumentNullException(nameof(aligned));
-            EnsurePlanners();
+            BindFrameRayProvider(aligned.Spatial.Frame);
             LastPlan = projectionPlanner.Project(aligned.SpatialAssistance);
             LastWorldTextLayout = null;
             return LastPlan;
@@ -162,18 +166,38 @@ namespace PhraseLayer.Unity
             ResetPlanners();
         }
 
+        private void BindFrameRayProvider(PhraseLayer.Core.Inputs.ImageFrame frame)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (rayProvider == null)
+                throw new InvalidOperationException("Assign MetaPassthroughCameraBridge before projecting Read Mode assistance.");
+
+            UsesCapturedCameraPose = rayProvider.TryCreateFrameRayProvider(frame, out activeViewportRayProvider);
+            LastProjectionFrameTimestampMicroseconds = frame.TimestampMicroseconds;
+            activeSurfaceRaycaster = SelectSurfaceRaycaster();
+            BuildPlanners(activeViewportRayProvider, activeSurfaceRaycaster);
+        }
+
         private void EnsurePlanners()
         {
             if (projectionPlanner != null && layoutPlanner != null) return;
             if (rayProvider == null)
                 throw new InvalidOperationException("Assign MetaPassthroughCameraBridge before projecting Read Mode assistance.");
 
+            activeViewportRayProvider = rayProvider;
+            UsesCapturedCameraPose = false;
+            LastProjectionFrameTimestampMicroseconds = null;
             activeSurfaceRaycaster = SelectSurfaceRaycaster();
+            BuildPlanners(activeViewportRayProvider, activeSurfaceRaycaster);
+        }
+
+        private void BuildPlanners(IViewportRayProvider viewportRayProvider, ISurfaceRaycaster surfaceRaycaster)
+        {
             ValidateLayoutConfiguration();
-            projectionPlanner = new SpatialProjectionPlanner(rayProvider, activeSurfaceRaycaster);
+            projectionPlanner = new SpatialProjectionPlanner(viewportRayProvider, surfaceRaycaster);
             layoutPlanner = new WorldTextLayoutPlanner(
-                rayProvider,
-                activeSurfaceRaycaster,
+                viewportRayProvider,
+                surfaceRaycaster,
                 maximumPlanarityErrorMeters,
                 minimumTextExtentMeters,
                 minimumSurfaceNormalDot);
@@ -191,11 +215,14 @@ namespace PhraseLayer.Unity
 
         private void ResetPlanners()
         {
+            activeViewportRayProvider = null;
             activeSurfaceRaycaster = null;
             projectionPlanner = null;
             layoutPlanner = null;
             LastPlan = null;
             LastWorldTextLayout = null;
+            UsesCapturedCameraPose = false;
+            LastProjectionFrameTimestampMicroseconds = null;
         }
 
         private void ValidateLayoutConfiguration()
