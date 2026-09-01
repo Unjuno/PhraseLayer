@@ -43,9 +43,9 @@ def validate() -> dict[str, object]:
         "PhraseLayerEditorSetup.CreateDemoScene()",
         "PhraseLayerLocalTranslationAssets.AssignLocalAssetsToDemo()",
         "PhraseLayerLocalAsrAssets.AssignLocalAssetsToSceneBootstrap()",
-        '"translation_runtime": \\"Marian\\"',
-        '"asr_runtime": \\"MoonshineV1\\"',
-        '"dictionary_fallback_allowed": false',
+        '\\"translation_runtime\\": \\"Marian\\"',
+        '\\"asr_runtime\\": \\"MoonshineV1\\"',
+        '\\"dictionary_fallback_allowed\\": false',
         "BuildPipeline.BuildPlayer",
         "PhraseLayer.android-build-evidence.json",
     ):
