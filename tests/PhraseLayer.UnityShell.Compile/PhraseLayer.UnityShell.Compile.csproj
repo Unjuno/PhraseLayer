@@ -10,6 +10,9 @@
   <ItemGroup>
     <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/**/*.cs" LinkBase="UnityRuntime" />
-    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs" LinkBase="UnityEditor" />
+    <Compile
+      Include="../../unity/PhraseLayer.Unity/Assets/Editor/**/*.cs"
+      Exclude="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerAndroidBuild.cs"
+      LinkBase="UnityEditor" />
   </ItemGroup>
 </Project>
