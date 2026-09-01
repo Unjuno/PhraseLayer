@@ -6,14 +6,19 @@ on:
 jobs:
   import:
     runs-on: [self-hosted, unity, unity-6000-0-66f2]
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pinned Hugging Face client
-        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2"
+      - name: Install pinned Moonshine probe dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "huggingface_hub==0.36.2" \
+            "onnxruntime==1.29.0" \
+            "numpy==2.5.2" \
+            "tokenizers==0.22.1"
       - name: Stage exact Moonshine v1 reference graphs outside git
         shell: bash
         run: |
@@ -43,8 +48,45 @@ jobs:
             --output-manifest "$RUNNER_TEMP/moonshine-tiny.snapshot.json"
           python tools/prepare_unity_moonshine_token_decoder.py \
             --snapshot-dir "$RUNNER_TEMP/moonshine-tiny-small"
+      - name: Build pinned ONNX Runtime parity reference
+        shell: bash
+        run: |
+          python tools/fetch_moonshine_beckett_fixture.py \
+            --output "$RUNNER_TEMP/beckett.wav" \
+            --manifest "$RUNNER_TEMP/beckett.fixture.json"
+          python tools/run_moonshine_v1_onnx_reference.py \
+            --bundle-dir "$RUNNER_TEMP/moonshine-v1-reference/onnx/tiny" \
+            --wav "$RUNNER_TEMP/beckett.wav" \
+            --tokenizer "$RUNNER_TEMP/moonshine-tiny-small/tokenizer.json" \
+            --output-json "$RUNNER_TEMP/beckett.reference-trace.json" \
+            --output-tokens "$RUNNER_TEMP/beckett.reference-tokens.txt" \
+            --output-transcript "$RUNNER_TEMP/beckett.reference-transcript.txt"
       - name: Verify Unity 6000.0.66f2 import and Moonshine ABI
         shell: bash
         run: |
           chmod +x tools/unity/verify-moonshine-asr.sh
           ./tools/unity/verify-moonshine-asr.sh
+      - name: Compare Unity token generation with ONNX Runtime reference
+        shell: bash
+        env:
+          PHRASELAYER_MOONSHINE_FIXTURE_WAV: ${{ runner.temp }}/beckett.wav
+          PHRASELAYER_MOONSHINE_EXPECTED_TOKENS: ${{ runner.temp }}/beckett.reference-tokens.txt
+          PHRASELAYER_MOONSHINE_EXPECTED_TRANSCRIPT: ${{ runner.temp }}/beckett.reference-transcript.txt
+          PHRASELAYER_MOONSHINE_ACTUAL_TOKENS: ${{ runner.temp }}/beckett.unity-tokens.txt
+          PHRASELAYER_MOONSHINE_ACTUAL_TRANSCRIPT: ${{ runner.temp }}/beckett.unity-transcript.txt
+        run: |
+          chmod +x tools/unity/verify-moonshine-parity.sh
+          ./tools/unity/verify-moonshine-parity.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moonshine-unity-parity-evidence
+          path: |
+            ${{ runner.temp }}/beckett.fixture.json
+            ${{ runner.temp }}/beckett.reference-trace.json
+            ${{ runner.temp }}/beckett.reference-tokens.txt
+            ${{ runner.temp }}/beckett.reference-transcript.txt
+            ${{ runner.temp }}/beckett.unity-tokens.txt
+            ${{ runner.temp }}/beckett.unity-transcript.txt
+          if-no-files-found: warn
+          retention-days: 7
