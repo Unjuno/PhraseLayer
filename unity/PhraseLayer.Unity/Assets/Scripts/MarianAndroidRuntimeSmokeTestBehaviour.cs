@@ -68,7 +68,12 @@ namespace PhraseLayer.Unity
             var started = Time.realtimeSinceStartupAsDouble;
             try
             {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
                 bootstrap.Initialize();
+#else
+                throw new PlatformNotSupportedException(
+                    "Marian Android runtime smoke requires the reviewed com.unity.ai.inference 2.2.x compile gate.");
+#endif
                 if (!bootstrap.IsSupported || !bootstrap.IsReady)
                 {
                     throw new InvalidOperationException(
@@ -129,7 +134,7 @@ namespace PhraseLayer.Unity
                     0,
                     referenceMatched: false) +
                     "\nfailure_type=" + exception.GetType().Name;
-                Debug.LogError(lastReport, this);
+                Debug.Log(lastReport, this);
                 throw;
             }
             finally
@@ -140,6 +145,7 @@ namespace PhraseLayer.Unity
 
         private static string LoadExpectedTranslation(string sourceText)
         {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
             var asset = Resources.Load<TextAsset>(ReferenceResourcePath);
             if (asset == null || string.IsNullOrWhiteSpace(asset.text))
                 throw new InvalidOperationException("Staged Marian runtime reference fixture is missing or empty.");
@@ -165,6 +171,10 @@ namespace PhraseLayer.Unity
 
             throw new InvalidOperationException(
                 "Staged Marian runtime reference fixture does not contain the deterministic smoke sample.");
+#else
+            throw new PlatformNotSupportedException(
+                "Marian Android runtime reference loading requires the reviewed com.unity.ai.inference 2.2.x compile gate.");
+#endif
         }
 
         private static string BuildReport(
