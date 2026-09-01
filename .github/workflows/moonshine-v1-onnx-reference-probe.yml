@@ -5,6 +5,7 @@ on:
     branches: ["agent/listen-mode-core"]
     paths:
       - ".github/workflows/moonshine-v1-onnx-reference-probe.yml"
+      - ".github/actions/notify-pr-artifact/action.yml"
       - "tools/inspect_moonshine_v1_onnx_bundle.py"
       - "tools/test_inspect_moonshine_v1_onnx_bundle.py"
       - "tools/fetch_moonshine_beckett_fixture.py"
@@ -108,25 +109,11 @@ jobs:
             ${{ runner.temp }}/beckett.reference-transcript.txt
           if-no-files-found: error
           retention-days: 7
-      - name: Publish artifact link to the open pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_URL: ${{ steps.upload-parity.outputs.artifact-url }}
-        run: |
-          PR_NUMBER="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
-            -f head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}" \
-            -f state=open \
-            --jq '.[0].number // empty')"
-
-          if [ -z "$PR_NUMBER" ]; then
-            {
-              echo "### Moonshine reference artifact"
-              echo
-              echo "Artifact: $ARTIFACT_URL"
-              echo
-              echo "Includes the pinned beckett.wav fixture and parity evidence."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          gh pr comment "$PR_NUMBER" --body "@${GITHUB_ACTOR} Moonshine reference fixture is ready. The artifact now includes \`beckett.wav\` plus the parity evidence. Download: ${ARTIFACT_URL}"
+      - name: Notify pull request of fixture artifact
+        uses: ./.github/actions/notify-pr-artifact
+        with:
+          github-token: ${{ github.token }}
+          artifact-url: ${{ steps.upload-parity.outputs.artifact-url }}
+          artifact-name: moonshine-v1-reference-parity
+          message: Moonshine reference fixture is ready.
+          contents: Includes the pinned `beckett.wav` fixture plus ONNX Runtime parity evidence.
