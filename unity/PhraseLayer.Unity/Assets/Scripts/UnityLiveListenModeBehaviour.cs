@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using PhraseLayer.Core.Assistance;
@@ -13,6 +14,9 @@ namespace PhraseLayer.Unity
     ///
     /// The adapter lazily waits for the demo LanguagePipeline and Moonshine bootstrap, avoiding Unity Start-order
     /// coupling. Core's latest-timestamp-wins coordinator prevents stale ASR work from replacing newer speech.
+    /// Timing fields intentionally measure the whole submitted Listen Mode pipeline, not ASR alone; they are a
+    /// measurement hook for real-device validation and must not be treated as Quest performance evidence until
+    /// captured on the target headset.
     /// </summary>
     public sealed class UnityLiveListenModeBehaviour : MonoBehaviour
     {
@@ -23,6 +27,10 @@ namespace PhraseLayer.Unity
         [SerializeField] private string latestTranscript = string.Empty;
         [SerializeField] private string latestDisplayText = string.Empty;
         [SerializeField] private string lastStatus = "Listen Mode is waiting for runtime dependencies.";
+        [SerializeField] private double latestAudioDurationSeconds;
+        [SerializeField] private double latestPipelineMilliseconds;
+        [SerializeField] private double latestProcessingToAudioRatio;
+        [SerializeField] private long processedUtteranceCount;
 
         private LanguagePipeline languagePipeline;
         private LiveListenModeCoordinator coordinator;
@@ -35,6 +43,10 @@ namespace PhraseLayer.Unity
         public string LastStatus => lastStatus;
         public MixedLanguagePlan LatestPlan => latestPlan;
         public bool IsReady => coordinator != null;
+        public double LatestAudioDurationSeconds => latestAudioDurationSeconds;
+        public double LatestPipelineMilliseconds => latestPipelineMilliseconds;
+        public double LatestProcessingToAudioRatio => latestProcessingToAudioRatio;
+        public long ProcessedUtteranceCount => processedUtteranceCount;
 
         private void OnEnable()
         {
@@ -110,6 +122,7 @@ namespace PhraseLayer.Unity
 
         private async Task ProcessUtteranceAsync(PhraseLayer.Core.Inputs.AudioChunk audio)
         {
+            var stopwatch = Stopwatch.StartNew();
             try
             {
                 if (!TryBuildCoordinator())
@@ -132,13 +145,24 @@ namespace PhraseLayer.Unity
                     return;
                 }
 
+                stopwatch.Stop();
+                var audioDurationSeconds = audio.Samples.Length / (double)audio.SampleRate;
+                latestAudioDurationSeconds = audioDurationSeconds;
+                latestPipelineMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                latestProcessingToAudioRatio = audioDurationSeconds > 0.0
+                    ? stopwatch.Elapsed.TotalSeconds / audioDurationSeconds
+                    : 0.0;
+                processedUtteranceCount = checked(processedUtteranceCount + 1);
+
                 var output = result.Output;
                 latestTranscript = output.Observation.Text;
                 latestPlan = output.LanguagePlan;
                 latestDisplayText = latestPlan != null ? latestPlan.DisplayText : latestTranscript;
                 lastStatus = string.Format(
-                    "Listen Mode processed {0:F2}s: transcript={1}; adaptive-plan={2}.",
-                    audio.Samples.Length / (double)audio.SampleRate,
+                    "Listen Mode processed {0:F2}s in {1:F1}ms (pipeline/audio={2:F3}): transcript={3}; adaptive-plan={4}.",
+                    latestAudioDurationSeconds,
+                    latestPipelineMilliseconds,
+                    latestProcessingToAudioRatio,
                     string.IsNullOrWhiteSpace(latestTranscript) ? "empty" : "final",
                     latestPlan != null ? "yes" : "no");
             }
@@ -150,6 +174,11 @@ namespace PhraseLayer.Unity
             {
                 lastStatus = exception.GetType().Name + ": " + exception.Message;
                 Debug.LogException(exception, this);
+            }
+            finally
+            {
+                if (stopwatch.IsRunning)
+                    stopwatch.Stop();
             }
         }
 
