@@ -146,6 +146,7 @@ namespace PhraseLayer.Unity.Editor
                     dictionaryReport + "\n" +
                     detectorContract + " " + detectorRange + "\n" +
                     recognizerContract + " " + recognizerRange + "\n" +
+                    "detector_gpu_texture_preprocessing=true recognizer_backend=GPUCompute\n" +
                     "decoded_emitted_tokens=" + decoded.EmittedTokenCount +
                     " decoded_confidence=" + decoded.Confidence);
             }
@@ -160,8 +161,9 @@ namespace PhraseLayer.Unity.Editor
         }
 
         /// <summary>
-        /// Batchmode Gate 4 entry point. Requires a real graphics device because the reviewed OCR path uses
-        /// GPUCompute plus Graphics.Blit/ReadPixels; do not run this gate with -nographics.
+        /// Batchmode Gate 4 entry point. Requires a real graphics device because detector TextureConverter,
+        /// detector/recognizer GPUCompute workers and synchronous output readback all submit graphics work;
+        /// do not run this gate with -nographics.
         /// </summary>
         public static void RunLocalInferenceProbeBatch()
         {
