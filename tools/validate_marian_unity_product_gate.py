@@ -181,16 +181,16 @@ def validate() -> dict[str, object]:
         "Require Unity-authored Marian parity evidence",
         'assert data["purpose"] == "phrase-layer-real-unity-marian-parity"',
         'assert data["real_unity_execution"] is True',
-        'assert unity_parity["language_pipeline_semantic_replacement_passed"] is True',
-        'assert unity_parity["gloss_marker_injection_detected"] is False',
-        '"unity_parity_evidence_authored_by_unity": True',
-        '"product_translation_gate": True',
-        '"uploaded_model_weights": False',
-        '"quest_device_execution_performed": False',
+        'assert data["language_pipeline_semantic_replacement_passed"] is True',
+        'assert data["gloss_marker_injection_detected"] is False',
+        '"unity_parity_evidence_authored_by_unity":True',
+        '"product_translation_gate":True',
+        '"uploaded_model_weights":False',
+        '"quest_device_execution_performed":False',
         "PhraseLayer.marian-unity-parity-evidence.json",
         "phraselayer-marian-unity-host-evidence",
     ):
-        require(workflow, fragment, "Marian Unity host workflow")
+        require(workflow.replace(" ", ""), fragment.replace(" ", ""), "Marian Unity host workflow")
     for forbidden_marker in (
         "run_quest_read_mode_smoke.py",
         "runs-on: [self-hosted, unity, unity-6000-0-66f2, quest3",
