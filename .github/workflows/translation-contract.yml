@@ -7,9 +7,18 @@ on:
       - "models/models.lock.json"
       - "models/evidence/**"
       - "src/PhraseLayer.Core/**"
+      - "src/PhraseLayer.Tokenization.Microsoft/**"
       - "tests/PhraseLayer.Core.Tests/**"
+      - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
+      - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
+      - "tools/prepare_unity_marian_assets.py"
+      - "tools/generate_marian_reference_fixture.py"
+      - "tools/test_generate_marian_reference_fixture.py"
+      - "tools/validate_marian_unity_product_gate.py"
+      - "tools/unity/verify-local-marian-translation.sh"
       - "tools/validate_marian_snapshot_contract.py"
       - "tools/test_validate_marian_snapshot_contract.py"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -21,15 +30,25 @@ on:
       - "tools/requirements-marian-export.txt"
       - "tools/inspect_marian_onnx_bundle.py"
       - "tools/test_inspect_marian_onnx_bundle.py"
+      - ".github/workflows/marian-unity-host-gate.yml"
       - ".github/workflows/translation-contract.yml"
   pull_request:
     paths:
       - "models/models.lock.json"
       - "models/evidence/**"
       - "src/PhraseLayer.Core/**"
+      - "src/PhraseLayer.Tokenization.Microsoft/**"
       - "tests/PhraseLayer.Core.Tests/**"
+      - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
+      - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
+      - "tools/prepare_unity_marian_assets.py"
+      - "tools/generate_marian_reference_fixture.py"
+      - "tools/test_generate_marian_reference_fixture.py"
+      - "tools/validate_marian_unity_product_gate.py"
+      - "tools/unity/verify-local-marian-translation.sh"
       - "tools/validate_marian_snapshot_contract.py"
       - "tools/test_validate_marian_snapshot_contract.py"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -41,6 +60,7 @@ on:
       - "tools/requirements-marian-export.txt"
       - "tools/inspect_marian_onnx_bundle.py"
       - "tools/test_inspect_marian_onnx_bundle.py"
+      - ".github/workflows/marian-unity-host-gate.yml"
       - ".github/workflows/translation-contract.yml"
 
 concurrency:
@@ -55,10 +75,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
       - run: python tools/test_prepare_marian_translation.py
+      - run: python tools/test_generate_marian_reference_fixture.py
+      - run: python tools/validate_marian_unity_product_gate.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_validate_marian_lock_evidence.py
       - run: python tools/validate_marian_lock_evidence.py
       - run: python tools/test_export_marian_onnx.py
       - run: python tools/test_inspect_marian_onnx_bundle.py
+      - run: dotnet build tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj -c Release
