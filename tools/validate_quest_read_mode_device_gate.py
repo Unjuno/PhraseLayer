@@ -42,6 +42,9 @@ def validate() -> dict[str, object]:
         "python tools/run_quest_read_mode_smoke.py",
         'assert data["readiness"]["ocr_smoke_passed"] is True',
         'assert data["readiness"]["read_mode_smoke_passed"] is True',
+        'assert data["permissions"]["android.permission.CAMERA"]["declared"] is True',
+        'assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True',
+        'assert data["camera_hardware_timestamp_pose_sync_verified"] is False',
         "if: always()",
         "phraselayer-quest3-read-mode-evidence",
     ):
@@ -63,6 +66,9 @@ def validate() -> dict[str, object]:
         "if not headset_camera_declared:",
         '"logcat", "-c"',
         '"install", "-r", "-g"',
+        '"adb_serial_sha256_12": serial_fingerprint(serial)',
+        'status="fail"',
+        'evidence_path.write_text',
         '"surface_runtime": "MRUKEnvironmentRaycast"',
         '"translation_runtime": "DemoDictionaryFixture"',
         '"product_translation_gate": False',
@@ -71,6 +77,8 @@ def validate() -> dict[str, object]:
         '"scope": (',
     ):
         require(runner, fragment, "Quest Read Mode device runner")
+    if '"adb_serial": serial' in runner:
+        raise GateError("Quest evidence must not upload the raw adb serial")
 
     for fragment in (
         "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
@@ -97,6 +105,8 @@ def validate() -> dict[str, object]:
         "status": "pass",
         "self_hosted_quest3_runner_required": True,
         "actual_device_model_verified": True,
+        "raw_adb_serial_uploaded": False,
+        "failure_json_required": True,
         "installed_camera_permissions_required": True,
         "pinned_ocr_staged": True,
         "mruk_live_depth_surface_required": True,
