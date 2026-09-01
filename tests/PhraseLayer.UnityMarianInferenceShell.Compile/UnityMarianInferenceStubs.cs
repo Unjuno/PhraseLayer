@@ -313,6 +313,7 @@ namespace PhraseLayer.Unity
         public void SetTranslationEngine(ITranslationEngine translationEngine) { }
         public void SetAutoRunOnStart(bool enabled) { }
         public void SetSourceText(string text) { }
+        public void PrepareDeterministicTranslationSmokeFixture(string text, double understanding) { }
         public Task ReplanAsync() => Task.CompletedTask;
     }
 
