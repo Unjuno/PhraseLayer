@@ -39,11 +39,18 @@ def main() -> None:
     expect_raises(lambda: module.require_device_model("Pixel 10", "Quest 3"), module.SmokeError)
 
     permissions = (
-        "android.permission.CAMERA: granted=true\n"
-        "horizonos.permission.HEADSET_CAMERA: granted=false\n"
+        "requested permissions:\n"
+        "  android.permission.CAMERA\n"
+        "  horizonos.permission.HEADSET_CAMERA\n"
+        "runtime permissions:\n"
+        "  android.permission.CAMERA: granted=true\n"
+        "  horizonos.permission.HEADSET_CAMERA: granted=false\n"
     )
-    assert module.permission_granted(permissions, "android.permission.CAMERA") is True
-    assert module.permission_granted(permissions, "horizonos.permission.HEADSET_CAMERA") is False
+    assert module.permission_declared(permissions, module.CAMERA_PERMISSION) is True
+    assert module.permission_declared(permissions, module.HEADSET_CAMERA_PERMISSION) is True
+    assert module.permission_declared(permissions, "android.permission.RECORD_AUDIO") is False
+    assert module.permission_granted(permissions, module.CAMERA_PERMISSION) is True
+    assert module.permission_granted(permissions, module.HEADSET_CAMERA_PERMISSION) is False
     assert module.permission_granted(permissions, "android.permission.RECORD_AUDIO") is None
 
     empty = module.readiness_from_logcat("")
@@ -78,7 +85,10 @@ def main() -> None:
     assert failed["read_mode_timeout"] is True
     assert failed["fatal_exception"] is True
 
-    print("PASS: Quest Read Mode device smoke parsing, Quest identity, and MRUK anti-false-positive contracts")
+    print(
+        "PASS: Quest Read Mode device smoke parsing, Quest identity, camera permission declaration, "
+        "and MRUK anti-false-positive contracts"
+    )
 
 
 if __name__ == "__main__":
