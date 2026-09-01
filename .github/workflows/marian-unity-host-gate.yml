@@ -35,6 +35,7 @@ jobs:
           python tools/test_generate_marian_reference_fixture.py
           python tools/validate_marian_unity_product_gate.py
           python tools/validate_marian_android_fixture_gate.py
+          python tools/test_inspect_android_apk_structure.py
           python tools/test_prepare_unity_tokenizer_runtime.py
           python tools/test_prepare_unity_marian_tokenizer_assets.py
           python tools/test_export_marian_onnx.py
@@ -136,7 +137,7 @@ jobs:
           chmod +x tools/unity/build-marian-product-android-fixture.sh
           ./tools/unity/build-marian-product-android-fixture.sh
 
-      - name: Verify Marian Android packaging evidence and fingerprint local APK
+      - name: Verify Marian Android packaging evidence and inspect local APK
         shell: bash
         run: |
           python - <<'PY'
@@ -191,6 +192,9 @@ jobs:
           output.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(fingerprint, sort_keys=True))
           PY
+          python tools/inspect_android_apk_structure.py \
+            --apk "$RUNNER_TEMP/PhraseLayerMarianProductFixture.apk" \
+            --output "$RUNNER_TEMP/marian-product-apk-structure.json"
 
       - name: Write pre-device Marian evidence
         shell: bash
@@ -210,6 +214,7 @@ jobs:
           unity_parity_evidence = temp / "PhraseLayer.marian-unity-parity-evidence.json"
           android_build_evidence = temp / "PhraseLayer.marian-product-fixture-build-evidence.json"
           apk_fingerprint = temp / "marian-product-apk-fingerprint.json"
+          apk_structure = temp / "marian-product-apk-structure.json"
           apk = temp / "PhraseLayerMarianProductFixture.apk"
           for path in (
               manifest,
@@ -220,6 +225,7 @@ jobs:
               unity_parity_evidence,
               android_build_evidence,
               apk_fingerprint,
+              apk_structure,
               apk,
           ):
               assert path.is_file() and path.stat().st_size > 0, path
@@ -230,6 +236,7 @@ jobs:
           unity_parity = json.loads(unity_parity_evidence.read_text(encoding="utf-8"))
           android_build = json.loads(android_build_evidence.read_text(encoding="utf-8"))
           apk_fp = json.loads(apk_fingerprint.read_text(encoding="utf-8"))
+          apk_struct = json.loads(apk_structure.read_text(encoding="utf-8"))
           assert staged["purpose"] == "phrase-layer-unity-local-marian-assets"
           assert staged["revision"] == "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
           assert staged["source_weight_copied_to_unity"] is False
@@ -256,6 +263,18 @@ jobs:
           assert android_build["apk_upload_allowed"] is False
           assert apk_fp["uploaded"] is False
           assert apk_fp["sha256"] and len(apk_fp["sha256"]) == 64
+          assert apk_struct["purpose"] == "phrase-layer-unity-android-apk-structure"
+          assert apk_struct["sha256"] == apk_fp["sha256"]
+          assert apk_struct["size_bytes"] == apk_fp["size_bytes"]
+          assert apk_struct["zip_integrity_passed"] is True
+          assert apk_struct["native_abis"] == ["arm64-v8a"]
+          assert apk_struct["arm64_only"] is True
+          assert apk_struct["il2cpp_native_library_present"] is True
+          assert apk_struct["unity_player_library_present"] is True
+          assert apk_struct["unity_data_entry_count"] > 0
+          assert apk_struct["runtime_execution_performed"] is False
+          assert apk_struct["model_asset_presence_proven_by_zip_structure"] is False
+          assert apk_struct["reflection_runtime_proven_by_zip_structure"] is False
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
@@ -268,7 +287,7 @@ jobs:
           assert not apk.exists()
 
           evidence = {
-              "schema_version": 3,
+              "schema_version": 4,
               "purpose": "phrase-layer-marian-pre-device-unity-host-gate",
               "status": "pass",
               "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
@@ -285,6 +304,9 @@ jobs:
               "unity_parity_evidence_authored_by_unity": True,
               "il2cpp_reflection_preservation_staged": True,
               "android_arm64_il2cpp_fixture_build_passed": True,
+              "apk_structure_verified": True,
+              "apk_arm64_only_verified": apk_struct["arm64_only"],
+              "apk_il2cpp_library_verified": apk_struct["il2cpp_native_library_present"],
               "android_runtime_execution_performed": False,
               "quest_device_execution_performed": False,
               "product_translation_gate": True,
@@ -302,6 +324,7 @@ jobs:
                   "unity_parity_evidence": {"name": unity_parity_evidence.name, "sha256": sha256(unity_parity_evidence)},
                   "android_build_evidence": {"name": android_build_evidence.name, "sha256": sha256(android_build_evidence)},
                   "apk_fingerprint": {"name": apk_fingerprint.name, "sha256": sha256(apk_fingerprint)},
+                  "apk_structure": {"name": apk_structure.name, "sha256": sha256(apk_structure)},
               },
           }
           output = temp / "PhraseLayer.marian-unity-host-gate.json"
@@ -327,6 +350,7 @@ jobs:
             ${{ runner.temp }}/PhraseLayer.marian-unity-parity-evidence.json
             ${{ runner.temp }}/PhraseLayer.marian-product-fixture-build-evidence.json
             ${{ runner.temp }}/marian-product-apk-fingerprint.json
+            ${{ runner.temp }}/marian-product-apk-structure.json
             ${{ runner.temp }}/PhraseLayer.marian-unity-host-gate.json
             unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/PhraseLayerMarianAssets.manifest.json
           if-no-files-found: warn
