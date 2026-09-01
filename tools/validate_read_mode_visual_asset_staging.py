@@ -43,7 +43,8 @@ def validate() -> dict[str, object]:
         'font_size_bytes',
         'Shader.Find(SourceMaskShaderName)',
         'PhraseLayer/SourceMask',
-        'PhraseLayerEditorSetup.CreateDemoScene(font, material)',
+        'quest_read_mode_smoke_autorun',
+        'PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke)',
     ):
         require(stager, fragment, "visual asset stager")
 
@@ -56,9 +57,14 @@ def validate() -> dict[str, object]:
     ):
         require(shader, fragment, "source-mask shader")
 
-    require(setup, "CreateDemoScene(Font reviewedJapaneseFont, Material reviewedSourceMaskMaterial)", "demo scene setup")
-    require(setup, "worldTextRenderer.SetFont(reviewedJapaneseFont)", "demo scene setup")
-    require(setup, "worldTextSourceMask.SetMaskMaterial(reviewedSourceMaskMaterial)", "demo scene setup")
+    for fragment in (
+        "CreateDemoScene(\n            Font reviewedJapaneseFont,\n            Material reviewedSourceMaskMaterial,\n            bool autoRunQuestReadModeSmoke)",
+        "questReadModeSmoke.AutoRunOnStart = autoRunQuestReadModeSmoke",
+        "worldTextRenderer.SetFont(reviewedJapaneseFont)",
+        "worldTextSourceMask.SetMaskMaterial(reviewedSourceMaskMaterial)",
+    ):
+        require(setup, fragment, "demo scene setup")
+
     require(ignore, "unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/", ".gitignore")
 
     if LOCAL_ROOT.exists():
@@ -77,6 +83,7 @@ def validate() -> dict[str, object]:
         "mask_shader_committed": True,
         "mask_shader_double_sided": True,
         "scene_visual_assets_injected_deterministically": True,
+        "quest_read_mode_smoke_autorun_explicit": True,
         "real_unity_import_still_required": True,
     }
 
