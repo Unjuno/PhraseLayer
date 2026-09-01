@@ -255,6 +255,9 @@ def build_evidence(
         },
         "readiness": readiness,
         "ocr_runtime": "PaddleOCR",
+        "detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization",
+        "detector_input_layout": "NCHW/BGR/TopLeft",
+        "detector_input_cpu_image_readback": False,
         "surface_runtime": "MRUKEnvironmentRaycast",
         "translation_runtime": "DemoDictionaryFixture",
         "product_translation_gate": False,
@@ -269,9 +272,10 @@ def build_evidence(
         "scope": (
             "Real Quest camera/OCR + captured camera-pose projection + MRUK live-depth surface fit/tracking + "
             "source mask + Japanese world-text vertical slice. Translation remains the explicit demo dictionary fixture. "
-            "Meta Timestamp/GetCameraPose binding is implemented, but the current PP-OCR detector still uses a blocking "
-            "Graphics.Blit/readback preprocessing path, so end-to-end pixel/pose synchronization remains unverified. "
-            "Marian product translation, visual quality, stereo comfort, endurance, thermal and performance remain separate gates."
+            "PP-OCR detector input uses GPU TextureConverter plus functional mean/std normalization without CPU image "
+            "readback. Exact end-to-end camera pixel/pose synchronization remains unverified until calibrated Quest "
+            "exposure/timing evidence is captured. Marian product translation, visual quality, stereo comfort, endurance, "
+            "thermal and performance remain separate gates."
         ),
     }
     if error is not None:
