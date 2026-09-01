@@ -43,6 +43,35 @@ namespace PhraseLayer.Core.Audio
     }
 
     /// <summary>
+    /// Deterministic generation diagnostics used by parity/integration gates. Production callers can continue
+    /// using IOfflineAsrRuntime.TranscribePreparedAsync and never depend on token-level Moonshine details.
+    /// </summary>
+    public sealed class MoonshineGreedyDecodeTrace
+    {
+        public MoonshineGreedyDecodeTrace(
+            AsrObservation observation,
+            IReadOnlyList<int> tokenIds,
+            bool terminatedByEos,
+            int decoderSteps)
+        {
+            Observation = observation ?? throw new ArgumentNullException(nameof(observation));
+            if (tokenIds == null) throw new ArgumentNullException(nameof(tokenIds));
+            if (decoderSteps < 0) throw new ArgumentOutOfRangeException(nameof(decoderSteps));
+            if (decoderSteps < tokenIds.Count)
+                throw new ArgumentException("Decoder step count cannot be smaller than emitted token count.", nameof(decoderSteps));
+
+            TokenIds = tokenIds.ToArray();
+            TerminatedByEos = terminatedByEos;
+            DecoderSteps = decoderSteps;
+        }
+
+        public AsrObservation Observation { get; }
+        public IReadOnlyList<int> TokenIds { get; }
+        public bool TerminatedByEos { get; }
+        public int DecoderSteps { get; }
+    }
+
+    /// <summary>
     /// Correctness-first Moonshine Tiny runtime. Input preparation to 16 kHz is owned by OfflineAsrEngine;
     /// this runtime validates that boundary, executes deterministic greedy decoding, stops at EOS, and turns
     /// generated token ids into the final transcript through a replaceable tokenizer adapter.
@@ -75,6 +104,14 @@ namespace PhraseLayer.Core.Audio
             AudioChunk monoAudio,
             CancellationToken cancellationToken = default(CancellationToken))
         {
+            var trace = await TranscribePreparedWithTraceAsync(monoAudio, cancellationToken);
+            return trace.Observation;
+        }
+
+        public async Task<MoonshineGreedyDecodeTrace> TranscribePreparedWithTraceAsync(
+            AudioChunk monoAudio,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
             if (monoAudio == null) throw new ArgumentNullException(nameof(monoAudio));
             if (monoAudio.SampleRate != RequiredSampleRate)
                 throw new ArgumentException("Moonshine Tiny requires prepared 16 kHz mono audio.", nameof(monoAudio));
@@ -88,10 +125,13 @@ namespace PhraseLayer.Core.Audio
 
                 var generated = new List<int>(maximumGenerationLength);
                 var previousToken = MoonshineTinyAsrContract.DecoderStartTokenId;
+                var terminatedByEos = false;
+                var decoderSteps = 0;
                 for (var step = 0; step < maximumGenerationLength; step++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var decoded = await session.DecodeNextAsync(previousToken, cancellationToken);
+                    decoderSteps++;
                     cancellationToken.ThrowIfCancellationRequested();
                     if (decoded == null) throw new InvalidOperationException("Moonshine decoder returned no step result.");
                     if (decoded.Logits.Count != MoonshineTinyAsrContract.VocabularySize)
@@ -104,14 +144,23 @@ namespace PhraseLayer.Core.Audio
                     }
 
                     var selected = SelectHighestFiniteToken(decoded.Logits);
-                    if (selected == MoonshineTinyAsrContract.EosTokenId) break;
+                    if (selected == MoonshineTinyAsrContract.EosTokenId)
+                    {
+                        terminatedByEos = true;
+                        break;
+                    }
                     generated.Add(selected);
                     previousToken = selected;
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var transcript = tokenDecoder.Decode(generated) ?? string.Empty;
-                return new AsrObservation(transcript.Trim(), isFinal: true);
+                var observation = new AsrObservation(transcript.Trim(), isFinal: true);
+                return new MoonshineGreedyDecodeTrace(
+                    observation,
+                    generated,
+                    terminatedByEos,
+                    decoderSteps);
             }
             finally
             {
