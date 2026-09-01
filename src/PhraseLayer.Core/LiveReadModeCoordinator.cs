@@ -197,7 +197,16 @@ namespace PhraseLayer.Core.Pipeline
 
         private static void Cancel(CancellationTokenSource? cancellation)
         {
-            cancellation?.Cancel();
+            if (cancellation == null) return;
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The owning SubmitAsync completed and disposed the source after it was detached under the lock.
+                // In that race there is no remaining operation to cancel.
+            }
         }
 
         private void ThrowIfDisposed()
