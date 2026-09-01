@@ -132,6 +132,27 @@ namespace PhraseLayer.Core.Tests
             Assert.Equal("Please 立ち入らない the grass.", newer.Output!.LanguagePlan!.DisplayText);
         }
 
+        [Fact]
+        public async Task SupersedingRequestDoesNotDisposeOlderCancellationSourceWhileAdapterUnwinds()
+        {
+            var asr = new CancellationRegistrationAfterCancellationAsrEngine();
+            using var coordinator = new LiveListenModeCoordinator(
+                new ListenModeObservationProcessor(asr, BuildLanguage()));
+            var policy = AssistancePolicy.ForMode(AssistanceMode.Balanced);
+
+            var olderTask = coordinator.SubmitAsync(
+                new AudioChunk(new float[160], 16000, 1), policy);
+            await asr.FirstCallStarted.Task;
+
+            var newer = await coordinator.SubmitAsync(
+                new AudioChunk(new float[160], 16000, 2), policy);
+            var older = await olderTask;
+
+            Assert.Equal(LiveListenModeProcessingStatus.Processed, newer.Status);
+            Assert.Equal(LiveListenModeProcessingStatus.Superseded, older.Status);
+            Assert.True(asr.RegisteredAfterCancellation);
+        }
+
         private static LanguagePipeline BuildLanguage(ITranslationEngine? translation = null)
         {
             var learner = new InMemoryLearnerModel(0.95);
@@ -203,6 +224,41 @@ namespace PhraseLayer.Core.Tests
                 {
                     FirstCallStarted.TrySetResult(true);
                     await Task.Delay(Timeout.Infinite, cancellationToken);
+                }
+
+                return new AsrObservation("Please keep off the grass.", true);
+            }
+        }
+
+        private sealed class CancellationRegistrationAfterCancellationAsrEngine : IAsrEngine
+        {
+            private int callCount;
+
+            public TaskCompletionSource<bool> FirstCallStarted { get; } =
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public bool RegisteredAfterCancellation { get; private set; }
+
+            public async Task<AsrObservation> TranscribeAsync(
+                AudioChunk audio,
+                CancellationToken cancellationToken = default(CancellationToken))
+            {
+                var call = Interlocked.Increment(ref callCount);
+                if (call == 1)
+                {
+                    FirstCallStarted.TrySetResult(true);
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        using (cancellationToken.Register(() => { }))
+                        {
+                            RegisteredAfterCancellation = true;
+                        }
+                        throw;
+                    }
                 }
 
                 return new AsrObservation("Please keep off the grass.", true);
