@@ -46,6 +46,8 @@ def validate() -> dict[str, object]:
         'assert data["surface_runtime"] == "MRUKEnvironmentRaycast"',
         'assert data["translation_runtime"] == "DemoDictionaryFixture"',
         'assert data["product_translation_gate"] is False',
+        'assert data["deterministic_single_scene_build"] is True',
+        'assert data["project_paths_anchored_to_application_data_path"] is True',
         "python tools/run_quest_read_mode_smoke.py",
         'assert data["readiness"]["ocr_smoke_passed"] is True',
         'assert data["readiness"]["read_mode_smoke_passed"] is True',
@@ -127,6 +129,10 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         'DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodefixture"',
+        'var root = ProjectRoot()',
+        'Application.dataPath',
+        'enabledScenes.Length != 1',
+        'new[] { PhraseLayerEditorSetup.DemoScenePath }',
         '\\"ocr_runtime\\": \\"PaddleOCR\\"',
         '\\"surface_runtime\\": \\"MRUKEnvironmentRaycast\\"',
         '\\"translation_runtime\\": \\"DemoDictionaryFixture\\"',
@@ -137,6 +143,8 @@ def validate() -> dict[str, object]:
         '\\"camera_timestamp_pose_binding_implemented\\": true',
         '\\"camera_pixel_pose_sync_verified\\": false',
         '\\"quest_read_mode_smoke_autorun\\": true',
+        '\\"deterministic_single_scene_build\\": true',
+        '\\"project_paths_anchored_to_application_data_path\\": true',
         'PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP)',
         'PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64',
     ):
@@ -154,6 +162,8 @@ def validate() -> dict[str, object]:
         "captured_camera_pose_required": True,
         "mruk_live_depth_surface_required": True,
         "reviewed_external_japanese_font_required": True,
+        "deterministic_single_scene_build_required": True,
+        "project_paths_anchored_to_application_data_path": True,
         "android_arm64_il2cpp_required": True,
         "ocr_and_read_mode_pass_markers_required": True,
         "fatal_exception_rejected": True,
