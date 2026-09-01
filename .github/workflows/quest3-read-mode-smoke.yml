@@ -18,7 +18,7 @@ on:
         default: "Quest 3"
         type: string
       smoke_timeout_seconds:
-        description: "Maximum seconds to wait for real OCR + world fit + source mask + Japanese world text PASS"
+        description: "Maximum seconds to wait for real OCR + MRUK live-depth fit + source mask + Japanese world text PASS"
         required: true
         default: "120"
         type: string
@@ -40,6 +40,7 @@ jobs:
         shell: bash
         run: |
           python tools/validate_read_mode_mask_gate.py
+          python tools/validate_mruk_environment_raycast_gate.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_quest_read_mode_device_gate.py
@@ -83,6 +84,7 @@ jobs:
           assert data["architecture"] == "ARM64"
           assert data["scripting_backend"] == "IL2CPP"
           assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
           assert data["quest_read_mode_smoke_autorun"] is True
@@ -132,6 +134,7 @@ jobs:
           assert data["readiness"]["read_mode_smoke_passed"] is True
           assert data["readiness"]["fatal_exception"] is False
           assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
           print(json.dumps(data, sort_keys=True))
