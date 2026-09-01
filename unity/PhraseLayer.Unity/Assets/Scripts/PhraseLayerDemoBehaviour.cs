@@ -55,6 +55,31 @@ namespace PhraseLayer.Unity
             sourceText = text;
         }
 
+        /// <summary>
+        /// Configures the translation-only Android product smoke deterministically instead of relying on mutable demo
+        /// defaults. The product translation engine must already be injected by the Marian bootstrap. The caller still
+        /// invokes ReplanAsync so the resulting encounter is produced through the normal LanguagePipeline.
+        /// </summary>
+        public void PrepareDeterministicTranslationSmokeFixture(string text, double understanding)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentException("Translation smoke source text must not be empty.", nameof(text));
+            if (double.IsNaN(understanding) || double.IsInfinity(understanding) || understanding < 0.0 || understanding > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(understanding), "Understanding must be between 0 and 1.");
+            if (translationEngineOverride == null)
+            {
+                throw new InvalidOperationException(
+                    "Translation smoke fixture requires an injected product translation engine; demo dictionary fallback is not allowed.");
+            }
+
+            sourceText = text;
+            assistanceMode = AssistanceMode.Balanced;
+            BuildPipeline();
+            learner.SetUnderstanding(text, understanding);
+            currentPlan = null;
+            currentEncounter = null;
+        }
+
         public void SetLiveReadMode(UnityLiveReadModeBehaviour liveRuntime)
         {
             liveReadMode = liveRuntime ?? throw new ArgumentNullException(nameof(liveRuntime));
