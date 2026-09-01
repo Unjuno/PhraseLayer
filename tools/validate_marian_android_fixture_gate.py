@@ -12,6 +12,7 @@ SCENE_SETUP = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianPro
 BUILD = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs"
 SHELL = ROOT / "tools/unity/build-marian-product-android-fixture.sh"
 TOKENIZER_STAGER = ROOT / "tools/prepare_unity_tokenizer_runtime.py"
+APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 GUARDED_CSPROJ = ROOT / "tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj"
 
 
@@ -35,6 +36,7 @@ def validate() -> dict[str, object]:
     build = BUILD.read_text(encoding="utf-8")
     shell = SHELL.read_text(encoding="utf-8")
     tokenizer = TOKENIZER_STAGER.read_text(encoding="utf-8")
+    apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
     guarded_csproj = GUARDED_CSPROJ.read_text(encoding="utf-8")
 
     for fragment in (
@@ -102,8 +104,22 @@ def validate() -> dict[str, object]:
         require(shell, fragment, "Marian Android build shell")
 
     for fragment in (
+        "zipfile.is_zipfile",
+        '"AndroidManifest.xml"',
+        'abis != ["arm64-v8a"]',
+        '"lib/arm64-v8a/libil2cpp.so"',
+        '"lib/arm64-v8a/libunity.so"',
+        'name.startswith("assets/bin/Data/")',
+        '"model_asset_presence_proven_by_zip_structure": False',
+        '"reflection_runtime_proven_by_zip_structure": False',
+        '"runtime_execution_performed": False',
+    ):
+        require(apk_inspector, fragment, "Android APK structure inspector")
+
+    for fragment in (
         "<DefineConstants>PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>",
         "PhraseLayerLocalMarianAssets.cs",
+        "PhraseLayerMarianParityEvidence.cs",
         "PhraseLayerMarianProductFixtureSetup.cs",
         "PhraseLayerMarianProductAndroidBuild.cs",
     ):
@@ -111,6 +127,7 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         "python tools/validate_marian_android_fixture_gate.py",
+        "python tools/test_inspect_android_apk_structure.py",
         "Build local-only Marian Android ARM64 IL2CPP product fixture",
         "build-marian-product-android-fixture.sh",
         "PhraseLayerMarianProductFixture.apk",
@@ -119,6 +136,13 @@ def validate() -> dict[str, object]:
         'assert data["product_translation_gate"] is True',
         'assert data["apk_upload_allowed"] is False',
         'assert tokenizer["il2cpp_reflection_preserve_required"] is True',
+        "inspect_android_apk_structure.py",
+        "marian-product-apk-structure.json",
+        'assert apk_struct["native_abis"] == ["arm64-v8a"]',
+        'assert apk_struct["il2cpp_native_library_present"] is True',
+        'assert apk_struct["unity_player_library_present"] is True',
+        'assert apk_struct["model_asset_presence_proven_by_zip_structure"] is False',
+        '"apk_structure_verified": True',
         '"android_arm64_il2cpp_fixture_build_passed": True',
         '"android_runtime_execution_performed": False',
         '"apk_uploaded": False',
@@ -149,6 +173,11 @@ def validate() -> dict[str, object]:
         "deterministic_translation_only_scene_required": True,
         "guarded_packaging_compile_required": True,
         "local_apk_fingerprint_required": True,
+        "apk_zip_integrity_required": True,
+        "apk_arm64_only_required": True,
+        "apk_il2cpp_library_required": True,
+        "apk_unity_data_required": True,
+        "apk_structure_does_not_claim_model_runtime": True,
         "apk_artifact_upload_allowed": False,
         "model_weight_artifact_upload_allowed": False,
         "redistribution_review_pending": True,
