@@ -31,16 +31,16 @@ namespace PhraseLayer.Unity
 
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
     /// <summary>
-    /// Correctness-first PP-OCR detector runtime for Unity Inference Engine 2.2.x.
+    /// PP-OCR detector runtime for Unity Inference Engine 2.2.x.
     ///
-    /// This is deliberately a development baseline rather than the final Quest performance path:
-    /// - resize/readback currently crosses GPU -> CPU;
-    /// - normalization is performed on CPU into BGR NCHW floats;
-    /// - detector output is synchronously read back to CPU;
-    /// - DB contour/polygon extraction remains a separate backend.
+    /// Detector input preprocessing stays on the GPU:
+    /// - TextureConverter performs bilinear resize directly from the camera texture into an NCHW tensor;
+    /// - TextureTransform reproduces the reviewed BGR channel order and image-row origin;
+    /// - a FunctionalGraph prepends the reviewed PP-OCR mean/std normalization to the detector model;
+    /// - only the detector probability-map output is synchronously copied back to CPU for DB postprocessing.
     ///
-    /// Keeping this path explicit gives us a reference implementation that can be parity-tested before replacing
-    /// it with a compute-shader/functional-graph preprocessing path and asynchronous output readback.
+    /// This removes Graphics.Blit/Texture2D.ReadPixels from the live detector-input path so the passthrough
+    /// texture is sampled immediately when Execute is called instead of after a blocking CPU image readback.
     /// </summary>
     public sealed class UnityPaddleOcrDetectorRuntime : IDisposable
     {
@@ -54,27 +54,34 @@ namespace PhraseLayer.Unity
         {
             if (modelAsset == null) throw new ArgumentNullException(nameof(modelAsset));
 
-            var model = ModelLoader.Load(modelAsset);
-            if (model.inputs.Count != 1)
+            var sourceModel = ModelLoader.Load(modelAsset);
+            if (sourceModel.inputs.Count != 1)
             {
                 throw new InvalidOperationException(
                     "PP-OCR detector runtime currently requires exactly one model input; probe the imported ONNX before widening this contract.");
             }
 
-            if (model.outputs.Count < 1)
+            if (sourceModel.inputs[0].dataType != DataType.Float)
+            {
+                throw new InvalidOperationException(
+                    "PP-OCR detector input must be float so reviewed BGR mean/std preprocessing can be composed ahead of the imported model.");
+            }
+
+            if (sourceModel.outputs.Count < 1)
                 throw new InvalidOperationException("PP-OCR detector model must expose at least one output.");
 
+            var runtimeModel = BuildGpuPreprocessedModel(sourceModel);
             this.backendType = backendType;
-            worker = new Worker(model, backendType);
+            worker = new Worker(runtimeModel, backendType);
         }
 
         public bool IsSupported => true;
         public BackendType BackendType => backendType;
+        public bool UsesGpuTexturePreprocessing => true;
 
         /// <summary>
         /// Runs the detector and returns its first output as a flat row-major float array.
-        /// This method must be invoked from Unity's main thread because the development preprocessor uses
-        /// Graphics.Blit, RenderTexture.active, Texture2D.ReadPixels and Unity object lifetime APIs.
+        /// This method remains Unity-thread-affine because TextureConverter and Worker scheduling submit graphics work.
         /// </summary>
         public PaddleDetectorRawOutput Execute(
             Texture texture,
@@ -97,21 +104,26 @@ namespace PhraseLayer.Unity
             if (resizeTransform.UsesSmallImagePadding)
             {
                 throw new NotSupportedException(
-                    "The development Unity texture preprocessor does not yet reproduce PaddleOCR's top-left small-image padding. " +
+                    "The GPU Unity texture preprocessor does not yet reproduce PaddleOCR's top-left small-image padding. " +
                     "Quest camera frames are above this threshold; add a dedicated padding stage before using tiny inputs.");
             }
 
-            var inputValues = ReadAndNormalizeToBgrNchw(texture, resizeTransform, flipReadbackRows);
             var inputShape = new TensorShape(
                 1,
                 3,
                 resizeTransform.ModelHeight,
                 resizeTransform.ModelWidth);
-
-            var inputTensor = new Tensor<float>(inputShape, inputValues);
+            var inputTensor = new Tensor<float>(inputShape);
             try
             {
+                var textureTransform = new TextureTransform()
+                    .SetTensorLayout(TensorLayout.NCHW)
+                    .SetCoordOrigin(flipReadbackRows ? CoordOrigin.TopLeft : CoordOrigin.BottomLeft)
+                    .SetChannelSwizzle(ChannelSwizzle.BGRA);
+
+                TextureConverter.ToTensor(texture, inputTensor, textureTransform);
                 worker.Schedule(inputTensor);
+
                 var outputTensor = worker.PeekOutput() as Tensor<float>;
                 if (outputTensor == null)
                 {
@@ -137,61 +149,34 @@ namespace PhraseLayer.Unity
             }
         }
 
-        private static float[] ReadAndNormalizeToBgrNchw(
-            Texture source,
-            PaddleDetResizeTransform resizeTransform,
-            bool flipReadbackRows)
+        private static Model BuildGpuPreprocessedModel(Model sourceModel)
         {
-            var width = resizeTransform.ModelWidth;
-            var height = resizeTransform.ModelHeight;
-            var renderTexture = RenderTexture.GetTemporary(
-                width,
-                height,
-                0,
-                RenderTextureFormat.ARGB32,
-                RenderTextureReadWrite.Default);
-            renderTexture.filterMode = FilterMode.Bilinear;
+            var graph = new FunctionalGraph();
+            var input = graph.AddInput(sourceModel, 0);
 
-            var previous = RenderTexture.active;
-            Texture2D readable = null;
-            try
-            {
-                Graphics.Blit(source, renderTexture);
-                RenderTexture.active = renderTexture;
-
-                readable = new Texture2D(width, height, TextureFormat.RGBA32, false, false);
-                readable.ReadPixels(new Rect(0, 0, width, height), 0, 0, false);
-                readable.Apply(false, false);
-
-                var pixels = readable.GetPixels32();
-                var plane = checked(width * height);
-                var values = new float[checked(plane * 3)];
-
-                for (var y = 0; y < height; y++)
+            // TextureConverter produces BGR values in [0,1]. Match the existing reviewed CPU contract exactly:
+            // normalized[channel] = (value - mean[channel]) / std[channel].
+            var mean = Functional.Constant(
+                new TensorShape(1, 3, 1, 1),
+                new[]
                 {
-                    var readbackY = flipReadbackRows ? height - 1 - y : y;
-                    var sourceRow = readbackY * width;
-                    var destinationRow = y * width;
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(0),
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(1),
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(2)
+                });
+            var standardDeviation = Functional.Constant(
+                new TensorShape(1, 3, 1, 1),
+                new[]
+                {
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(0),
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(1),
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(2)
+                });
 
-                    for (var x = 0; x < width; x++)
-                    {
-                        var pixel = pixels[sourceRow + x];
-                        var destinationIndex = destinationRow + x;
-                        values[destinationIndex] = PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.b, 0);
-                        values[plane + destinationIndex] = PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.g, 1);
-                        values[(2 * plane) + destinationIndex] = PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.r, 2);
-                    }
-                }
-
-                return values;
-            }
-            finally
-            {
-                RenderTexture.active = previous;
-                if (readable != null)
-                    UnityEngine.Object.Destroy(readable);
-                RenderTexture.ReleaseTemporary(renderTexture);
-            }
+            var normalized = (input - mean) / standardDeviation;
+            var outputs = Functional.Forward(sourceModel, normalized);
+            graph.AddOutputs(outputs);
+            return graph.Compile();
         }
 
         private static int[] CopyShape(TensorShape shape)
