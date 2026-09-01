@@ -157,7 +157,9 @@ namespace PhraseLayer.Unity
             {
                 "was tired",
                 "went home",
-                "fell asleep"
+                "fell asleep",
+                "keep off",
+                "emergency exit"
             });
 
             ITranslationEngine translationEngine = translationEngineOverride;
@@ -169,7 +171,9 @@ namespace PhraseLayer.Unity
                     { "was tired", "疲れていた" },
                     { "went home", "家に帰った" },
                     { "fell asleep", "眠ってしまった" },
-                    { "immediately", "すぐ" }
+                    { "immediately", "すぐ" },
+                    { "keep off", "立入禁止" },
+                    { "emergency exit", "非常口" }
                 };
                 translationEngine = new DictionaryTranslationEngine(translations);
             }
@@ -199,6 +203,8 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.35);
                     learner.SetUnderstanding("fell asleep", 0.20);
                     learner.SetUnderstanding("immediately", 0.35);
+                    learner.SetUnderstanding("keep off", 0.10);
+                    learner.SetUnderstanding("emergency exit", 0.10);
                     break;
                 case DemoLearnerProfile.Advanced:
                     learner.SetUnderstanding("I was tired", 0.96);
@@ -206,6 +212,8 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.94);
                     learner.SetUnderstanding("fell asleep", 0.94);
                     learner.SetUnderstanding("immediately", 0.95);
+                    learner.SetUnderstanding("keep off", 0.90);
+                    learner.SetUnderstanding("emergency exit", 0.90);
                     break;
                 default:
                     learner.SetUnderstanding("I was tired", 0.94);
@@ -213,6 +221,10 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.91);
                     learner.SetUnderstanding("fell asleep", 0.82);
                     learner.SetUnderstanding("immediately", 0.78);
+                    // Short physical-sign fixtures used by the Quest hardware gate. Low understanding makes the
+                    // default intermediate demo reliably request an in-place replacement for these known MWEs.
+                    learner.SetUnderstanding("keep off", 0.05);
+                    learner.SetUnderstanding("emergency exit", 0.05);
                     break;
             }
         }
