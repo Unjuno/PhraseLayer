@@ -47,15 +47,19 @@ namespace PhraseLayer.Unity.Editor
                 throw new InvalidOperationException("Read Mode fixture output path has no parent directory: " + outputPath);
             Directory.CreateDirectory(outputDirectory);
 
-            var scenes = EditorBuildSettings.scenes
+            var configuredScenes = EditorBuildSettings.scenes ?? Array.Empty<EditorBuildSettingsScene>();
+            var enabledScenes = configuredScenes
                 .Where(scene => scene != null && scene.enabled && !string.IsNullOrWhiteSpace(scene.path))
                 .Select(scene => scene.path)
                 .ToArray();
-            if (scenes.Length == 0)
-                throw new InvalidOperationException("Read Mode fixture build requires at least one enabled build scene.");
-            if (!scenes.Contains(PhraseLayerEditorSetup.DemoScenePath, StringComparer.Ordinal))
-                throw new InvalidOperationException("Read Mode fixture build settings do not include the PhraseLayer demo scene.");
+            if (enabledScenes.Length != 1 || !string.Equals(enabledScenes[0], PhraseLayerEditorSetup.DemoScenePath, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Read Mode fixture must build exactly the deterministic PhraseLayer demo scene; enabled scenes=" +
+                    string.Join(",", enabledScenes));
+            }
 
+            var scenes = new[] { PhraseLayerEditorSetup.DemoScenePath };
             var options = new BuildPlayerOptions
             {
                 scenes = scenes,
@@ -128,6 +132,9 @@ namespace PhraseLayer.Unity.Editor
             var applicationIdentifier = Environment.GetEnvironmentVariable(ApplicationIdentifierEnvironment);
             if (string.IsNullOrWhiteSpace(applicationIdentifier))
                 applicationIdentifier = DefaultApplicationIdentifier;
+            applicationIdentifier = applicationIdentifier.Trim();
+            if (applicationIdentifier.IndexOfAny(new[] { ' ', '\t', '\r', '\n' }) >= 0)
+                throw new InvalidOperationException("Read Mode fixture application identifier must not contain whitespace.");
 
             PlayerSettings.SetApplicationIdentifier(namedTarget, applicationIdentifier);
             PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP);
@@ -145,16 +152,38 @@ namespace PhraseLayer.Unity.Editor
         {
             var configured = Environment.GetEnvironmentVariable(BuildPathEnvironment);
             if (!string.IsNullOrWhiteSpace(configured))
-                return Path.GetFullPath(configured);
-            return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), DefaultRelativeBuildPath));
+            {
+                configured = configured.Trim();
+                return Path.GetFullPath(Path.IsPathRooted(configured)
+                    ? configured
+                    : Path.Combine(ProjectRoot(), configured));
+            }
+
+            return Path.GetFullPath(Path.Combine(ProjectRoot(), DefaultRelativeBuildPath));
         }
 
         private static FileInfo RequireProjectFile(string assetRelativePath)
         {
-            var path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), assetRelativePath));
+            if (string.IsNullOrWhiteSpace(assetRelativePath) || Path.IsPathRooted(assetRelativePath))
+                throw new ArgumentException("Read Mode fixture project evidence path must be project-relative.", nameof(assetRelativePath));
+
+            var root = ProjectRoot();
+            var path = Path.GetFullPath(Path.Combine(root, assetRelativePath));
+            var rootPrefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!path.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Read Mode fixture evidence path escaped the Unity project root: " + assetRelativePath);
             if (!File.Exists(path) || new FileInfo(path).Length <= 0)
                 throw new FileNotFoundException("Required Read Mode fixture evidence is missing or empty.", path);
             return new FileInfo(path);
+        }
+
+        private static string ProjectRoot()
+        {
+            var assetsPath = Path.GetFullPath(Application.dataPath);
+            var root = Path.GetDirectoryName(assetsPath);
+            if (string.IsNullOrWhiteSpace(root))
+                throw new InvalidOperationException("Unable to derive the Unity project root from Application.dataPath: " + Application.dataPath);
+            return Path.GetFullPath(root);
         }
 
         private static void WriteEvidence(
@@ -164,13 +193,13 @@ namespace PhraseLayer.Unity.Editor
             FileInfo visualEvidence,
             FileInfo ocrManifest)
         {
-            var outputDirectory = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
+            var outputDirectory = Path.GetDirectoryName(outputPath) ?? ProjectRoot();
             var evidencePath = Path.Combine(outputDirectory, "PhraseLayer.read-mode-fixture-build-evidence.json");
             var apkSize = File.Exists(outputPath) ? new FileInfo(outputPath).Length : 0L;
             var sceneJson = string.Join(",", scenes.Select(scene => "\"" + EscapeJson(scene) + "\""));
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-quest-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"surface_runtime\": \"MRUKEnvironmentRaycast\",\n  \"translation_runtime\": \"DemoDictionaryFixture\",\n  \"product_translation_gate\": false,\n  \"camera_timestamp_source\": \"MetaPassthroughCameraAccess.Timestamp\",\n  \"camera_pose_source\": \"MetaPassthroughCameraAccess.GetCameraPose\",\n  \"captured_pose_projection_required\": true,\n  \"camera_timestamp_pose_binding_implemented\": true,\n  \"camera_pixel_pose_sync_verified\": false,\n  \"quest_read_mode_smoke_autorun\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"visual_asset_evidence_file\": \"{2}\",\n  \"visual_asset_evidence_size_bytes\": {3},\n  \"ocr_asset_manifest_file\": \"{4}\",\n  \"ocr_asset_manifest_size_bytes\": {5},\n  \"result\": \"{6}\",\n  \"total_errors\": {7},\n  \"total_warnings\": {8},\n  \"total_size_bytes_reported\": {9},\n  \"apk_size_bytes\": {10},\n  \"elapsed_seconds\": {11:F6},\n  \"scenes\": [{12}]\n}}\n",
+                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-quest-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"surface_runtime\": \"MRUKEnvironmentRaycast\",\n  \"translation_runtime\": \"DemoDictionaryFixture\",\n  \"product_translation_gate\": false,\n  \"camera_timestamp_source\": \"MetaPassthroughCameraAccess.Timestamp\",\n  \"camera_pose_source\": \"MetaPassthroughCameraAccess.GetCameraPose\",\n  \"captured_pose_projection_required\": true,\n  \"camera_timestamp_pose_binding_implemented\": true,\n  \"camera_pixel_pose_sync_verified\": false,\n  \"quest_read_mode_smoke_autorun\": true,\n  \"deterministic_single_scene_build\": true,\n  \"project_paths_anchored_to_application_data_path\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"visual_asset_evidence_file\": \"{2}\",\n  \"visual_asset_evidence_size_bytes\": {3},\n  \"ocr_asset_manifest_file\": \"{4}\",\n  \"ocr_asset_manifest_size_bytes\": {5},\n  \"result\": \"{6}\",\n  \"total_errors\": {7},\n  \"total_warnings\": {8},\n  \"total_size_bytes_reported\": {9},\n  \"apk_size_bytes\": {10},\n  \"elapsed_seconds\": {11:F6},\n  \"scenes\": [{12}]\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Android)),
                 EscapeJson(visualEvidence.Name),
