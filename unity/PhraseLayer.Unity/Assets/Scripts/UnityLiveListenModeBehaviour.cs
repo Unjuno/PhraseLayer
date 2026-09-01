@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using PhraseLayer.Core.Assistance;
@@ -159,12 +160,24 @@ namespace PhraseLayer.Unity
                 latestPlan = output.LanguagePlan;
                 latestDisplayText = latestPlan != null ? latestPlan.DisplayText : latestTranscript;
                 lastStatus = string.Format(
+                    CultureInfo.InvariantCulture,
                     "Listen Mode processed {0:F2}s in {1:F1}ms (pipeline/audio={2:F3}): transcript={3}; adaptive-plan={4}.",
                     latestAudioDurationSeconds,
                     latestPipelineMilliseconds,
                     latestProcessingToAudioRatio,
                     string.IsNullOrWhiteSpace(latestTranscript) ? "empty" : "final",
                     latestPlan != null ? "yes" : "no");
+                Debug.Log(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "PHRASELAYER_LISTEN_METRIC utterance={0} audio_s={1:F6} pipeline_ms={2:F3} processing_to_audio={3:F6} transcript_chars={4} adaptive_plan={5}",
+                        processedUtteranceCount,
+                        latestAudioDurationSeconds,
+                        latestPipelineMilliseconds,
+                        latestProcessingToAudioRatio,
+                        latestTranscript != null ? latestTranscript.Length : 0,
+                        latestPlan != null ? 1 : 0),
+                    this);
             }
             catch (OperationCanceledException)
             {
