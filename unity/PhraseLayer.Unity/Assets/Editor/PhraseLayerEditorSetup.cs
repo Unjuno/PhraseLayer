@@ -26,6 +26,7 @@ namespace PhraseLayer.Unity.Editor
             var surfaceRaycaster = root.AddComponent<UnityPhysicsSurfaceRaycaster>();
             var spatialProjection = root.AddComponent<UnitySpatialProjectionBehaviour>();
             var worldTextTracking = root.AddComponent<UnityWorldTextTrackingBehaviour>();
+            var worldTextSourceMask = root.AddComponent<UnityWorldTextSourceMaskBehaviour>();
             var worldTextRenderer = root.AddComponent<UnityWorldTextRendererBehaviour>();
             var liveReadMode = root.AddComponent<UnityLiveReadModeBehaviour>();
             var metaCamera = AddMetaPassthroughCameraAccess(root);
@@ -37,6 +38,7 @@ namespace PhraseLayer.Unity.Editor
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
             spatialProjection.SetSceneReferences(cameraBridge, surfaceRaycaster);
             worldTextTracking.SetProjection(spatialProjection);
+            worldTextTracking.SetSourceMask(worldTextSourceMask);
             worldTextTracking.SetRenderer(worldTextRenderer);
             liveReadMode.SetSceneReferences(presenter, worldTextTracking);
             demo.SetLiveReadMode(liveReadMode);
@@ -48,7 +50,7 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based; assign a reviewed Japanese-capable Font before rendering: " +
+                "PhraseLayer demo scene created with Meta camera → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
                 DemoScenePath);
         }
 
