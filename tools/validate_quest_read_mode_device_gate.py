@@ -77,7 +77,14 @@ def validate() -> dict[str, object]:
         'assert data["captured_pose_projection_required"] is True',
         'assert data["camera_timestamp_pose_binding_implemented"] is True',
         'assert data["camera_pixel_pose_sync_verified"] is False',
+        'assert data["log_privacy"]["raw_process_logcat_written_to_disk"] is False',
+        'assert data["log_privacy"]["raw_process_logcat_uploaded"] is False',
+        'assert data["log_privacy"]["sanitized_diagnostics_allowlist"] is True',
+        'assert data["files"]["sanitized_diagnostics"] == "quest-read-mode-diagnostics.txt"',
+        'assert "recognized_text=" not in diagnostics',
+        'assert "display_text=" not in diagnostics',
         'assert data["apk"]["sha256"] == fingerprint["sha256"]',
+        "quest-read-mode-diagnostics.txt",
         "Remove local Read Mode APK before artifact phase",
         'rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"',
         "Upload safe Quest 3 Read Mode evidence",
@@ -91,6 +98,8 @@ def validate() -> dict[str, object]:
         "PhraseLayerReadModeFixture.apk",
         "detector.onnx",
         "recognizer.onnx",
+        "quest-read-mode-logcat.txt",
+        "quest-read-mode-smoke/**",
     ):
         forbid(upload_section, forbidden_marker, "Quest Read Mode artifact upload section")
 
@@ -113,6 +122,10 @@ def validate() -> dict[str, object]:
         'SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"',
         'CAPTURED_POSE_MARKER = "captured_pose_projection=true"',
         'FATAL_MARKER = "FATAL EXCEPTION"',
+        'DIAGNOSTIC_FILE_NAME = "quest-read-mode-diagnostics.txt"',
+        "SAFE_DIAGNOSTIC_MARKERS = (",
+        "sanitize_logcat_diagnostics",
+        "redact_failure_message",
         "require_device_model(actual_device_model, args.expected_device_model)",
         "permission_declared(package_dump, CAMERA_PERMISSION)",
         "permission_declared(package_dump, HEADSET_CAMERA_PERMISSION)",
@@ -134,12 +147,22 @@ def validate() -> dict[str, object]:
         '"captured_pose_projection_required": True',
         '"camera_timestamp_pose_binding_implemented": True',
         '"camera_pixel_pose_sync_verified": False',
+        '"raw_process_logcat_written_to_disk": False',
+        '"raw_process_logcat_uploaded": False',
+        '"recognized_text_allowed_in_diagnostics": False',
+        '"display_text_allowed_in_diagnostics": False',
+        "diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat)",
         '"scope": (',
     ):
         require(runner, fragment, "Quest Read Mode device runner")
     if '"adb_serial": serial' in runner:
         raise GateError("Quest evidence must not upload the raw adb serial")
-    forbid(runner, "Graphics.Blit/readback preprocessing path", "Quest Read Mode device runner")
+    for forbidden_marker in (
+        "Graphics.Blit/readback preprocessing path",
+        "quest-read-mode-logcat.txt",
+        "log_path.write_text(logcat",
+    ):
+        forbid(runner, forbidden_marker, "Quest Read Mode device runner")
 
     for fragment in (
         "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
@@ -207,6 +230,9 @@ def validate() -> dict[str, object]:
         "self_hosted_quest3_runner_required": True,
         "actual_device_model_verified": True,
         "raw_adb_serial_uploaded": False,
+        "raw_process_logcat_written_to_disk": False,
+        "raw_process_logcat_uploaded": False,
+        "allowlisted_diagnostics_required": True,
         "failure_json_required": True,
         "installed_camera_permissions_required": True,
         "pinned_ocr_staged": True,
