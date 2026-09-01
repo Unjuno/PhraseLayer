@@ -15,6 +15,16 @@ namespace PhraseLayer.Unity.Editor
         [MenuItem("PhraseLayer/Create or Reset Demo Scene")]
         public static void CreateDemoScene()
         {
+            CreateDemoScene(null, null);
+        }
+
+        /// <summary>
+        /// Deterministically creates the demo scene and optionally injects locally reviewed visual assets.
+        /// The font/material arguments are deliberately optional so the repository shell can compile without
+        /// redistributing font binaries, while self-hosted Quest gates can require and stage them explicitly.
+        /// </summary>
+        public static void CreateDemoScene(Font reviewedJapaneseFont, Material reviewedSourceMaskMaterial)
+        {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
 
@@ -46,6 +56,11 @@ namespace PhraseLayer.Unity.Editor
             liveReadMode.SetSceneReferences(presenter, worldTextTracking);
             questReadModeSmoke.SetSceneReferences(questOcrSmoke, liveReadMode, worldTextTracking);
             demo.SetLiveReadMode(liveReadMode);
+
+            if (reviewedJapaneseFont != null)
+                worldTextRenderer.SetFont(reviewedJapaneseFont);
+            if (reviewedSourceMaskMaterial != null)
+                worldTextSourceMask.SetMaskMaterial(reviewedSourceMaskMaterial);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
