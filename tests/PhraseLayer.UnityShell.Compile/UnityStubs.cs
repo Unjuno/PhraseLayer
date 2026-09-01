@@ -84,6 +84,23 @@ namespace UnityEngine
         public static Quaternion LookRotation(Vector3 forward, Vector3 upwards) => new Quaternion();
     }
 
+    public struct Color
+    {
+        public Color(float r, float g, float b, float a)
+        {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+
+        public float r;
+        public float g;
+        public float b;
+        public float a;
+        public static Color white => new Color(1f, 1f, 1f, 1f);
+    }
+
     public struct Ray
     {
         public Ray(Vector3 origin, Vector3 direction) { this.origin = origin; this.direction = direction; }
@@ -129,7 +146,19 @@ namespace UnityEngine
         public static T Load<T>(string path) where T : Object => null;
     }
 
-    public class Material : Object { }
+    public class Shader : Object
+    {
+        public string name { get; set; }
+        public static Shader Find(string name) => new Shader { name = name };
+    }
+
+    public class Material : Object
+    {
+        public Material() { }
+        public Material(Shader shader) { this.shader = shader; }
+        public Shader shader { get; set; }
+        public Color color { get; set; }
+    }
 
     public class Mesh : Object
     {
@@ -256,6 +285,7 @@ namespace UnityEngine
     public static class Debug
     {
         public static void Log(object message) { }
+        public static void Log(object message, Object context) { }
         public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
         public static void DrawLine(Vector3 start, Vector3 end) { }
@@ -285,6 +315,13 @@ namespace UnityEditor
         public MenuItem(string itemName) { }
     }
 
+    [Flags]
+    public enum ImportAssetOptions
+    {
+        Default = 0,
+        ForceUpdate = 1
+    }
+
     public sealed class EditorBuildSettingsScene
     {
         public EditorBuildSettingsScene(string path, bool enabled) { }
@@ -298,6 +335,14 @@ namespace UnityEditor
     public static class AssetDatabase
     {
         public static void SaveAssets() { }
+        public static void ImportAsset(string path, ImportAssetOptions options = ImportAssetOptions.Default) { }
+        public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object, new() => new T();
+        public static void CreateAsset(UnityEngine.Object asset, string path) { }
+    }
+
+    public static class EditorUtility
+    {
+        public static void SetDirty(UnityEngine.Object target) { }
     }
 
     public static class EditorApplication
