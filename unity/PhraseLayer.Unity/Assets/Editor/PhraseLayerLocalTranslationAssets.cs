@@ -1,4 +1,7 @@
 using System;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using PhraseLayer.Core.Translation;
 using UnityEditor;
 using UnityEngine;
@@ -22,6 +25,8 @@ namespace PhraseLayer.Unity.Editor
         public const string DecoderPath = GraphRoot + "/decoder_model.onnx";
         public const string DecoderWithPastPath = GraphRoot + "/decoder_with_past_model.onnx";
         public const string TokenizerResourceRoot = "LocalTranslationAssets";
+        public const string DefaultParitySourceText =
+            "I was tired, so I went home, and I fell asleep immediately.";
 
         [MenuItem("PhraseLayer/Marian/Verify Local Translation Assets")]
         public static void VerifyLocalAssets()
@@ -72,6 +77,81 @@ namespace PhraseLayer.Unity.Editor
             }
         }
 
+        [MenuItem("PhraseLayer/Marian/Run Greedy Token Parity")]
+        public static void RunFixtureTokenParity()
+        {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            AssetDatabase.Refresh();
+            var encoder = LoadRequired<ModelAsset>(EncoderPath);
+            var decoder = LoadRequired<ModelAsset>(DecoderPath);
+            var decoderWithPast = LoadRequired<ModelAsset>(DecoderWithPastPath);
+            var expectedTokensPath = RequireEnvironmentPath("PHRASELAYER_MARIAN_EXPECTED_TOKENS");
+            var expectedTranslationPath = RequireEnvironmentPath("PHRASELAYER_MARIAN_EXPECTED_TRANSLATION");
+            var sourceText = Environment.GetEnvironmentVariable("PHRASELAYER_MARIAN_SOURCE_TEXT");
+            if (string.IsNullOrWhiteSpace(sourceText))
+                sourceText = DefaultParitySourceText;
+
+            var expectedTokens = File.ReadAllLines(expectedTokensPath)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => int.Parse(line.Trim(), CultureInfo.InvariantCulture))
+                .ToArray();
+            var expectedTranslation = File.ReadAllText(expectedTranslationPath).Trim();
+            if (expectedTokens.Length == 0 || expectedTokens[expectedTokens.Length - 1] != OpusMtEnJaMarianContract.ExpectedEosTokenId)
+                throw new InvalidOperationException("Marian reference token file must be non-empty and EOS-terminated.");
+
+            var result = UnityMarianParityProbe.Run(
+                encoder,
+                decoder,
+                decoderWithPast,
+                TokenizerResourceRoot,
+                sourceText,
+                BackendType.CPU,
+                maximumSourceTokens: 128,
+                maximumTargetTokens: 128);
+
+            if (result.StopReason != TranslationGenerationStopReason.EndOfSequence)
+                throw new InvalidOperationException("Marian Unity parity generation did not terminate naturally by EOS.");
+            if (!result.TargetTokenIds.SequenceEqual(expectedTokens))
+                throw new InvalidOperationException(
+                    BuildTokenDivergenceMessage(expectedTokens, result.TargetTokenIds.ToArray()));
+            if (!string.Equals(result.Translation, expectedTranslation, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Marian translation parity drift after exact token parity. Expected '" +
+                    expectedTranslation + "' but Unity decoded '" + result.Translation + "'.");
+            }
+
+            WriteOptionalEnvironmentOutput(
+                "PHRASELAYER_MARIAN_ACTUAL_TOKENS",
+                string.Join("\n", result.TargetTokenIds) + "\n");
+            WriteOptionalEnvironmentOutput(
+                "PHRASELAYER_MARIAN_ACTUAL_TRANSLATION",
+                result.Translation + "\n");
+
+            Debug.Log(
+                "PhraseLayer Marian greedy token parity PASS: source_tokens=" + result.SourceTokenIds.Count +
+                " target_tokens=" + result.TargetTokenIds.Count +
+                " translation=\"" + result.Translation + "\"");
+#else
+            throw new InvalidOperationException(
+                "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve the reviewed com.unity.ai.inference 2.2.x package before running Marian parity.");
+#endif
+        }
+
+        public static void RunFixtureTokenParityBatch()
+        {
+            try
+            {
+                RunFixtureTokenParity();
+                EditorApplication.Exit(0);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                EditorApplication.Exit(1);
+            }
+        }
+
         [MenuItem("PhraseLayer/Marian/Assign Local Translation Assets To Demo")]
         public static void AssignLocalAssetsToDemo()
         {
@@ -112,6 +192,42 @@ namespace PhraseLayer.Unity.Editor
                     ". Export and stage the exact pinned Marian bundle before continuing.");
             }
             return asset;
+        }
+
+        private static string RequireEnvironmentPath(string variable)
+        {
+            var value = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException("Required Marian parity environment variable is missing: " + variable);
+            if (!File.Exists(value))
+                throw new FileNotFoundException("Marian parity input does not exist: " + value, value);
+            return value;
+        }
+
+        private static void WriteOptionalEnvironmentOutput(string variable, string content)
+        {
+            var path = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(path, content);
+        }
+
+        private static string BuildTokenDivergenceMessage(int[] expected, int[] actual)
+        {
+            var shared = Math.Min(expected.Length, actual.Length);
+            var first = 0;
+            while (first < shared && expected[first] == actual[first]) first++;
+            if (first < shared)
+            {
+                return "Marian token parity drift at index " + first +
+                       ": expected " + expected[first] + " but Unity selected " + actual[first] +
+                       ". expected_count=" + expected.Length + " actual_count=" + actual.Length + ".";
+            }
+            return "Marian token parity length drift after " + shared +
+                   " shared tokens. expected_count=" + expected.Length + " actual_count=" + actual.Length + ".";
         }
 
         private static PhraseLayerDemoBehaviour FindSingleSceneDemo()
