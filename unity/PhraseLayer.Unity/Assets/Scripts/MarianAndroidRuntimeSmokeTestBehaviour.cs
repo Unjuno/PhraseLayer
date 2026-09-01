@@ -68,12 +68,7 @@ namespace PhraseLayer.Unity
             var started = Time.realtimeSinceStartupAsDouble;
             try
             {
-#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
-                bootstrap.Initialize();
-#else
-                throw new PlatformNotSupportedException(
-                    "Marian Android runtime smoke requires the reviewed com.unity.ai.inference 2.2.x compile gate.");
-#endif
+                InitializeBootstrap();
                 if (!bootstrap.IsSupported || !bootstrap.IsReady)
                 {
                     throw new InvalidOperationException(
@@ -141,6 +136,16 @@ namespace PhraseLayer.Unity
             {
                 isRunning = false;
             }
+        }
+
+        private void InitializeBootstrap()
+        {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            bootstrap.Initialize();
+#else
+            throw new PlatformNotSupportedException(
+                "Marian Android runtime smoke requires the reviewed com.unity.ai.inference 2.2.x compile gate.");
+#endif
         }
 
         private static string LoadExpectedTranslation(string sourceText)
