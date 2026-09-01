@@ -24,6 +24,7 @@ jobs:
       - run: python tools/validate_learner_persistence.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
+      - run: python tools/validate_ppocr_gpu_preprocess_gate.py
       - run: python tools/validate_read_mode_mask_gate.py
       - run: python tools/validate_mruk_environment_raycast_gate.py
       - run: python tools/validate_quest_project_setup_gate.py
@@ -56,5 +57,7 @@ jobs:
             --destination "$RUNNER_TEMP/LocalTokenizerRuntime" \
             --manifest "$RUNNER_TEMP/unity-tokenizer-runtime.manifest.json"
       - run: dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
+      - name: Compile guarded PP-OCR Unity inference path
+        run: dotnet build tests/PhraseLayer.UnityOcrInferenceShell.Compile/PhraseLayer.UnityOcrInferenceShell.Compile.csproj -c Release
       - name: Compile guarded Marian Unity inference path
         run: dotnet build tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj -c Release
