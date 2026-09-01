@@ -4,6 +4,7 @@
 This gate intentionally validates the hardware/visual vertical slice only. The APK uses the explicit
 DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR and the
 full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese world-text marker.
+Raw adb serials are never written to uploaded evidence.
 """
 
 from __future__ import annotations
@@ -107,6 +108,12 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def serial_fingerprint(serial: str | None) -> str | None:
+    if not serial:
+        return None
+    return hashlib.sha256(serial.encode("utf-8")).hexdigest()[:12]
+
+
 def _run(args: Sequence[str], timeout_seconds: float = 30.0) -> str:
     completed = subprocess.run(
         list(args),
@@ -187,100 +194,51 @@ def wait_for_read_mode_pass(
     return last_log, last_readiness
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--apk", type=pathlib.Path, required=True)
-    parser.add_argument("--adb", default="adb")
-    parser.add_argument("--serial")
-    parser.add_argument("--package", default=DEFAULT_PACKAGE)
-    parser.add_argument("--expected-device-model", default=DEFAULT_EXPECTED_DEVICE_MODEL)
-    parser.add_argument("--smoke-timeout-seconds", type=float, default=120.0)
-    parser.add_argument("--output-dir", type=pathlib.Path, required=True)
-    args = parser.parse_args()
-
-    if not args.apk.is_file() or args.apk.stat().st_size <= 0:
-        raise SmokeError(f"APK is missing or empty: {args.apk}")
-    if args.smoke_timeout_seconds <= 0.0:
-        raise SmokeError("smoke timeout must be positive")
-
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = args.output_dir / "quest-read-mode-logcat.txt"
-    evidence_path = args.output_dir / "quest-read-mode-smoke.json"
-
-    devices = parse_adb_devices(_run([args.adb, "devices", "-l"]))
-    serial = choose_serial(devices, args.serial)
-    actual_device_model = _prop(args.adb, serial, "ro.product.model")
-    require_device_model(actual_device_model, args.expected_device_model)
-    started = dt.datetime.now(dt.timezone.utc)
-
-    _adb(args.adb, serial, "install", "-r", "-g", str(args.apk), timeout_seconds=180.0)
-    package_path = _adb(args.adb, serial, "shell", "pm", "path", args.package).strip()
-    if not package_path.startswith("package:"):
-        raise SmokeError(f"package manager did not report installed package {args.package}")
-
-    package_dump = _adb(args.adb, serial, "shell", "dumpsys", "package", args.package)
-    camera_declared = permission_declared(package_dump, CAMERA_PERMISSION)
-    headset_camera_declared = permission_declared(package_dump, HEADSET_CAMERA_PERMISSION)
-    if not camera_declared:
-        raise SmokeError(f"installed APK does not declare required permission {CAMERA_PERMISSION}")
-    if not headset_camera_declared:
-        raise SmokeError(f"installed APK does not declare required permission {HEADSET_CAMERA_PERMISSION}")
-
-    camera_permission = permission_granted(package_dump, CAMERA_PERMISSION)
-    headset_camera_permission = permission_granted(package_dump, HEADSET_CAMERA_PERMISSION)
-    if camera_permission is False:
-        raise SmokeError(f"{CAMERA_PERMISSION} is explicitly denied after adb install -g")
-    if headset_camera_permission is False:
-        raise SmokeError(f"{HEADSET_CAMERA_PERMISSION} is explicitly denied after adb install -g")
-
-    _adb(args.adb, serial, "logcat", "-c")
-    _adb(args.adb, serial, "shell", "am", "force-stop", args.package)
-    activity = resolve_main_activity(args.adb, serial, args.package)
-    _adb(args.adb, serial, "shell", "am", "start", "-W", "-n", activity, timeout_seconds=60.0)
-    pid = wait_for_pid(args.adb, serial, args.package, min(30.0, args.smoke_timeout_seconds))
-
-    logcat = ""
-    readiness = readiness_from_logcat(logcat)
-    try:
-        logcat, readiness = wait_for_read_mode_pass(
-            args.adb,
-            serial,
-            args.package,
-            pid,
-            args.smoke_timeout_seconds,
-        )
-        required = (
-            "ocr_smoke_passed",
-            "read_mode_smoke_passed",
-            "mruk_environment_raycast_observed",
-        )
-        if not all(readiness[name] for name in required):
-            missing = [name for name in required if not readiness[name]]
-            raise SmokeError("Quest Read Mode PASS evidence missing: " + ", ".join(missing))
-    finally:
-        try:
-            latest_log = process_logcat(args.adb, serial, pid)
-            if latest_log:
-                logcat = latest_log
-                readiness = readiness_from_logcat(logcat)
-        except (SmokeError, subprocess.SubprocessError, OSError):
-            pass
-        log_path.write_text(logcat, encoding="utf-8")
-
+def build_evidence(
+    *,
+    status: str,
+    args: argparse.Namespace,
+    started: dt.datetime,
+    serial: str | None,
+    actual_device_model: str | None,
+    activity: str | None,
+    pid: str | None,
+    camera_declared: bool | None,
+    headset_camera_declared: bool | None,
+    camera_permission: bool | None,
+    headset_camera_permission: bool | None,
+    readiness: Dict[str, bool],
+    error: BaseException | None = None,
+) -> Dict[str, object]:
     finished = dt.datetime.now(dt.timezone.utc)
+    device: Dict[str, object] = {"model": actual_device_model or "unobserved"}
+    if serial:
+        for key, prop in (
+            ("manufacturer", "ro.product.manufacturer"),
+            ("device", "ro.product.device"),
+            ("android_release", "ro.build.version.release"),
+            ("sdk", "ro.build.version.sdk"),
+            ("build_fingerprint", "ro.build.fingerprint"),
+        ):
+            try:
+                device[key] = _prop(args.adb, serial, prop)
+            except (SmokeError, subprocess.SubprocessError, OSError):
+                device[key] = "unobserved"
+
     evidence: Dict[str, object] = {
         "schema_version": 1,
         "purpose": "phrase-layer-quest-read-mode-hardware-visual-smoke",
+        "status": status,
         "started_at_utc": started.isoformat(),
         "finished_at_utc": finished.isoformat(),
-        "adb_serial": serial,
+        "adb_serial_sha256_12": serial_fingerprint(serial),
         "package": args.package,
-        "main_activity": activity,
-        "pid": int(pid),
+        "main_activity": activity or "unobserved",
+        "pid": int(pid) if pid and pid.isdigit() else None,
         "apk": {
             "file_name": args.apk.name,
-            "size_bytes": args.apk.stat().st_size,
-            "sha256": sha256_file(args.apk),
+            "size_bytes": args.apk.stat().st_size if args.apk.is_file() else 0,
+            "sha256": sha256_file(args.apk) if args.apk.is_file() else None,
         },
         "permissions": {
             CAMERA_PERMISSION: {
@@ -300,15 +258,8 @@ def main() -> None:
         "camera_timestamp_source": "unity-realtime-observation",
         "camera_hardware_timestamp_pose_sync_verified": False,
         "expected_device_model": args.expected_device_model,
-        "device": {
-            "manufacturer": _prop(args.adb, serial, "ro.product.manufacturer"),
-            "model": actual_device_model,
-            "device": _prop(args.adb, serial, "ro.product.device"),
-            "android_release": _prop(args.adb, serial, "ro.build.version.release"),
-            "sdk": _prop(args.adb, serial, "ro.build.version.sdk"),
-            "build_fingerprint": _prop(args.adb, serial, "ro.build.fingerprint"),
-        },
-        "files": {"logcat": log_path.name},
+        "device": device,
+        "files": {"logcat": "quest-read-mode-logcat.txt"},
         "scope": (
             "Real Quest camera/OCR + MRUK live-depth surface fit/tracking + source mask + Japanese world-text vertical slice. "
             "Translation remains the explicit demo dictionary fixture. Camera timestamps remain Unity observation time, "
@@ -316,8 +267,138 @@ def main() -> None:
             "endurance, thermal and performance remain separate gates."
         ),
     }
-    evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"status": "pass", **evidence}, sort_keys=True))
+    if error is not None:
+        evidence["failure"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+    return evidence
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apk", type=pathlib.Path, required=True)
+    parser.add_argument("--adb", default="adb")
+    parser.add_argument("--serial")
+    parser.add_argument("--package", default=DEFAULT_PACKAGE)
+    parser.add_argument("--expected-device-model", default=DEFAULT_EXPECTED_DEVICE_MODEL)
+    parser.add_argument("--smoke-timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--output-dir", type=pathlib.Path, required=True)
+    args = parser.parse_args()
+
+    if not args.apk.is_file() or args.apk.stat().st_size <= 0:
+        raise SmokeError(f"APK is missing or empty: {args.apk}")
+    if args.smoke_timeout_seconds <= 0.0:
+        raise SmokeError("smoke timeout must be positive")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = args.output_dir / "quest-read-mode-logcat.txt"
+    evidence_path = args.output_dir / "quest-read-mode-smoke.json"
+    started = dt.datetime.now(dt.timezone.utc)
+
+    serial: str | None = None
+    actual_device_model: str | None = None
+    activity: str | None = None
+    pid: str | None = None
+    camera_declared: bool | None = None
+    headset_camera_declared: bool | None = None
+    camera_permission: bool | None = None
+    headset_camera_permission: bool | None = None
+    logcat = ""
+    readiness = readiness_from_logcat(logcat)
+
+    try:
+        devices = parse_adb_devices(_run([args.adb, "devices", "-l"]))
+        serial = choose_serial(devices, args.serial)
+        actual_device_model = _prop(args.adb, serial, "ro.product.model")
+        require_device_model(actual_device_model, args.expected_device_model)
+
+        _adb(args.adb, serial, "install", "-r", "-g", str(args.apk), timeout_seconds=180.0)
+        package_path = _adb(args.adb, serial, "shell", "pm", "path", args.package).strip()
+        if not package_path.startswith("package:"):
+            raise SmokeError(f"package manager did not report installed package {args.package}")
+
+        package_dump = _adb(args.adb, serial, "shell", "dumpsys", "package", args.package)
+        camera_declared = permission_declared(package_dump, CAMERA_PERMISSION)
+        headset_camera_declared = permission_declared(package_dump, HEADSET_CAMERA_PERMISSION)
+        if not camera_declared:
+            raise SmokeError(f"installed APK does not declare required permission {CAMERA_PERMISSION}")
+        if not headset_camera_declared:
+            raise SmokeError(f"installed APK does not declare required permission {HEADSET_CAMERA_PERMISSION}")
+
+        camera_permission = permission_granted(package_dump, CAMERA_PERMISSION)
+        headset_camera_permission = permission_granted(package_dump, HEADSET_CAMERA_PERMISSION)
+        if camera_permission is False:
+            raise SmokeError(f"{CAMERA_PERMISSION} is explicitly denied after adb install -g")
+        if headset_camera_permission is False:
+            raise SmokeError(f"{HEADSET_CAMERA_PERMISSION} is explicitly denied after adb install -g")
+
+        _adb(args.adb, serial, "logcat", "-c")
+        _adb(args.adb, serial, "shell", "am", "force-stop", args.package)
+        activity = resolve_main_activity(args.adb, serial, args.package)
+        _adb(args.adb, serial, "shell", "am", "start", "-W", "-n", activity, timeout_seconds=60.0)
+        pid = wait_for_pid(args.adb, serial, args.package, min(30.0, args.smoke_timeout_seconds))
+
+        logcat, readiness = wait_for_read_mode_pass(
+            args.adb,
+            serial,
+            args.package,
+            pid,
+            args.smoke_timeout_seconds,
+        )
+        required = (
+            "ocr_smoke_passed",
+            "read_mode_smoke_passed",
+            "mruk_environment_raycast_observed",
+        )
+        if not all(readiness[name] for name in required):
+            missing = [name for name in required if not readiness[name]]
+            raise SmokeError("Quest Read Mode PASS evidence missing: " + ", ".join(missing))
+
+        evidence = build_evidence(
+            status="pass",
+            args=args,
+            started=started,
+            serial=serial,
+            actual_device_model=actual_device_model,
+            activity=activity,
+            pid=pid,
+            camera_declared=camera_declared,
+            headset_camera_declared=headset_camera_declared,
+            camera_permission=camera_permission,
+            headset_camera_permission=headset_camera_permission,
+            readiness=readiness,
+        )
+        evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(json.dumps(evidence, sort_keys=True))
+    except (SmokeError, subprocess.SubprocessError, OSError, ValueError) as error:
+        if serial and pid:
+            try:
+                latest_log = process_logcat(args.adb, serial, pid)
+                if latest_log:
+                    logcat = latest_log
+                    readiness = readiness_from_logcat(logcat)
+            except (SmokeError, subprocess.SubprocessError, OSError):
+                pass
+        evidence = build_evidence(
+            status="fail",
+            args=args,
+            started=started,
+            serial=serial,
+            actual_device_model=actual_device_model,
+            activity=activity,
+            pid=pid,
+            camera_declared=camera_declared,
+            headset_camera_declared=headset_camera_declared,
+            camera_permission=camera_permission,
+            headset_camera_permission=headset_camera_permission,
+            readiness=readiness,
+            error=error,
+        )
+        evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        raise
+    finally:
+        log_path.write_text(logcat, encoding="utf-8")
 
 
 if __name__ == "__main__":
