@@ -2,8 +2,8 @@
 """Install and launch a PhraseLayer Android APK on an attached Quest/Android device.
 
 This is a real-device smoke gate, not a performance benchmark. It verifies the package installs,
-RECORD_AUDIO is granted, the launcher starts, the process remains alive, and startup logcat contains
-the Moonshine/Listen Mode readiness markers emitted by the Unity runtime. Utterance latency/RTF is
+RECORD_AUDIO is granted, the launcher starts, the process remains alive, and startup logcat proves both
+offline model stacks initialized: Marian translation plus Moonshine Listen Mode. Utterance latency/RTF is
 captured separately by capture_quest_listen_mode_metrics.py so a startup smoke cannot be mistaken for
 performance evidence.
 """
@@ -23,6 +23,7 @@ from typing import Dict, List, Sequence
 
 DEFAULT_PACKAGE = "com.unjuno.phraselayer"
 MICROPHONE_MARKER = "Microphone capture started:"
+MARIAN_READY_MARKER = "Marian offline translation ready:"
 LISTEN_READY_MARKER = "Listen Mode ready: microphone -> Moonshine ASR -> adaptive language plan."
 FATAL_MARKER = "FATAL EXCEPTION"
 
@@ -63,6 +64,7 @@ def record_audio_granted(dumpsys_package: str) -> bool:
 def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
     return {
         "microphone_started": MICROPHONE_MARKER in logcat,
+        "marian_translation_ready": MARIAN_READY_MARKER in logcat,
         "listen_mode_ready": LISTEN_READY_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
     }
@@ -141,7 +143,11 @@ def wait_for_readiness(
         readiness = readiness_from_logcat(last_log)
         if readiness["fatal_exception"]:
             raise SmokeError("startup logcat contains FATAL EXCEPTION")
-        if readiness["microphone_started"] and readiness["listen_mode_ready"]:
+        if (
+            readiness["microphone_started"]
+            and readiness["marian_translation_ready"]
+            and readiness["listen_mode_ready"]
+        ):
             return last_log, readiness
         time.sleep(1.0)
     return last_log, readiness_from_logcat(last_log)
@@ -188,7 +194,11 @@ def main() -> None:
         pid,
         args.startup_timeout_seconds,
     )
-    if not readiness["microphone_started"] or not readiness["listen_mode_ready"]:
+    if not (
+        readiness["microphone_started"]
+        and readiness["marian_translation_ready"]
+        and readiness["listen_mode_ready"]
+    ):
         missing = [name for name, value in readiness.items() if name != "fatal_exception" and not value]
         raise SmokeError("Listen Mode startup readiness markers missing: " + ", ".join(missing))
 
@@ -214,6 +224,8 @@ def main() -> None:
         },
         "record_audio_granted": microphone_granted,
         "readiness": readiness,
+        "offline_translation_runtime": "Marian",
+        "offline_asr_runtime": "MoonshineV1",
         "device": {
             "manufacturer": _prop(args.adb, serial, "ro.product.manufacturer"),
             "model": _prop(args.adb, serial, "ro.product.model"),
@@ -223,7 +235,7 @@ def main() -> None:
             "build_fingerprint": _prop(args.adb, serial, "ro.build.fingerprint"),
         },
         "files": {"startup_logcat": log_path.name},
-        "scope": "Startup smoke only. Transcript correctness and Quest latency/memory/thermal remain separate gates.",
+        "scope": "Startup smoke for Marian + Moonshine initialization only. Transcript correctness and Quest latency/memory/thermal remain separate gates.",
     }
     evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"status": "pass", **evidence}, sort_keys=True))
