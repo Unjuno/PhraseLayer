@@ -1,0 +1,181 @@
+name: Marian Unity Host Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      marian_source_snapshot:
+        description: "Absolute path on the self-hosted runner to the exact pinned Helsinki-NLP/opus-mt-en-jap source snapshot, including pytorch_model.bin"
+        required: true
+        type: string
+      marian_onnx_dir:
+        description: "Absolute path on the self-hosted runner to the reviewed three-graph Optimum ONNX export"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  marian-unity-host-gate:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Validate Marian host-gate contracts
+        shell: bash
+        run: |
+          python tools/validate_marian_lock_evidence.py
+          python tools/test_generate_marian_reference_fixture.py
+          python tools/validate_marian_unity_product_gate.py
+          python tools/test_prepare_unity_tokenizer_runtime.py
+          python tools/test_prepare_unity_marian_tokenizer_assets.py
+          python tools/test_export_marian_onnx.py
+          python tools/test_inspect_marian_onnx_bundle.py
+
+      - name: Validate local source snapshot and ONNX bundle identity
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+          MARIAN_ONNX_DIR: ${{ inputs.marian_onnx_dir }}
+        run: |
+          python tools/prepare_marian_translation.py \
+            --snapshot-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --revision a863894cdd2b80f3bc1c5966734aee9ffec207d1 \
+            --onnx-dir "$MARIAN_ONNX_DIR" \
+            --output-manifest "$RUNNER_TEMP/marian-local-inputs.manifest.json"
+          python tools/export_marian_onnx.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --output-dir "$RUNNER_TEMP/not-executed-export" \
+            --repository-root .
+          python tools/inspect_marian_onnx_bundle.py \
+            --bundle-dir "$MARIAN_ONNX_DIR" \
+            --output "$RUNNER_TEMP/marian-onnx-contract.manifest.json"
+
+      - name: Build and stage managed Marian tokenizer runtime
+        shell: bash
+        run: |
+          dotnet restore src/PhraseLayer.Tokenization.Microsoft/PhraseLayer.Tokenization.Microsoft.csproj
+          dotnet build src/PhraseLayer.Tokenization.Microsoft/PhraseLayer.Tokenization.Microsoft.csproj -c Release --no-restore
+          python tools/prepare_unity_tokenizer_runtime.py \
+            --build-output src/PhraseLayer.Tokenization.Microsoft/bin/Release/netstandard2.1 \
+            --destination unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime \
+            --manifest "$RUNNER_TEMP/unity-tokenizer-runtime.manifest.json"
+
+      - name: Generate offline Transformers greedy reference
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+        run: |
+          # The self-hosted runner must already contain the exact versions in tools/requirements-marian-export.txt.
+          # No pip install is performed here: model/tool downloads are not hidden inside the product gate.
+          python tools/generate_marian_reference_fixture.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --repository-root . \
+            --output "$RUNNER_TEMP/marian-reference.json"
+
+      - name: Stage validated Marian models, tokenizer and reference into Unity
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+          MARIAN_ONNX_DIR: ${{ inputs.marian_onnx_dir }}
+        run: |
+          python tools/prepare_unity_marian_assets.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --onnx-dir "$MARIAN_ONNX_DIR" \
+            --reference-fixture "$RUNNER_TEMP/marian-reference.json" \
+            --repository-root . \
+            --unity-project unity/PhraseLayer.Unity
+
+      - name: Require real Unity exact-token Marian translation parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-local-marian-translation.sh
+          ./tools/unity/verify-local-marian-translation.sh
+
+      - name: Write pre-device Marian evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          manifest = Path("unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/PhraseLayerMarianAssets.manifest.json")
+          reference = Path("unity/PhraseLayer.Unity/Assets/Resources/LocalTranslationAssets/marian-reference.json")
+          tokenizer_manifest = temp / "unity-tokenizer-runtime.manifest.json"
+          onnx_manifest = temp / "marian-onnx-contract.manifest.json"
+          source_manifest = temp / "marian-local-inputs.manifest.json"
+          for path in (manifest, reference, tokenizer_manifest, onnx_manifest, source_manifest):
+              assert path.is_file() and path.stat().st_size > 0, path
+
+          staged = json.loads(manifest.read_text(encoding="utf-8"))
+          ref = json.loads(reference.read_text(encoding="utf-8"))
+          assert staged["purpose"] == "phrase-layer-unity-local-marian-assets"
+          assert staged["revision"] == "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
+          assert staged["source_weight_copied_to_unity"] is False
+          assert staged["onnx_contract_inspected"] is True
+          assert staged["reference_sample_count"] >= 3
+          assert ref["purpose"] == "phrase-layer-marian-greedy-reference"
+          assert ref["revision"] == staged["revision"]
+          assert ref["generation"]["beam_width"] == 1
+          assert ref["generation"]["do_sample"] is False
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          evidence = {
+              "schema_version": 1,
+              "purpose": "phrase-layer-marian-pre-device-unity-host-gate",
+              "status": "pass",
+              "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
+              "revision": staged["revision"],
+              "source_weight_sha256": staged["source_weight"]["sha256"],
+              "source_weight_copied_to_unity": False,
+              "real_unity_graph_contract_passed": True,
+              "managed_tokenizer_source_token_parity_passed": True,
+              "cpu_clone_backend_generated_token_parity_passed": True,
+              "device_resident_backend_generated_token_parity_passed": True,
+              "decoded_text_parity_passed": True,
+              "quest_device_execution_performed": False,
+              "product_translation_gate": True,
+              "uploaded_model_weights": False,
+              "files": {
+                  "staged_manifest": {"name": manifest.name, "sha256": sha256(manifest)},
+                  "reference_fixture": {"name": reference.name, "sha256": sha256(reference)},
+                  "tokenizer_runtime_manifest": {"name": tokenizer_manifest.name, "sha256": sha256(tokenizer_manifest)},
+                  "onnx_contract_manifest": {"name": onnx_manifest.name, "sha256": sha256(onnx_manifest)},
+                  "source_input_manifest": {"name": source_manifest.name, "sha256": sha256(source_manifest)},
+              },
+          }
+          output = temp / "PhraseLayer.marian-unity-host-gate.json"
+          output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(evidence, sort_keys=True))
+          PY
+
+      - name: Upload Marian pre-device evidence only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-marian-unity-host-evidence
+          path: |
+            ${{ runner.temp }}/marian-local-inputs.manifest.json
+            ${{ runner.temp }}/marian-onnx-contract.manifest.json
+            ${{ runner.temp }}/unity-tokenizer-runtime.manifest.json
+            ${{ runner.temp }}/marian-reference.json
+            ${{ runner.temp }}/PhraseLayer.marian-unity-host-gate.json
+            unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/PhraseLayerMarianAssets.manifest.json
+          if-no-files-found: warn
+          retention-days: 7
