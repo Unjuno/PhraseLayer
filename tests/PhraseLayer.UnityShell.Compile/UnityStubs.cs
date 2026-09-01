@@ -66,6 +66,17 @@ namespace UnityEngine
         public static Quaternion LookRotation(Vector3 forward, Vector3 upwards) => new Quaternion();
     }
 
+    public struct Pose
+    {
+        public Pose(Vector3 position, Quaternion rotation)
+        {
+            this.position = position;
+            this.rotation = rotation;
+        }
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
     public struct Color
     {
         public Color(float r, float g, float b, float a)
