@@ -33,15 +33,27 @@ class QuestListenModeSmokeTests(unittest.TestCase):
         self.assertTrue(subject.record_audio_granted(granted))
         self.assertFalse(subject.record_audio_granted(denied))
 
-    def test_readiness_requires_microphone_and_listen_runtime(self) -> None:
+    def test_readiness_requires_microphone_marian_and_listen_runtime(self) -> None:
+        log = (
+            "I Unity: Marian offline translation ready: LocalTranslationAssets; cache=device-resident-experiment; source<=128; target<=128; beam=1.\n"
+            "I Unity: Microphone capture started: Oculus Microphone; requested=48000 Hz; actual=48000 Hz\n"
+            "I Unity: Listen Mode ready: microphone -> Moonshine ASR -> adaptive language plan.\n"
+        )
+        readiness = subject.readiness_from_logcat(log)
+        self.assertTrue(readiness["microphone_started"])
+        self.assertTrue(readiness["marian_translation_ready"])
+        self.assertTrue(readiness["listen_mode_ready"])
+        self.assertFalse(readiness["fatal_exception"])
+
+    def test_missing_marian_marker_is_not_ready(self) -> None:
         log = (
             "I Unity: Microphone capture started: Oculus Microphone; requested=48000 Hz; actual=48000 Hz\n"
             "I Unity: Listen Mode ready: microphone -> Moonshine ASR -> adaptive language plan.\n"
         )
         readiness = subject.readiness_from_logcat(log)
         self.assertTrue(readiness["microphone_started"])
+        self.assertFalse(readiness["marian_translation_ready"])
         self.assertTrue(readiness["listen_mode_ready"])
-        self.assertFalse(readiness["fatal_exception"])
 
     def test_fatal_exception_is_detected(self) -> None:
         readiness = subject.readiness_from_logcat("E AndroidRuntime: FATAL EXCEPTION: main")
