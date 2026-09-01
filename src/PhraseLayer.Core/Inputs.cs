@@ -20,6 +20,16 @@ namespace PhraseLayer.Core.Inputs
     /// </summary>
     public interface IImageFramePayload { }
 
+    /// <summary>
+    /// Optional ownership contract for native image payloads that allocate a per-frame resource.
+    /// The OCR pump calls ReleaseImageResource after that frame has either been processed or rejected by scheduling.
+    /// Implementations may retain immutable capture metadata after release so downstream geometry can still use the exact frame pose/timestamp.
+    /// </summary>
+    public interface IReleasableImageFramePayload : IImageFramePayload
+    {
+        void ReleaseImageResource();
+    }
+
     public sealed class ImageFrame
     {
         public ImageFrame(byte[] pixels, int width, int height, long timestampMicroseconds)
