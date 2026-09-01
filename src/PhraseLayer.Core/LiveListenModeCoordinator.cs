@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using PhraseLayer.Core.Assistance;
@@ -6,12 +7,39 @@ using PhraseLayer.Core.Inputs;
 
 namespace PhraseLayer.Core.Pipeline
 {
+    public sealed class ListenModeProcessingTimings
+    {
+        public ListenModeProcessingTimings(
+            double asrMilliseconds,
+            double languagePlanMilliseconds,
+            double totalMilliseconds)
+        {
+            if (asrMilliseconds < 0.0 || double.IsNaN(asrMilliseconds) || double.IsInfinity(asrMilliseconds))
+                throw new ArgumentOutOfRangeException(nameof(asrMilliseconds));
+            if (languagePlanMilliseconds < 0.0 || double.IsNaN(languagePlanMilliseconds) || double.IsInfinity(languagePlanMilliseconds))
+                throw new ArgumentOutOfRangeException(nameof(languagePlanMilliseconds));
+            if (totalMilliseconds < 0.0 || double.IsNaN(totalMilliseconds) || double.IsInfinity(totalMilliseconds))
+                throw new ArgumentOutOfRangeException(nameof(totalMilliseconds));
+            if (totalMilliseconds + 0.001 < asrMilliseconds || totalMilliseconds + 0.001 < languagePlanMilliseconds)
+                throw new ArgumentException("Listen Mode total timing cannot be smaller than a measured phase.");
+
+            AsrMilliseconds = asrMilliseconds;
+            LanguagePlanMilliseconds = languagePlanMilliseconds;
+            TotalMilliseconds = totalMilliseconds;
+        }
+
+        public double AsrMilliseconds { get; }
+        public double LanguagePlanMilliseconds { get; }
+        public double TotalMilliseconds { get; }
+    }
+
     public sealed class ListenModeObservationResult
     {
         public ListenModeObservationResult(
             AudioChunk audio,
             AsrObservation observation,
-            MixedLanguagePlan? languagePlan)
+            MixedLanguagePlan? languagePlan,
+            ListenModeProcessingTimings timings)
         {
             Audio = audio ?? throw new ArgumentNullException(nameof(audio));
             Observation = observation ?? throw new ArgumentNullException(nameof(observation));
@@ -19,11 +47,13 @@ namespace PhraseLayer.Core.Pipeline
                 throw new ArgumentException("Listen Mode language plan must match the ASR transcript.", nameof(languagePlan));
 
             LanguagePlan = languagePlan;
+            Timings = timings ?? throw new ArgumentNullException(nameof(timings));
         }
 
         public AudioChunk Audio { get; }
         public AsrObservation Observation { get; }
         public MixedLanguagePlan? LanguagePlan { get; }
+        public ListenModeProcessingTimings Timings { get; }
         public bool HasLanguagePlan => LanguagePlan != null;
     }
 
@@ -31,6 +61,7 @@ namespace PhraseLayer.Core.Pipeline
     /// ASR → adaptive-language handoff for one utterance/window. Partial ASR observations are exposed to
     /// the caller but are not translated by default, avoiding expensive translation churn while a transcript
     /// is still changing. Set planPartialObservations only for a UI that explicitly wants partial mixed text.
+    /// Timings separate ASR from adaptive language planning so device measurements can identify the real bottleneck.
     /// </summary>
     public sealed class ListenModeObservationProcessor
     {
@@ -57,19 +88,35 @@ namespace PhraseLayer.Core.Pipeline
             if (policy == null) throw new ArgumentNullException(nameof(policy));
             cancellationToken.ThrowIfCancellationRequested();
 
+            var totalStopwatch = Stopwatch.StartNew();
+            var asrStopwatch = Stopwatch.StartNew();
             var observation = await asr.TranscribeAsync(audio, cancellationToken);
+            asrStopwatch.Stop();
+
+            var languagePlanMilliseconds = 0.0;
             MixedLanguagePlan? plan = null;
             if (!string.IsNullOrWhiteSpace(observation.Text) &&
                 (observation.IsFinal || planPartialObservations))
             {
+                var languageStopwatch = Stopwatch.StartNew();
                 plan = await language.PlanAsync(
                     observation.Text,
                     policy,
                     observation.Text,
                     cancellationToken);
+                languageStopwatch.Stop();
+                languagePlanMilliseconds = languageStopwatch.Elapsed.TotalMilliseconds;
             }
 
-            return new ListenModeObservationResult(audio, observation, plan);
+            totalStopwatch.Stop();
+            return new ListenModeObservationResult(
+                audio,
+                observation,
+                plan,
+                new ListenModeProcessingTimings(
+                    asrStopwatch.Elapsed.TotalMilliseconds,
+                    languagePlanMilliseconds,
+                    totalStopwatch.Elapsed.TotalMilliseconds));
         }
     }
 
