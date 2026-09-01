@@ -11,6 +11,7 @@ EDITOR = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerUnityHostPrefl
 SHELL = ROOT / "tools/unity/run-host-preflight.sh"
 READ_WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 MARIAN_WORKFLOW = ROOT / ".github/workflows/marian-unity-host-gate.yml"
+MARIAN_ANDROID_WORKFLOW = ROOT / ".github/workflows/marian-android-runtime-smoke.yml"
 QUEST_WORKFLOW = ROOT / ".github/workflows/quest3-read-mode-smoke.yml"
 
 
@@ -23,6 +24,10 @@ def require(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} is missing required marker: {fragment}")
 
 
+def compact(text: str) -> str:
+    return "".join(text.split())
+
+
 def forbid(text: str, fragment: str, label: str) -> None:
     if fragment in text:
         raise GateError(f"{label} contains forbidden marker: {fragment}")
@@ -33,6 +38,7 @@ def validate() -> dict[str, object]:
     shell = SHELL.read_text(encoding="utf-8")
     read_workflow = READ_WORKFLOW.read_text(encoding="utf-8")
     marian_workflow = MARIAN_WORKFLOW.read_text(encoding="utf-8")
+    marian_android_workflow = MARIAN_ANDROID_WORKFLOW.read_text(encoding="utf-8")
     quest_workflow = QUEST_WORKFLOW.read_text(encoding="utf-8")
 
     for fragment in (
@@ -71,26 +77,29 @@ def validate() -> dict[str, object]:
     for forbidden in ("adb ", "run_quest", "PHRASELAYER_DEVICE_SERIAL"):
         forbid(shell, forbidden, "Unity host preflight shell")
 
+    workflow_markers = (
+        "Run real Unity host capability preflight",
+        "run-host-preflight.sh",
+        "PHRASELAYER_UNITY_HOST_PREFLIGHT_EVIDENCE_PATH:",
+        "Require Unity host preflight evidence",
+        'data["purpose"] == "phrase-layer-real-unity-host-preflight"',
+        'data["real_unity_execution"] is True',
+        'data["exact_unity_version_match"] is True',
+        'data["android_build_support_available"] is True',
+        'data["inference_engine_compile_gate_active"] is True',
+        'data["local_asset_paths_serialized"] is False',
+        'data["adb_required"] is False',
+        'data["quest_device_execution_performed"] is False',
+    )
     for workflow, label in (
         (read_workflow, "Read Mode host workflow"),
         (marian_workflow, "Marian host workflow"),
+        (marian_android_workflow, "Marian Android runtime workflow"),
         (quest_workflow, "Quest Read Mode workflow"),
     ):
-        for fragment in (
-            "Run real Unity host capability preflight",
-            "run-host-preflight.sh",
-            "PHRASELAYER_UNITY_HOST_PREFLIGHT_EVIDENCE_PATH:",
-            "Require Unity host preflight evidence",
-            'assert data["purpose"] == "phrase-layer-real-unity-host-preflight"',
-            'assert data["real_unity_execution"] is True',
-            'assert data["exact_unity_version_match"] is True',
-            'assert data["android_build_support_available"] is True',
-            'assert data["inference_engine_compile_gate_active"] is True',
-            'assert data["local_asset_paths_serialized"] is False',
-            'assert data["adb_required"] is False',
-            'assert data["quest_device_execution_performed"] is False',
-        ):
-            require(workflow, fragment, label)
+        compact_workflow = compact(workflow)
+        for fragment in workflow_markers:
+            require(compact_workflow, compact(fragment), label)
 
     return {
         "status": "pass",
@@ -100,7 +109,7 @@ def validate() -> dict[str, object]:
         "android_build_support_required": True,
         "inference_compile_gate_required": True,
         "local_paths_redacted": True,
-        "host_workflows_covered": 3,
+        "host_workflows_covered": 4,
         "adb_dependency": False,
         "quest_execution": False,
     }
