@@ -12,6 +12,7 @@ SCENE_SETUP = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianPro
 BUILD = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs"
 SHELL = ROOT / "tools/unity/build-marian-product-android-fixture.sh"
 TOKENIZER_STAGER = ROOT / "tools/prepare_unity_tokenizer_runtime.py"
+GUARDED_CSPROJ = ROOT / "tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj"
 
 
 class GateError(ValueError):
@@ -34,6 +35,7 @@ def validate() -> dict[str, object]:
     build = BUILD.read_text(encoding="utf-8")
     shell = SHELL.read_text(encoding="utf-8")
     tokenizer = TOKENIZER_STAGER.read_text(encoding="utf-8")
+    guarded_csproj = GUARDED_CSPROJ.read_text(encoding="utf-8")
 
     for fragment in (
         'PRESERVED_ASSEMBLIES = (',
@@ -100,6 +102,14 @@ def validate() -> dict[str, object]:
         require(shell, fragment, "Marian Android build shell")
 
     for fragment in (
+        "<DefineConstants>PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>",
+        "PhraseLayerLocalMarianAssets.cs",
+        "PhraseLayerMarianProductFixtureSetup.cs",
+        "PhraseLayerMarianProductAndroidBuild.cs",
+    ):
+        require(guarded_csproj, fragment, "guarded Marian compile project")
+
+    for fragment in (
         "python tools/validate_marian_android_fixture_gate.py",
         "Build local-only Marian Android ARM64 IL2CPP product fixture",
         "build-marian-product-android-fixture.sh",
@@ -137,6 +147,7 @@ def validate() -> dict[str, object]:
         "device_resident_backend_serialized": True,
         "managed_tokenizer_linker_preservation_required": True,
         "deterministic_translation_only_scene_required": True,
+        "guarded_packaging_compile_required": True,
         "local_apk_fingerprint_required": True,
         "apk_artifact_upload_allowed": False,
         "model_weight_artifact_upload_allowed": False,
