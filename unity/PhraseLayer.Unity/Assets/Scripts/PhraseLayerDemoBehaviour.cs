@@ -17,6 +17,7 @@ namespace PhraseLayer.Unity
         [SerializeField, TextArea(2, 5)] private string sourceText = DefaultSource;
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
         [SerializeField] private UnityLiveReadModeBehaviour liveReadMode = default(UnityLiveReadModeBehaviour);
+        [SerializeField] private bool autoRunOnStart = true;
 
         private InMemoryLearnerModel learner;
         private LanguagePipeline pipeline;
@@ -32,11 +33,26 @@ namespace PhraseLayer.Unity
         public MixedLanguagePlan CurrentPlan => currentPlan;
         public LanguagePipeline Pipeline => pipeline;
         public bool UsesTranslationEngineOverride => translationEngineOverride != null;
+        public bool AutoRunOnStart => autoRunOnStart;
 
         private async void Start()
         {
+            if (!autoRunOnStart)
+                return;
             BuildPipeline();
             await ReplanAsync();
+        }
+
+        public void SetAutoRunOnStart(bool enabled)
+        {
+            autoRunOnStart = enabled;
+        }
+
+        public void SetSourceText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentException("PhraseLayer demo source text must not be empty.", nameof(text));
+            sourceText = text;
         }
 
         public void SetLiveReadMode(UnityLiveReadModeBehaviour liveRuntime)
