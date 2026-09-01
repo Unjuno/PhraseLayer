@@ -43,6 +43,7 @@ jobs:
           python tools/validate_mruk_environment_raycast_gate.py
           python tools/validate_quest_project_setup_gate.py
           python tools/validate_passthrough_camera_frame_sync.py
+          python tools/validate_ppocr_gpu_preprocess_gate.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_quest_read_mode_device_gate.py
@@ -57,6 +58,12 @@ jobs:
         shell: bash
         run: |
           python tools/prepare_unity_ocr_assets.py
+
+      - name: Require real Unity PP-OCR GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-ppocr-gpu-preprocess.sh
+          ./tools/unity/verify-ppocr-gpu-preprocess.sh
 
       - name: Build instrumented Read Mode Android ARM64 IL2CPP fixture
         shell: bash
