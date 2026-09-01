@@ -32,6 +32,7 @@ jobs:
       - run: python tools/validate_quest_read_mode_smoke_harness.py
       - run: python tools/validate_read_mode_visual_asset_staging.py
       - run: python tools/validate_read_mode_unity_host_gate.py
+      - run: python tools/validate_unity_host_preflight.py
       - run: python tools/validate_quest_read_mode_device_gate.py
       - run: python tools/test_run_quest_read_mode_smoke.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
