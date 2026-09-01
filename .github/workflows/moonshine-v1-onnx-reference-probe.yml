@@ -44,7 +44,7 @@ jobs:
           python - <<'PY'
           from huggingface_hub import snapshot_download
           snapshot_download(
-              repo_id="UsefulSensors/moonshine",
+              repo_id="moonshine-ai/moonshine",
               revision="35b4aae79f7d598a4d36d5252ec26ad642faab60",
               allow_patterns=[
                   "onnx/tiny/preprocess.onnx",
