@@ -11,6 +11,7 @@ namespace PhraseLayer.Unity.Editor
     {
         public const string DemoScenePath = "Assets/Scenes/PhraseLayerDemo.unity";
         private const string MetaPassthroughCameraAccessTypeName = "Meta.XR.PassthroughCameraAccess";
+        private const string MetaEnvironmentRaycastManagerTypeName = "Meta.XR.EnvironmentRaycastManager";
 
         [MenuItem("PhraseLayer/Create or Reset Demo Scene")]
         public static void CreateDemoScene()
@@ -25,8 +26,9 @@ namespace PhraseLayer.Unity.Editor
 
         /// <summary>
         /// Deterministically creates the demo scene and optionally injects locally reviewed visual assets.
-        /// The explicit smoke autorun flag is reserved for instrumented Quest fixture builds so ordinary editor
-        /// use never starts a hardware gate merely by opening the scene.
+        /// Quest physical text placement uses MRUK EnvironmentRaycastManager against live depth, so no prior Scene
+        /// scan or generated collider mesh is required. The explicit smoke autorun flag is reserved for the
+        /// instrumented Quest fixture build; ordinary editor scene creation never starts a hardware gate.
         /// </summary>
         public static void CreateDemoScene(
             Font reviewedJapaneseFont,
@@ -42,20 +44,22 @@ namespace PhraseLayer.Unity.Editor
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
             var ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
             var questOcrSmoke = root.AddComponent<QuestOcrSmokeTestBehaviour>();
-            var surfaceRaycaster = root.AddComponent<UnityPhysicsSurfaceRaycaster>();
+            var environmentSurfaceRaycaster = root.AddComponent<UnityEnvironmentSurfaceRaycaster>();
             var spatialProjection = root.AddComponent<UnitySpatialProjectionBehaviour>();
             var worldTextTracking = root.AddComponent<UnityWorldTextTrackingBehaviour>();
             var worldTextSourceMask = root.AddComponent<UnityWorldTextSourceMaskBehaviour>();
             var worldTextRenderer = root.AddComponent<UnityWorldTextRendererBehaviour>();
             var liveReadMode = root.AddComponent<UnityLiveReadModeBehaviour>();
             var questReadModeSmoke = root.AddComponent<QuestReadModeSmokeTestBehaviour>();
-            var metaCamera = AddMetaPassthroughCameraAccess(root);
+            var metaCamera = AddRequiredMetaComponent(root, MetaPassthroughCameraAccessTypeName);
+            var environmentRaycastManager = AddRequiredMetaComponent(root, MetaEnvironmentRaycastManagerTypeName);
 
             cameraBridge.SetPassthroughCameraAccess(metaCamera);
             runtimeDriver.SetSceneReferences(cameraBridge, presenter);
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
             questOcrSmoke.SetSceneReferences(runtimeDriver, presenter, ocrBootstrap);
-            spatialProjection.SetSceneReferences(cameraBridge, surfaceRaycaster);
+            environmentSurfaceRaycaster.SetEnvironmentRaycastManager(environmentRaycastManager);
+            spatialProjection.SetSceneReferences(cameraBridge, environmentSurfaceRaycaster);
             worldTextTracking.SetProjection(spatialProjection);
             worldTextTracking.SetSourceMask(worldTextSourceMask);
             worldTextTracking.SetRenderer(worldTextRenderer);
@@ -76,26 +80,23 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → real-device OCR smoke → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer → end-to-end Quest Read Mode smoke wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
+                "PhraseLayer demo scene created with Meta camera → real-device OCR smoke → latest-only adaptive Read Mode → semantic geometry → MRUK live-depth environment raycast → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer → end-to-end Quest Read Mode smoke wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
                 DemoScenePath);
         }
 
-        private static Component AddMetaPassthroughCameraAccess(GameObject root)
+        private static Component AddRequiredMetaComponent(GameObject root, string fullTypeName)
         {
-            var cameraType = FindLoadedType(MetaPassthroughCameraAccessTypeName);
-            if (cameraType == null)
+            var componentType = FindLoadedType(fullTypeName);
+            if (componentType == null)
             {
                 throw new InvalidOperationException(
-                    "Could not resolve " + MetaPassthroughCameraAccessTypeName +
-                    ". Resolve the pinned com.meta.xr.mrutilitykit package before creating the Quest OCR demo scene.");
+                    "Could not resolve " + fullTypeName +
+                    ". Resolve the pinned Meta XR/MRUK packages before creating the Quest Read Mode demo scene.");
             }
-            if (!typeof(Component).IsAssignableFrom(cameraType))
-            {
-                throw new InvalidOperationException(
-                    MetaPassthroughCameraAccessTypeName + " is not a UnityEngine.Component in the installed Meta package.");
-            }
+            if (!typeof(Component).IsAssignableFrom(componentType))
+                throw new InvalidOperationException(fullTypeName + " is not a UnityEngine.Component in the installed Meta package.");
 
-            return root.AddComponent(cameraType);
+            return root.AddComponent(componentType);
         }
 
         private static Type FindLoadedType(string fullName)
