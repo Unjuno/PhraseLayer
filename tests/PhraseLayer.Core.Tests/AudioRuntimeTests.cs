@@ -38,6 +38,48 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void PrepareMonoDownsamplingAttenuatesContentAboveTargetNyquist()
+        {
+            const int sourceRate = 48000;
+            const int targetRate = 16000;
+            const int sourceFrequency = 12000;
+            var source = new float[sourceRate / 10];
+            for (var index = 0; index < source.Length; index++)
+            {
+                source[index] = (float)Math.Sin(
+                    2.0 * Math.PI * sourceFrequency * index / sourceRate);
+            }
+
+            var prepared = AudioChunkPreprocessor.PrepareMono(
+                new AudioChunk(source, sourceRate, 17),
+                targetRate);
+
+            double squared = 0.0;
+            for (var index = 0; index < prepared.Samples.Length; index++)
+                squared += prepared.Samples[index] * (double)prepared.Samples[index];
+            var rms = Math.Sqrt(squared / prepared.Samples.Length);
+
+            Assert.Equal(targetRate, prepared.SampleRate);
+            Assert.Equal(source.Length / 3, prepared.Samples.Length);
+            Assert.True(rms < 0.05, $"Aliased 12 kHz energy was not sufficiently attenuated; RMS={rms:F6}.");
+        }
+
+        [Fact]
+        public void PrepareMonoDownsamplingPreservesDcGain()
+        {
+            var source = new float[4800];
+            Array.Fill(source, 0.25f);
+
+            var prepared = AudioChunkPreprocessor.PrepareMono(
+                new AudioChunk(source, 48000, 18),
+                16000);
+
+            Assert.Equal(1600, prepared.Samples.Length);
+            foreach (var sample in prepared.Samples)
+                Assert.Equal(0.25f, sample, 4);
+        }
+
+        [Fact]
         public void PrepareMonoRejectsNonFiniteSamples()
         {
             var error = Assert.Throws<ArgumentException>(() =>
