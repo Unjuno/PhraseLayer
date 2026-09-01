@@ -96,9 +96,37 @@ jobs:
 
       - name: Require real Unity exact-token Marian translation parity
         shell: bash
+        env:
+          PHRASELAYER_MARIAN_PARITY_EVIDENCE_PATH: ${{ runner.temp }}/PhraseLayer.marian-unity-parity-evidence.json
         run: |
           chmod +x tools/unity/verify-local-marian-translation.sh
           ./tools/unity/verify-local-marian-translation.sh
+
+      - name: Require Unity-authored Marian parity evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["RUNNER_TEMP"]) / "PhraseLayer.marian-unity-parity-evidence.json"
+          assert evidence.is_file() and evidence.stat().st_size > 0
+          data = json.loads(evidence.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-real-unity-marian-parity"
+          assert data["model_revision"] == "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
+          assert data["real_unity_execution"] is True
+          assert data["model_graph_contract_passed"] is True
+          assert data["managed_tokenizer_source_token_parity_passed"] is True
+          assert data["cpu_clone_backend_generated_token_parity_passed"] is True
+          assert data["device_resident_backend_generated_token_parity_passed"] is True
+          assert data["decoded_text_parity_passed"] is True
+          assert data["language_pipeline_semantic_replacement_passed"] is True
+          assert data["gloss_marker_injection_detected"] is False
+          assert data["minimum_reference_samples"] >= 3
+          assert data["quest_device_execution_performed"] is False
+          print(json.dumps(data, sort_keys=True))
+          PY
 
       - name: Build local-only Marian Android ARM64 IL2CPP product fixture
         shell: bash
@@ -179,6 +207,7 @@ jobs:
           tokenizer_manifest = temp / "unity-tokenizer-runtime.manifest.json"
           onnx_manifest = temp / "marian-onnx-contract.manifest.json"
           source_manifest = temp / "marian-local-inputs.manifest.json"
+          unity_parity_evidence = temp / "PhraseLayer.marian-unity-parity-evidence.json"
           android_build_evidence = temp / "PhraseLayer.marian-product-fixture-build-evidence.json"
           apk_fingerprint = temp / "marian-product-apk-fingerprint.json"
           apk = temp / "PhraseLayerMarianProductFixture.apk"
@@ -188,6 +217,7 @@ jobs:
               tokenizer_manifest,
               onnx_manifest,
               source_manifest,
+              unity_parity_evidence,
               android_build_evidence,
               apk_fingerprint,
               apk,
@@ -197,6 +227,7 @@ jobs:
           staged = json.loads(manifest.read_text(encoding="utf-8"))
           ref = json.loads(reference.read_text(encoding="utf-8"))
           tokenizer = json.loads(tokenizer_manifest.read_text(encoding="utf-8"))
+          unity_parity = json.loads(unity_parity_evidence.read_text(encoding="utf-8"))
           android_build = json.loads(android_build_evidence.read_text(encoding="utf-8"))
           apk_fp = json.loads(apk_fingerprint.read_text(encoding="utf-8"))
           assert staged["purpose"] == "phrase-layer-unity-local-marian-assets"
@@ -210,6 +241,16 @@ jobs:
           assert ref["generation"]["do_sample"] is False
           assert tokenizer["il2cpp_reflection_preserve_required"] is True
           assert tokenizer["linker_descriptor"]["file"] == "link.xml"
+          assert unity_parity["purpose"] == "phrase-layer-real-unity-marian-parity"
+          assert unity_parity["model_revision"] == staged["revision"]
+          assert unity_parity["real_unity_execution"] is True
+          assert unity_parity["model_graph_contract_passed"] is True
+          assert unity_parity["managed_tokenizer_source_token_parity_passed"] is True
+          assert unity_parity["cpu_clone_backend_generated_token_parity_passed"] is True
+          assert unity_parity["device_resident_backend_generated_token_parity_passed"] is True
+          assert unity_parity["decoded_text_parity_passed"] is True
+          assert unity_parity["language_pipeline_semantic_replacement_passed"] is True
+          assert unity_parity["gloss_marker_injection_detected"] is False
           assert android_build["result"] == "Succeeded"
           assert android_build["product_translation_gate"] is True
           assert android_build["apk_upload_allowed"] is False
@@ -227,20 +268,21 @@ jobs:
           assert not apk.exists()
 
           evidence = {
-              "schema_version": 2,
+              "schema_version": 3,
               "purpose": "phrase-layer-marian-pre-device-unity-host-gate",
               "status": "pass",
               "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
               "revision": staged["revision"],
               "source_weight_sha256": staged["source_weight"]["sha256"],
               "source_weight_copied_to_unity": False,
-              "real_unity_graph_contract_passed": True,
-              "managed_tokenizer_source_token_parity_passed": True,
-              "cpu_clone_backend_generated_token_parity_passed": True,
-              "device_resident_backend_generated_token_parity_passed": True,
-              "decoded_text_parity_passed": True,
-              "language_pipeline_semantic_replacement_passed": True,
-              "gloss_marker_injection_detected": False,
+              "real_unity_graph_contract_passed": unity_parity["model_graph_contract_passed"],
+              "managed_tokenizer_source_token_parity_passed": unity_parity["managed_tokenizer_source_token_parity_passed"],
+              "cpu_clone_backend_generated_token_parity_passed": unity_parity["cpu_clone_backend_generated_token_parity_passed"],
+              "device_resident_backend_generated_token_parity_passed": unity_parity["device_resident_backend_generated_token_parity_passed"],
+              "decoded_text_parity_passed": unity_parity["decoded_text_parity_passed"],
+              "language_pipeline_semantic_replacement_passed": unity_parity["language_pipeline_semantic_replacement_passed"],
+              "gloss_marker_injection_detected": unity_parity["gloss_marker_injection_detected"],
+              "unity_parity_evidence_authored_by_unity": True,
               "il2cpp_reflection_preservation_staged": True,
               "android_arm64_il2cpp_fixture_build_passed": True,
               "android_runtime_execution_performed": False,
@@ -257,6 +299,7 @@ jobs:
                   "tokenizer_runtime_manifest": {"name": tokenizer_manifest.name, "sha256": sha256(tokenizer_manifest)},
                   "onnx_contract_manifest": {"name": onnx_manifest.name, "sha256": sha256(onnx_manifest)},
                   "source_input_manifest": {"name": source_manifest.name, "sha256": sha256(source_manifest)},
+                  "unity_parity_evidence": {"name": unity_parity_evidence.name, "sha256": sha256(unity_parity_evidence)},
                   "android_build_evidence": {"name": android_build_evidence.name, "sha256": sha256(android_build_evidence)},
                   "apk_fingerprint": {"name": apk_fingerprint.name, "sha256": sha256(apk_fingerprint)},
               },
@@ -281,6 +324,7 @@ jobs:
             ${{ runner.temp }}/marian-onnx-contract.manifest.json
             ${{ runner.temp }}/unity-tokenizer-runtime.manifest.json
             ${{ runner.temp }}/marian-reference.json
+            ${{ runner.temp }}/PhraseLayer.marian-unity-parity-evidence.json
             ${{ runner.temp }}/PhraseLayer.marian-product-fixture-build-evidence.json
             ${{ runner.temp }}/marian-product-apk-fingerprint.json
             ${{ runner.temp }}/PhraseLayer.marian-unity-host-gate.json
