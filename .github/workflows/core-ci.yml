@@ -27,6 +27,7 @@ jobs:
       - run: python tools/validate_read_mode_mask_gate.py
       - run: python tools/validate_mruk_environment_raycast_gate.py
       - run: python tools/validate_quest_project_setup_gate.py
+      - run: python tools/validate_passthrough_camera_frame_sync.py
       - run: python tools/validate_quest_read_mode_smoke_harness.py
       - run: python tools/validate_read_mode_visual_asset_staging.py
       - run: python tools/validate_quest_read_mode_device_gate.py
