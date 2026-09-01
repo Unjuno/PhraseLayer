@@ -2,9 +2,11 @@
 """Static contract for PassthroughCameraAccess frame timestamp/camera-pose binding.
 
 This gate distinguishes two claims deliberately:
-1. implemented: a stable Meta Timestamp/GetCameraPose pair is retained with the OCR frame and reused for world rays;
-2. not yet verified: exact pixel/pose synchronization, because the current PP-OCR detector still performs a blocking
-   Graphics.Blit/readback preprocessing path and real Quest timing evidence has not been captured.
+1. implemented: a stable Meta Timestamp/GetCameraPose pair is retained with the OCR frame and reused for world rays,
+   and the detector submits the matching passthrough texture directly to an Inference Engine tensor without a CPU
+   image readback in between;
+2. not yet verified: exact end-to-end pixel/pose synchronization, because real Quest timing evidence has not yet been
+   captured for the Meta texture producer, Unity graphics submission, detector inference, and projection sequence.
 """
 
 from __future__ import annotations
@@ -94,9 +96,26 @@ def validate() -> dict[str, object]:
     ):
         require(smoke, fragment, "Quest Read Mode smoke")
 
-    # This marker deliberately keeps the stronger end-to-end synchronization claim open.
-    require(detector, 'Graphics.Blit(source, renderTexture)', "PP-OCR detector")
-    require(detector, 'readable.ReadPixels(', "PP-OCR detector")
+    # The detector must consume the camera texture immediately through the reviewed Inference Engine 2.2.1
+    # texture-to-tensor path. Reintroducing a CPU image readback here would reopen the frame/pose race.
+    for fragment in (
+        'UsesGpuTexturePreprocessing => true',
+        '.SetTensorLayout(TensorLayout.NCHW)',
+        '.SetCoordOrigin(flipReadbackRows ? CoordOrigin.TopLeft : CoordOrigin.BottomLeft)',
+        '.SetChannelSwizzle(ChannelSwizzle.BGRA)',
+        'TextureConverter.ToTensor(texture, inputTensor, textureTransform)',
+        'worker.Schedule(inputTensor)',
+    ):
+        require(detector, fragment, "PP-OCR detector")
+
+    for fragment in (
+        'Graphics.Blit(',
+        '.ReadPixels(',
+        '.GetPixels32(',
+        'RenderTexture.active',
+        'RenderTexture.GetTemporary(',
+    ):
+        forbid(detector, fragment, "PP-OCR detector")
 
     for fragment in (
         'CAPTURED_POSE_MARKER = "captured_pose_projection=true"',
@@ -115,7 +134,8 @@ def validate() -> dict[str, object]:
         "stable_timestamp_pose_pair_required": True,
         "center_and_corner_rays_share_capture_pose": True,
         "quest_smoke_requires_capture_pose": True,
-        "blocking_graphics_blit_still_present": True,
+        "detector_input_gpu_texture_to_tensor": True,
+        "detector_cpu_image_readback_forbidden": True,
         "pixel_pose_sync_verified": False,
         "real_quest_timing_evidence_still_required": True,
     }
