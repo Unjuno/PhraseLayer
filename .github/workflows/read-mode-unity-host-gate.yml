@@ -34,6 +34,7 @@ jobs:
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_read_mode_unity_host_gate.py
+          python tools/test_inspect_android_apk_structure.py
 
       - name: Download exact pinned PP-OCR assets
         shell: bash
@@ -66,7 +67,7 @@ jobs:
           chmod +x tools/unity/build-android-read-mode-fixture.sh
           ./tools/unity/build-android-read-mode-fixture.sh
 
-      - name: Require complete pre-device build evidence
+      - name: Require complete pre-device build evidence and inspect local APK
         shell: bash
         run: |
           python - <<'PY'
@@ -114,21 +115,90 @@ jobs:
                       digest.update(chunk)
               return digest.hexdigest()
 
-          manifest = {
+          fingerprint = {
               "schema_version": 1,
+              "purpose": "phrase-layer-local-read-mode-apk-fingerprint",
+              "file_name": apk.name,
+              "size_bytes": apk.stat().st_size,
+              "sha256": sha256(apk),
+              "uploaded": False,
+              "ocr_model_redistribution_review": "pending",
+              "runtime_executed": False,
+          }
+          fingerprint_path = temp / "read-mode-apk-fingerprint.json"
+          fingerprint_path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(fingerprint, sort_keys=True))
+          PY
+          python tools/inspect_android_apk_structure.py \
+            --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            --output "$RUNNER_TEMP/read-mode-apk-structure.json"
+
+      - name: Write safe pre-device host evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          apk = temp / "PhraseLayerReadModeFixture.apk"
+          build_evidence = temp / "PhraseLayer.read-mode-fixture-build-evidence.json"
+          visual_evidence = Path("unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json")
+          ocr_manifest = Path("unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json")
+          apk_fingerprint = temp / "read-mode-apk-fingerprint.json"
+          apk_structure = temp / "read-mode-apk-structure.json"
+          for path in (apk, build_evidence, visual_evidence, ocr_manifest, apk_fingerprint, apk_structure):
+              assert path.is_file() and path.stat().st_size > 0, path
+
+          fp = json.loads(apk_fingerprint.read_text(encoding="utf-8"))
+          structure = json.loads(apk_structure.read_text(encoding="utf-8"))
+          assert fp["uploaded"] is False
+          assert fp["ocr_model_redistribution_review"] == "pending"
+          assert structure["sha256"] == fp["sha256"]
+          assert structure["size_bytes"] == fp["size_bytes"]
+          assert structure["zip_integrity_passed"] is True
+          assert structure["native_abis"] == ["arm64-v8a"]
+          assert structure["arm64_only"] is True
+          assert structure["il2cpp_native_library_present"] is True
+          assert structure["unity_player_library_present"] is True
+          assert structure["unity_data_entry_count"] > 0
+          assert structure["runtime_execution_performed"] is False
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          apk.unlink()
+          assert not apk.exists()
+
+          manifest = {
+              "schema_version": 2,
               "purpose": "phrase-layer-read-mode-pre-device-unity-host-gate",
               "status": "pass",
               "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
               "real_unity_pinned_ocr_inference_passed": True,
               "real_unity_gpu_preprocess_parity_passed": True,
               "android_arm64_il2cpp_fixture_built": True,
+              "apk_structure_verified": True,
+              "apk_arm64_only_verified": True,
+              "apk_il2cpp_library_verified": True,
               "quest_device_execution_performed": False,
               "product_translation_gate": False,
+              "ocr_model_redistribution_review": "pending",
+              "apk_uploaded": False,
+              "apk_removed_before_artifact_upload": True,
+              "local_apk_fingerprint": fp,
               "files": {
-                  "apk": {"name": apk.name, "size_bytes": apk.stat().st_size, "sha256": sha256(apk)},
                   "build_evidence": {"name": build_evidence.name, "sha256": sha256(build_evidence)},
                   "visual_evidence": {"name": visual_evidence.name, "sha256": sha256(visual_evidence)},
                   "ocr_manifest": {"name": ocr_manifest.name, "sha256": sha256(ocr_manifest)},
+                  "apk_fingerprint": {"name": apk_fingerprint.name, "sha256": sha256(apk_fingerprint)},
+                  "apk_structure": {"name": apk_structure.name, "sha256": sha256(apk_structure)},
               },
           }
           output = temp / "PhraseLayer.read-mode-unity-host-gate.json"
@@ -136,15 +206,21 @@ jobs:
           print(json.dumps(manifest, sort_keys=True))
           PY
 
-      - name: Upload pre-device Read Mode Unity evidence
+      - name: Remove local Read Mode APK before artifact phase
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"
+
+      - name: Upload safe pre-device Read Mode Unity evidence
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phraselayer-read-mode-unity-host-evidence
           path: |
-            ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
             ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
             ${{ runner.temp }}/PhraseLayer.read-mode-unity-host-gate.json
+            ${{ runner.temp }}/read-mode-apk-fingerprint.json
+            ${{ runner.temp }}/read-mode-apk-structure.json
             unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
             unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
           if-no-files-found: warn
