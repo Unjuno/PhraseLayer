@@ -71,6 +71,24 @@ namespace PhraseLayer.Unity
                 TryBuildCoordinator();
         }
 
+        public void SetSceneReferences(
+            PhraseLayerDemoBehaviour language,
+            UnityMoonshineAsrBootstrapBehaviour bootstrap,
+            UnityMicrophoneUtteranceSourceBehaviour microphone)
+        {
+            if (language == null) throw new ArgumentNullException(nameof(language));
+            if (bootstrap == null) throw new ArgumentNullException(nameof(bootstrap));
+            if (microphone == null) throw new ArgumentNullException(nameof(microphone));
+
+            UnsubscribeSource();
+            languageSource = language;
+            languagePipeline = language.Pipeline;
+            asrBootstrap = bootstrap;
+            microphoneSource = microphone;
+            SubscribeSource();
+            RebuildCoordinator();
+        }
+
         public void SetLanguagePipeline(LanguagePipeline pipeline)
         {
             languagePipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
