@@ -89,6 +89,11 @@ jobs:
           assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
+          assert data["camera_timestamp_source"] == "MetaPassthroughCameraAccess.Timestamp"
+          assert data["camera_pose_source"] == "MetaPassthroughCameraAccess.GetCameraPose"
+          assert data["captured_pose_projection_required"] is True
+          assert data["camera_timestamp_pose_binding_implemented"] is True
+          assert data["camera_pixel_pose_sync_verified"] is False
           assert data["quest_read_mode_smoke_autorun"] is True
           assert data["source_mask_shader"] == "PhraseLayer/SourceMask"
           assert data["apk_size_bytes"] == apk.stat().st_size
