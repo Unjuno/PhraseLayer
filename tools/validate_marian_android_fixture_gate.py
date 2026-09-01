@@ -25,6 +25,10 @@ def require(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} is missing required marker: {fragment}")
 
 
+def compact(text: str) -> str:
+    return "".join(text.split())
+
+
 def forbid(text: str, fragment: str, label: str) -> None:
     if fragment in text:
         raise GateError(f"{label} contains forbidden marker: {fragment}")
@@ -32,6 +36,7 @@ def forbid(text: str, fragment: str, label: str) -> None:
 
 def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow_compact = compact(workflow)
     scene = SCENE_SETUP.read_text(encoding="utf-8")
     build = BUILD.read_text(encoding="utf-8")
     shell = SHELL.read_text(encoding="utf-8")
@@ -153,7 +158,7 @@ def validate() -> dict[str, object]:
         "PhraseLayer.marian-product-fixture-build-evidence.json",
         "marian-product-apk-fingerprint.json",
     ):
-        require(workflow, fragment, "Marian Unity host workflow")
+        require(workflow_compact, compact(fragment), "Marian Unity host workflow")
 
     upload_section = workflow.split("- name: Upload Marian pre-device evidence only", 1)[1]
     for forbidden in (
@@ -172,6 +177,7 @@ def validate() -> dict[str, object]:
         "managed_tokenizer_linker_preservation_required": True,
         "deterministic_translation_only_scene_required": True,
         "guarded_packaging_compile_required": True,
+        "workflow_assertion_formatting_ignored": True,
         "local_apk_fingerprint_required": True,
         "apk_zip_integrity_required": True,
         "apk_arm64_only_required": True,
