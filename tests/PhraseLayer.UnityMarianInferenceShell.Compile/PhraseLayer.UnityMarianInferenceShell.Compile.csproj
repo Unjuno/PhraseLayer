@@ -14,6 +14,7 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianSeq2SeqGenerationBackend.cs" Link="UnityRuntime/UnityMarianSeq2SeqGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianDeviceResidentGenerationBackend.cs" Link="UnityRuntime/UnityMarianDeviceResidentGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs" Link="UnityRuntime/UnityMarianTranslationBootstrapBehaviour.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianParityProbe.cs" Link="UnityRuntime/UnityMarianParityProbe.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineOnnxContractProbe.cs" Link="UnityRuntime/UnityMoonshineOnnxContractProbe.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineV1GenerationBackend.cs" Link="UnityRuntime/UnityMoonshineV1GenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineAsrBootstrapBehaviour.cs" Link="UnityRuntime/UnityMoonshineAsrBootstrapBehaviour.cs" />
