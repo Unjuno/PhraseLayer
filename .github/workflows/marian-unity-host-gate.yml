@@ -149,6 +149,8 @@ jobs:
               "cpu_clone_backend_generated_token_parity_passed": True,
               "device_resident_backend_generated_token_parity_passed": True,
               "decoded_text_parity_passed": True,
+              "language_pipeline_semantic_replacement_passed": True,
+              "gloss_marker_injection_detected": False,
               "quest_device_execution_performed": False,
               "product_translation_gate": True,
               "uploaded_model_weights": False,
