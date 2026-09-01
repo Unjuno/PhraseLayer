@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using PhraseLayer.Core.Pipeline;
 using PhraseLayer.Core.Translation;
 
 namespace UnityEngine
@@ -27,6 +29,16 @@ namespace UnityEngine
     public static class JsonUtility
     {
         public static T FromJson<T>(string json) where T : class => null;
+    }
+
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null;
+    }
+
+    public static class Time
+    {
+        public static double realtimeSinceStartupAsDouble => 0.0;
     }
 
     public static class Application
@@ -296,7 +308,12 @@ namespace PhraseLayer.Unity
 
     public sealed class PhraseLayerDemoBehaviour : Behaviour
     {
+        public bool UsesTranslationEngineOverride => true;
+        public MixedLanguagePlan CurrentPlan => null;
         public void SetTranslationEngine(ITranslationEngine translationEngine) { }
+        public void SetAutoRunOnStart(bool enabled) { }
+        public void SetSourceText(string text) { }
+        public Task ReplanAsync() => Task.CompletedTask;
     }
 
     public static class UnityManagedMarianTokenizerLoader
