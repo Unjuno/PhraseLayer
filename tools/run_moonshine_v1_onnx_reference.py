@@ -15,7 +15,6 @@ import json
 import math
 import pathlib
 import wave
-from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Sequence
 
 PREPROCESS = "preprocess.onnx"
@@ -34,13 +33,20 @@ class ReferenceError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
 class DecodeStep:
-    step: int
-    selected_token_id: int
-    selected_logit: float
-    runner_up_logit: float
-    argmax_margin: float
+    def __init__(
+        self,
+        step: int,
+        selected_token_id: int,
+        selected_logit: float,
+        runner_up_logit: float,
+        argmax_margin: float,
+    ) -> None:
+        self.step = step
+        self.selected_token_id = selected_token_id
+        self.selected_logit = selected_logit
+        self.runner_up_logit = runner_up_logit
+        self.argmax_margin = argmax_margin
 
 
 def _require(condition: bool, message: str) -> None:
