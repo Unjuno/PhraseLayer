@@ -83,6 +83,10 @@ namespace PhraseLayer.Unity
             if (microphoneClip == null)
                 throw new InvalidOperationException("Unity Microphone.Start returned no AudioClip for device '" + activeDevice + "'.");
 
+            var maximumSamples = checked((int)Math.Ceiling(maximumUtteranceSeconds * microphoneClip.frequency));
+            if (utterance.Capacity < maximumSamples)
+                utterance.Capacity = maximumSamples;
+
             lastReadPosition = 0;
             hasReadPosition = false;
             speechActive = false;
@@ -166,31 +170,21 @@ namespace PhraseLayer.Unity
             if (channels <= 0)
                 throw new InvalidOperationException("Microphone AudioClip has no channels.");
 
+            // AudioClip.GetData requires a managed float[] sized to the requested sample count. Keep only that
+            // unavoidable readback allocation here; do not allocate a second mono array every Update. We calculate
+            // RMS in a first pass and append downmixed samples directly to the retained utterance buffer in a second.
             var interleaved = new float[checked(frameCount * channels)];
             if (!microphoneClip.GetData(interleaved, frameOffset))
                 throw new InvalidOperationException("Failed to read Unity microphone ring buffer.");
 
-            var mono = new float[frameCount];
             double squared = 0.0;
             for (var frame = 0; frame < frameCount; frame++)
             {
-                double sum = 0.0;
-                var baseIndex = frame * channels;
-                for (var channel = 0; channel < channels; channel++)
-                {
-                    var sample = interleaved[baseIndex + channel];
-                    if (float.IsNaN(sample) || float.IsInfinity(sample))
-                        throw new InvalidOperationException("Unity microphone returned a non-finite audio sample.");
-                    sum += sample;
-                }
-                var value = (float)(sum / channels);
-                if (value > 1f) value = 1f;
-                if (value < -1f) value = -1f;
-                mono[frame] = value;
+                var value = DownmixFrame(interleaved, frame, channels);
                 squared += value * (double)value;
             }
 
-            var rms = mono.Length == 0 ? 0.0 : Math.Sqrt(squared / mono.Length);
+            var rms = frameCount == 0 ? 0.0 : Math.Sqrt(squared / frameCount);
             var now = Time.realtimeSinceStartupAsDouble;
             if (!speechActive)
             {
@@ -201,7 +195,9 @@ namespace PhraseLayer.Unity
                 utterance.Clear();
             }
 
-            utterance.AddRange(mono);
+            for (var frame = 0; frame < frameCount; frame++)
+                utterance.Add(DownmixFrame(interleaved, frame, channels));
+
             if (rms >= releaseRms)
                 lastSpeechRealtime = now;
 
@@ -211,6 +207,24 @@ namespace PhraseLayer.Unity
             {
                 EmitUtterance();
             }
+        }
+
+        private static float DownmixFrame(float[] interleaved, int frame, int channels)
+        {
+            double sum = 0.0;
+            var baseIndex = checked(frame * channels);
+            for (var channel = 0; channel < channels; channel++)
+            {
+                var sample = interleaved[baseIndex + channel];
+                if (float.IsNaN(sample) || float.IsInfinity(sample))
+                    throw new InvalidOperationException("Unity microphone returned a non-finite audio sample.");
+                sum += sample;
+            }
+
+            var value = (float)(sum / channels);
+            if (value > 1f) value = 1f;
+            if (value < -1f) value = -1f;
+            return value;
         }
 
         public void FlushActiveUtterance()
