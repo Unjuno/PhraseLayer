@@ -121,7 +121,7 @@ namespace Unity.InferenceEngine
     public sealed class FunctionalGraph
     {
         public FunctionalTensor AddInput(Model model, int index, string name = null) => new FunctionalTensor();
-        public void AddOutputs(IEnumerable<FunctionalTensor> outputs) { }
+        public void AddOutputs(params FunctionalTensor[] outputs) { }
         public Model Compile() => new Model();
     }
 
