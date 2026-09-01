@@ -6,6 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
     <DefineConstants>PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
@@ -15,5 +16,7 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianDeviceResidentGenerationBackend.cs" Link="UnityRuntime/UnityMarianDeviceResidentGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs" Link="UnityRuntime/UnityMarianTranslationBootstrapBehaviour.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs" Link="UnityEditor/PhraseLayerLocalMarianAssets.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerMarianProductFixtureSetup.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerMarianProductAndroidBuild.cs" />
   </ItemGroup>
 </Project>
