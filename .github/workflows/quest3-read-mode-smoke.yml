@@ -173,6 +173,9 @@ jobs:
           assert data["permissions"]["android.permission.CAMERA"]["declared"] is True
           assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True
           assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["detector_input_preprocess"] == "GPUTextureConverter+FunctionalNormalization"
+          assert data["detector_input_layout"] == "NCHW/BGR/TopLeft"
+          assert data["detector_input_cpu_image_readback"] is False
           assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
