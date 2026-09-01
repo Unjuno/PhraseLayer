@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   build:
     runs-on: [self-hosted, unity, unity-6000-0-66f2]
@@ -89,7 +94,20 @@ jobs:
           assert data["apk_size_bytes"] > 0
           print(json.dumps(data, sort_keys=True))
           PY
-      - uses: actions/upload-artifact@v4
+      - name: Require complete Android build evidence
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/PhraseLayer.apk" \
+            "$RUNNER_TEMP/PhraseLayer.android-build-evidence.json" \
+            "$RUNNER_TEMP/marian-unity/marian-export.json" \
+            "$RUNNER_TEMP/marian-unity/marian-tokenizer-assets.json" \
+            "$RUNNER_TEMP/marian-unity/marian-tokenizer-runtime.json"; do
+            test -s "$file" || { echo "Missing required Android build evidence: $file" >&2; exit 1; }
+          done
+      - name: Upload Android build and evidence
+        id: upload-build
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phraselayer-android-listen-mode
@@ -101,3 +119,12 @@ jobs:
             ${{ runner.temp }}/marian-unity/marian-tokenizer-runtime.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Notify pull request of Android build artifact
+        if: success()
+        uses: ./.github/actions/notify-pr-artifact
+        with:
+          github-token: ${{ github.token }}
+          artifact-url: ${{ steps.upload-build.outputs.artifact-url }}
+          artifact-name: phraselayer-android-listen-mode
+          message: Android ARM64 IL2CPP Listen Mode build is ready.
+          contents: Includes the APK and build evidence proving Marian + Moonshine with dictionary fallback disabled.
