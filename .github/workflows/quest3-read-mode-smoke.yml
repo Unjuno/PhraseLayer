@@ -249,6 +249,7 @@ jobs:
           assert data["log_privacy"]["raw_process_logcat_written_to_disk"] is False
           assert data["log_privacy"]["raw_process_logcat_uploaded"] is False
           assert data["log_privacy"]["sanitized_diagnostics_allowlist"] is True
+          assert data["log_privacy"]["diagnostic_lines_require_full_grammar_match"] is True
           assert data["log_privacy"]["recognized_text_allowed_in_diagnostics"] is False
           assert data["log_privacy"]["display_text_allowed_in_diagnostics"] is False
           assert data["files"]["sanitized_diagnostics"] == "quest-read-mode-diagnostics.txt"
