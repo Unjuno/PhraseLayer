@@ -1,4 +1,7 @@
 using System;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using PhraseLayer.Core.Audio;
 using UnityEditor;
 using UnityEngine;
@@ -69,6 +72,77 @@ namespace PhraseLayer.Unity.Editor
             }
         }
 
+        [MenuItem("PhraseLayer/Moonshine/Run Beckett Token Parity")]
+        public static void RunFixtureTokenParity()
+        {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            AssetDatabase.Refresh();
+            var preprocess = LoadRequired<ModelAsset>(PreprocessPath);
+            var encoder = LoadRequired<ModelAsset>(EncoderPath);
+            var uncached = LoadRequired<ModelAsset>(UncachedDecoderPath);
+            var cached = LoadRequired<ModelAsset>(CachedDecoderPath);
+            var tokens = LoadRequired<TextAsset>(TokenDecoderPath);
+
+            var wavPath = RequireEnvironmentPath("PHRASELAYER_MOONSHINE_FIXTURE_WAV");
+            var expectedTokensPath = RequireEnvironmentPath("PHRASELAYER_MOONSHINE_EXPECTED_TOKENS");
+            var expectedTranscriptPath = RequireEnvironmentPath("PHRASELAYER_MOONSHINE_EXPECTED_TRANSCRIPT");
+            var expectedTokens = File.ReadAllLines(expectedTokensPath)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => int.Parse(line.Trim(), CultureInfo.InvariantCulture))
+                .ToArray();
+            var expectedTranscript = File.ReadAllText(expectedTranscriptPath).Trim();
+
+            var result = UnityMoonshineParityProbe.Run(
+                preprocess,
+                encoder,
+                uncached,
+                cached,
+                tokens,
+                File.ReadAllBytes(wavPath),
+                BackendType.CPU);
+
+            if (!result.TerminatedByEos)
+                throw new InvalidOperationException("Moonshine Unity parity generation reached its hard limit without EOS.");
+            if (!result.TokenIds.SequenceEqual(expectedTokens))
+                throw new InvalidOperationException(BuildTokenDivergenceMessage(expectedTokens, result.TokenIds.ToArray()));
+            if (!string.Equals(result.Transcript, expectedTranscript, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Moonshine transcript parity drift after token parity. Expected " +
+                    expectedTranscript + " but Unity decoded " + result.Transcript + ".");
+            }
+
+            WriteOptionalEnvironmentOutput(
+                "PHRASELAYER_MOONSHINE_ACTUAL_TOKENS",
+                string.Join("\n", result.TokenIds) + (result.TokenIds.Count > 0 ? "\n" : string.Empty));
+            WriteOptionalEnvironmentOutput(
+                "PHRASELAYER_MOONSHINE_ACTUAL_TRANSCRIPT",
+                result.Transcript + "\n");
+
+            Debug.Log(
+                "PhraseLayer Moonshine Beckett token parity PASS: tokens=" + result.TokenIds.Count +
+                " decoder_steps=" + result.DecoderSteps +
+                " transcript=\"" + result.Transcript + "\"");
+#else
+            throw new InvalidOperationException(
+                "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve the reviewed com.unity.ai.inference 2.2.x package before running Moonshine parity.");
+#endif
+        }
+
+        public static void RunFixtureTokenParityBatch()
+        {
+            try
+            {
+                RunFixtureTokenParity();
+                EditorApplication.Exit(0);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                EditorApplication.Exit(1);
+            }
+        }
+
         [MenuItem("PhraseLayer/Moonshine/Assign Local ASR Assets To Scene Bootstrap")]
         public static void AssignLocalAssetsToSceneBootstrap()
         {
@@ -122,6 +196,42 @@ namespace PhraseLayer.Unity.Editor
                     ". Stage exact-revision Moonshine assets and resolve Unity import errors before continuing.");
             }
             return asset;
+        }
+
+        private static string RequireEnvironmentPath(string variable)
+        {
+            var value = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException("Required Moonshine parity environment variable is missing: " + variable);
+            if (!File.Exists(value))
+                throw new FileNotFoundException("Moonshine parity input does not exist: " + value, value);
+            return value;
+        }
+
+        private static void WriteOptionalEnvironmentOutput(string variable, string content)
+        {
+            var path = Environment.GetEnvironmentVariable(variable);
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(path, content);
+        }
+
+        private static string BuildTokenDivergenceMessage(int[] expected, int[] actual)
+        {
+            var shared = Math.Min(expected.Length, actual.Length);
+            var first = 0;
+            while (first < shared && expected[first] == actual[first]) first++;
+            if (first < shared)
+            {
+                return "Moonshine token parity drift at index " + first +
+                       ": expected " + expected[first] + " but Unity selected " + actual[first] +
+                       ". expected_count=" + expected.Length + " actual_count=" + actual.Length + ".";
+            }
+            return "Moonshine token parity length drift after " + shared +
+                   " shared tokens. expected_count=" + expected.Length + " actual_count=" + actual.Length + ".";
         }
 
         private static UnityMoonshineAsrBootstrapBehaviour FindSingleSceneBootstrap()
