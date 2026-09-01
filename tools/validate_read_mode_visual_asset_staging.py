@@ -2,7 +2,8 @@
 """Static contract for local Japanese font and source-mask material staging.
 
 The font binary is intentionally supplied outside git. This validator ensures the self-hosted path remains explicit,
-hash-evidenced, git-ignored, and bound to the committed source-mask shader rather than silently bundling a font.
+hash-evidenced, byte-for-byte staged, git-ignored, and bound to the committed source-mask shader rather than silently
+bundling a font or reusing stale local material state.
 """
 
 from __future__ import annotations
@@ -39,9 +40,17 @@ def validate() -> dict[str, object]:
         'Assets/LocalReadModeAssets',
         'ReviewedJapaneseFont',
         'SHA256.Create()',
+        'var sourceHash = Sha256(source)',
+        'var stagedHash = Sha256(fontAbsolutePath)',
+        'string.Equals(sourceHash, stagedHash, StringComparison.Ordinal)',
         'font_sha256',
         'font_size_bytes',
+        'font_staged_bytes_verified',
         'Shader.Find(SourceMaskShaderName)',
+        'material.shader = shader',
+        'material.color = Color.white',
+        'material.shader.name, SourceMaskShaderName',
+        'mask_shader_reasserted',
         'PhraseLayer/SourceMask',
         'quest_read_mode_smoke_autorun',
         'PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke)',
@@ -62,6 +71,7 @@ def validate() -> dict[str, object]:
         "questReadModeSmoke.AutoRunOnStart = autoRunQuestReadModeSmoke",
         "worldTextRenderer.SetFont(reviewedJapaneseFont)",
         "worldTextSourceMask.SetMaskMaterial(reviewedSourceMaskMaterial)",
+        "EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) }",
     ):
         require(setup, fragment, "demo scene setup")
 
@@ -79,9 +89,11 @@ def validate() -> dict[str, object]:
         "status": "pass",
         "font_source_explicit": True,
         "font_hash_evidence_required": True,
+        "font_staged_bytes_verified": True,
         "font_binary_git_ignored": True,
         "mask_shader_committed": True,
         "mask_shader_double_sided": True,
+        "mask_shader_reasserted_each_stage": True,
         "scene_visual_assets_injected_deterministically": True,
         "quest_read_mode_smoke_autorun_explicit": True,
         "real_unity_import_still_required": True,
