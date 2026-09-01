@@ -8,6 +8,13 @@ namespace UnityEngine
     public class Component : Object { }
     public class Behaviour : Component { public bool enabled { get; set; } = true; }
     public class MonoBehaviour : Behaviour { }
+
+    public sealed class GameObject : Object
+    {
+        public GameObject(string name) { }
+        public T AddComponent<T>() where T : Component, new() => new T();
+    }
+
     public sealed class TextAsset : Object
     {
         public string text { get; set; } = string.Empty;
@@ -22,6 +29,12 @@ namespace UnityEngine
         public static T FromJson<T>(string json) where T : class => null;
     }
 
+    public static class Application
+    {
+        public static string dataPath => "Assets";
+        public static string unityVersion => "6000.0.66f2";
+    }
+
     public static class Debug
     {
         public static void Log(object message) { }
@@ -32,9 +45,56 @@ namespace UnityEngine
     }
 }
 
+namespace UnityEngine.SceneManagement
+{
+    public struct Scene { }
+    public enum NewSceneMode { Single = 0 }
+}
+
+namespace UnityEditor.Build
+{
+    public readonly struct NamedBuildTarget
+    {
+        private NamedBuildTarget(string name) { Name = name; }
+        public string Name { get; }
+        public static NamedBuildTarget Android => new NamedBuildTarget("Android");
+    }
+}
+
+namespace UnityEditor.Build.Reporting
+{
+    public enum BuildResult
+    {
+        Unknown = 0,
+        Succeeded = 1,
+        Failed = 2,
+        Cancelled = 3
+    }
+
+    public struct BuildSummary
+    {
+        public BuildResult result;
+        public int totalErrors;
+        public int totalWarnings;
+        public ulong totalSize;
+        public TimeSpan totalTime;
+    }
+
+    public sealed class BuildReport
+    {
+        public BuildSummary summary { get; set; } = new BuildSummary
+        {
+            result = BuildResult.Succeeded,
+            totalTime = TimeSpan.Zero
+        };
+    }
+}
+
 namespace UnityEditor
 {
     using System;
+    using UnityEditor.Build;
+    using UnityEditor.Build.Reporting;
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class MenuItem : Attribute
@@ -42,16 +102,103 @@ namespace UnityEditor
         public MenuItem(string path) { }
     }
 
+    public enum BuildTarget { Android = 0 }
+    public enum BuildTargetGroup { Android = 0 }
+    public enum BuildOptions { None = 0 }
+    public enum ScriptingImplementation { Mono2x = 0, IL2CPP = 1 }
+    [Flags]
+    public enum AndroidArchitecture { None = 0, ARM64 = 1 }
+    public enum AndroidBuildSystem { Gradle = 0 }
+
+    public sealed class BuildPlayerOptions
+    {
+        public string[] scenes { get; set; } = Array.Empty<string>();
+        public string locationPathName { get; set; }
+        public BuildTarget target { get; set; }
+        public BuildTargetGroup targetGroup { get; set; }
+        public BuildOptions options { get; set; }
+    }
+
+    public sealed class EditorBuildSettingsScene
+    {
+        public EditorBuildSettingsScene(string path, bool enabled)
+        {
+            this.path = path;
+            this.enabled = enabled;
+        }
+        public string path { get; set; }
+        public bool enabled { get; set; }
+    }
+
+    public static class EditorBuildSettings
+    {
+        public static EditorBuildSettingsScene[] scenes { get; set; } = Array.Empty<EditorBuildSettingsScene>();
+    }
+
+    public static class BuildPipeline
+    {
+        public static bool IsBuildTargetSupported(BuildTargetGroup group, BuildTarget target) => true;
+        public static BuildReport BuildPlayer(BuildPlayerOptions options) => new BuildReport();
+    }
+
+    public static class EditorUserBuildSettings
+    {
+        public static BuildTarget activeBuildTarget { get; set; } = BuildTarget.Android;
+        public static bool buildAppBundle { get; set; }
+        public static AndroidBuildSystem androidBuildSystem { get; set; }
+        public static bool SwitchActiveBuildTarget(BuildTargetGroup group, BuildTarget target)
+        {
+            activeBuildTarget = target;
+            return true;
+        }
+    }
+
+    public static class PlayerSettings
+    {
+        private static string applicationIdentifier = "com.unjuno.phraselayer";
+        private static ScriptingImplementation scriptingBackend = ScriptingImplementation.IL2CPP;
+
+        public static void SetApplicationIdentifier(NamedBuildTarget target, string value) => applicationIdentifier = value;
+        public static string GetApplicationIdentifier(NamedBuildTarget target) => applicationIdentifier;
+        public static void SetScriptingBackend(NamedBuildTarget target, ScriptingImplementation value) => scriptingBackend = value;
+        public static ScriptingImplementation GetScriptingBackend(NamedBuildTarget target) => scriptingBackend;
+
+        public static class Android
+        {
+            public static AndroidArchitecture targetArchitectures { get; set; } = AndroidArchitecture.ARM64;
+        }
+    }
+
     public static class AssetDatabase
     {
         public static void Refresh() { }
+        public static void SaveAssets() { }
         public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object => null;
         public static UnityEngine.Object LoadMainAssetAtPath(string path) => null;
+    }
+
+    public static class EditorUtility
+    {
+        public static void SetDirty(UnityEngine.Object target) { }
     }
 
     public static class EditorApplication
     {
         public static void Exit(int code) { }
+    }
+}
+
+namespace UnityEditor.SceneManagement
+{
+    using UnityEngine.SceneManagement;
+
+    public enum NewSceneSetup { DefaultGameObjects = 0 }
+
+    public static class EditorSceneManager
+    {
+        public static Scene NewScene(NewSceneSetup setup, NewSceneMode mode) => new Scene();
+        public static bool SaveScene(Scene scene, string path) => true;
+        public static bool SaveOpenScenes() => true;
     }
 }
 
