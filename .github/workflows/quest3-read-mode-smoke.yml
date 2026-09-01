@@ -42,6 +42,7 @@ jobs:
           python tools/validate_read_mode_mask_gate.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
+          python tools/validate_quest_read_mode_device_gate.py
           python tools/test_run_quest_read_mode_smoke.py
 
       - name: Download exact pinned PP-OCR assets
@@ -92,15 +93,19 @@ jobs:
 
       - name: Install, launch, and require end-to-end Quest Read Mode PASS
         shell: bash
+        env:
+          PHRASELAYER_DEVICE_SERIAL: ${{ inputs.device_serial }}
+          PHRASELAYER_EXPECTED_DEVICE_MODEL: ${{ inputs.expected_device_model }}
+          PHRASELAYER_SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
         run: |
           SERIAL_ARGS=()
-          if [[ -n "${{ inputs.device_serial }}" ]]; then
-            SERIAL_ARGS+=(--serial "${{ inputs.device_serial }}")
+          if [[ -n "$PHRASELAYER_DEVICE_SERIAL" ]]; then
+            SERIAL_ARGS+=(--serial "$PHRASELAYER_DEVICE_SERIAL")
           fi
           python tools/run_quest_read_mode_smoke.py \
             --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
-            --expected-device-model "${{ inputs.expected_device_model }}" \
-            --smoke-timeout-seconds "${{ inputs.smoke_timeout_seconds }}" \
+            --expected-device-model "$PHRASELAYER_EXPECTED_DEVICE_MODEL" \
+            --smoke-timeout-seconds "$PHRASELAYER_SMOKE_TIMEOUT_SECONDS" \
             --output-dir "$RUNNER_TEMP/quest-read-mode-smoke" \
             "${SERIAL_ARGS[@]}"
 
