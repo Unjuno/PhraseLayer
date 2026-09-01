@@ -11,6 +11,7 @@ WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
 GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
+APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 
 
 class GateError(ValueError):
@@ -24,7 +25,7 @@ def require(text: str, fragment: str, label: str) -> None:
 
 def forbid(text: str, fragment: str, label: str) -> None:
     if fragment in text:
-        raise GateError(f"{label} contains forbidden device dependency: {fragment}")
+        raise GateError(f"{label} contains forbidden marker: {fragment}")
 
 
 def validate() -> dict[str, object]:
@@ -32,6 +33,7 @@ def validate() -> dict[str, object]:
     ocr_inference = OCR_INFERENCE_SH.read_text(encoding="utf-8")
     gpu_preprocess = GPU_PREPROCESS_SH.read_text(encoding="utf-8")
     build = BUILD_SH.read_text(encoding="utf-8")
+    apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
 
     for fragment in (
         "workflow_dispatch:",
@@ -48,11 +50,21 @@ def validate() -> dict[str, object]:
         'assert build["project_paths_anchored_to_application_data_path"] is True',
         'assert visual["font_staged_bytes_verified"] is True',
         'assert visual["mask_shader_reasserted"] is True',
+        "inspect_android_apk_structure.py",
+        "read-mode-apk-fingerprint.json",
+        "read-mode-apk-structure.json",
+        '"ocr_model_redistribution_review": "pending"',
+        '"apk_uploaded": False',
+        '"apk_removed_before_artifact_upload": True',
+        '"apk_structure_verified": True',
         '"real_unity_pinned_ocr_inference_passed": True',
         '"real_unity_gpu_preprocess_parity_passed": True',
         '"android_arm64_il2cpp_fixture_built": True',
         '"quest_device_execution_performed": False',
         '"product_translation_gate": False',
+        'apk.unlink()',
+        "Remove local Read Mode APK before artifact phase",
+        'rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"',
         "phraselayer-read-mode-unity-host-evidence",
         "if: always()",
     ):
@@ -65,6 +77,23 @@ def validate() -> dict[str, object]:
         "--serial",
     ):
         forbid(workflow, forbidden, "Read Mode Unity host workflow")
+
+    upload_section = workflow.split("- name: Upload safe pre-device Read Mode Unity evidence", 1)[1]
+    for forbidden in (
+        "PhraseLayerReadModeFixture.apk",
+        "detector.onnx",
+        "recognizer.onnx",
+    ):
+        forbid(upload_section, forbidden, "Read Mode host artifact upload section")
+
+    for fragment in (
+        "zipfile.is_zipfile",
+        'abis != ["arm64-v8a"]',
+        '"lib/arm64-v8a/libil2cpp.so"',
+        'name.startswith("assets/bin/Data/")',
+        '"runtime_execution_performed": False',
+    ):
+        require(apk_inspector, fragment, "Android APK structure inspector")
 
     for fragment in (
         "Intentionally no -nographics",
@@ -95,6 +124,9 @@ def validate() -> dict[str, object]:
         "android_arm64_il2cpp_build_required": True,
         "reviewed_font_and_mask_evidence_required": True,
         "deterministic_single_scene_required": True,
+        "apk_structure_verification_required": True,
+        "ocr_redistribution_review_pending": True,
+        "apk_artifact_upload_allowed": False,
         "host_artifact_manifest_required": True,
         "quest_execution_deferred": True,
     }
