@@ -1,11 +1,11 @@
 using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using PhraseLayer.Core.Assistance;
 using PhraseLayer.Core.Pipeline;
 using UnityEngine;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace PhraseLayer.Unity
 {
