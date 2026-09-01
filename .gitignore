@@ -16,6 +16,7 @@ models/cache/
 models/weights/
 unity/PhraseLayer.Unity/Assets/LocalOcrAssets/
 unity/PhraseLayer.Unity/Assets/LocalAsrAssets/
+unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/
 unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime/
 unity/PhraseLayer.Unity/Assets/Resources/LocalTranslationAssets/
 unity/PhraseLayer.Unity/Assets/Resources/LocalAsrAssets/
