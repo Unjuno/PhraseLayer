@@ -46,7 +46,7 @@ def validate() -> dict[str, object]:
         "bootstrap.Initialize()",
         "bootstrapReady = bootstrap.IsSupported && bootstrap.IsReady",
         "translationOverride = demo.UsesTranslationEngineOverride",
-        "demo.SetSourceText(FixtureSource)",
+        "demo.PrepareDeterministicTranslationSmokeFixture(FixtureSource, 0.0)",
         "await demo.ReplanAsync()",
         "plan.Assistance.Decisions.Count != 1",
         "plan.Segments.Count != 1 || !plan.Segments[0].IsAssisted",
@@ -65,17 +65,17 @@ def validate() -> dict[str, object]:
     ):
         require(smoke, fragment, "Marian Android runtime smoke behaviour")
 
-    # Until the runtime smoke has its own explicit fixture-configuration API, pin every demo default it relies on.
-    # Any future demo-profile or assistance-policy change must therefore update this gate deliberately rather than
-    # silently turning the device smoke into an unassisted/no-op run.
     for fragment in (
-        "private AssistanceMode assistanceMode = AssistanceMode.Balanced",
-        "ConfigureLearner(DemoLearnerProfile.Intermediate)",
-        '"keep off"',
-        'learner.SetUnderstanding("keep off", 0.05)',
-        "AssistancePolicy.ForMode(assistanceMode)",
+        "public void PrepareDeterministicTranslationSmokeFixture(string text, double understanding)",
+        "translationEngineOverride == null",
+        "assistanceMode = AssistanceMode.Balanced",
+        "BuildPipeline()",
+        "learner.SetUnderstanding(text, understanding)",
+        "currentPlan = null",
+        "currentEncounter = null",
+        "demo dictionary fallback is not allowed",
     ):
-        require(demo, fragment, "PhraseLayer demo deterministic Marian runtime fixture dependency")
+        require(demo, fragment, "PhraseLayer deterministic Marian translation smoke fixture")
 
     for fragment in (
         "demo.SetAutoRunOnStart(false)",
@@ -176,7 +176,8 @@ def validate() -> dict[str, object]:
         "arm64_android_device_required": True,
         "quest_device_required": False,
         "semantic_span_pipeline_runtime_required": True,
-        "deterministic_demo_dependencies_pinned": True,
+        "deterministic_fixture_configuration_required": True,
+        "demo_defaults_can_change_without_redefining_smoke": True,
         "truthful_runtime_readiness_report_required": True,
         "exact_offline_reference_match_required": True,
         "device_resident_backend_required": True,
