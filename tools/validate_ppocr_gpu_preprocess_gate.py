@@ -19,16 +19,20 @@ for path in (DETECTOR, PREPROCESS, MANIFEST):
 text = DETECTOR.read_text(encoding="utf-8")
 required_markers = (
     "UsesGpuTexturePreprocessing => true",
+    "public static TextureTransform CreateReviewedTextureTransform",
+    "public static FunctionalTensor ApplyReviewedNormalization",
     "new Tensor<float>(inputShape)",
     ".SetTensorLayout(TensorLayout.NCHW)",
     ".SetCoordOrigin(flipReadbackRows ? CoordOrigin.TopLeft : CoordOrigin.BottomLeft)",
     ".SetChannelSwizzle(ChannelSwizzle.BGRA)",
+    "var textureTransform = CreateReviewedTextureTransform(flipReadbackRows)",
     "TextureConverter.ToTensor(texture, inputTensor, textureTransform)",
     "var graph = new FunctionalGraph()",
     "var input = graph.AddInput(sourceModel, 0)",
     "PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(0)",
     "PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(0)",
-    "var normalized = (input - mean) / standardDeviation",
+    "return (input - mean) / standardDeviation",
+    "var normalized = ApplyReviewedNormalization(input)",
     "Functional.Forward(sourceModel, normalized)",
     "graph.AddOutputs(outputs)",
     "ReadbackAndClone()",
@@ -61,6 +65,6 @@ if manifest.get("dependencies", {}).get("com.unity.ai.inference") != "2.2.1":
     fail("GPU PP-OCR preprocess gate requires com.unity.ai.inference@2.2.1")
 
 print(
-    "PASS: PP-OCR detector input stays GPU-resident through TextureConverter, uses BGR NCHW/top-left semantics, "
-    "and applies the reviewed mean/std normalization in the compiled FunctionalGraph"
+    "PASS: PP-OCR detector input stays GPU-resident through TextureConverter, shares its reviewed BGR NCHW/top-left "
+    "transform and mean/std functional normalization with real-Unity probes, and forbids CPU detector image readback"
 )
