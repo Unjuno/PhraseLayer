@@ -52,7 +52,7 @@ class QuestListenModeSmokeTests(unittest.TestCase):
             path = pathlib.Path(temp) / "x.apk"
             path.write_bytes(b"PhraseLayer")
             self.assertEqual(
-                "ed5fe1992df9a17249e9fe8b06d990239af6a822487933a26f6da2ae25b54d78",
+                "6b8af6df2f4e0266ba67ba934d21c4000e334abf52956913fc9c70005c9cae07",
                 subject.sha256_file(path),
             )
 
