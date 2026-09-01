@@ -18,7 +18,7 @@ on:
         default: "Quest 3"
         type: string
       smoke_timeout_seconds:
-        description: "Maximum seconds to wait for real OCR + MRUK live-depth fit + source mask + Japanese world text PASS"
+        description: "Maximum seconds to wait for real OCR + captured-pose MRUK fit + source mask + Japanese world text PASS"
         required: true
         default: "120"
         type: string
@@ -42,6 +42,7 @@ jobs:
           python tools/validate_read_mode_mask_gate.py
           python tools/validate_mruk_environment_raycast_gate.py
           python tools/validate_quest_project_setup_gate.py
+          python tools/validate_passthrough_camera_frame_sync.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_quest_read_mode_device_gate.py
@@ -134,6 +135,7 @@ jobs:
           assert data["readiness"]["ocr_smoke_passed"] is True
           assert data["readiness"]["read_mode_smoke_passed"] is True
           assert data["readiness"]["mruk_environment_raycast_observed"] is True
+          assert data["readiness"]["captured_pose_projection_observed"] is True
           assert data["readiness"]["fatal_exception"] is False
           assert data["permissions"]["android.permission.CAMERA"]["declared"] is True
           assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True
@@ -141,8 +143,11 @@ jobs:
           assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
-          assert data["camera_timestamp_source"] == "unity-realtime-observation"
-          assert data["camera_hardware_timestamp_pose_sync_verified"] is False
+          assert data["camera_timestamp_source"] == "MetaPassthroughCameraAccess.Timestamp"
+          assert data["camera_pose_source"] == "MetaPassthroughCameraAccess.GetCameraPose"
+          assert data["captured_pose_projection_required"] is True
+          assert data["camera_timestamp_pose_binding_implemented"] is True
+          assert data["camera_pixel_pose_sync_verified"] is False
           print(json.dumps(data, sort_keys=True))
           PY
 
