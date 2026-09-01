@@ -2,8 +2,8 @@
 """Static safety/diagnostic contract for the real Quest Read Mode smoke harness.
 
 The actual PASS still requires a headset. This gate prevents host-side changes from reintroducing synthetic OCR
-false positives, allowing OCR-only success to masquerade as Read Mode success, or leaking recognized text in the
-end-to-end report.
+false positives, allowing OCR-only/Physics-only success to masquerade as Read Mode success, or leaking recognized
+text in the end-to-end report.
 """
 
 from __future__ import annotations
@@ -53,12 +53,17 @@ def validate() -> dict[str, object]:
     for fragment in (
         "await ocrSmoke.RunSmokeTestAsync(runToken)",
         "liveReadMode.ProcessedObservationCount > processedBefore",
+        "projection.UsesEnvironmentRaycast",
+        "projection.EnvironmentSurfaceRaycaster.AbiValidated",
         "projection.LastWorldTextLayout.ReadyCount >= minimumObservedTracks",
         "plan.ObservedCount >= minimumObservedTracks",
         "worldTextTracking.LastMaskSucceeded",
         "worldTextTracking.LastRenderSucceeded",
         "mask.ActiveMaskCount >= minimumActiveMasks",
         "renderer.ActiveViewCount >= minimumRenderedViews",
+        "surface_runtime=",
+        "MRUKEnvironmentRaycast",
+        "last_normal_confidence=",
         "recognized_text=<redacted>",
         "display_text=<redacted>",
         "max_observed_planarity_error_m=",
@@ -68,7 +73,10 @@ def validate() -> dict[str, object]:
     for fragment in (
         "root.AddComponent<QuestOcrSmokeTestBehaviour>()",
         "root.AddComponent<QuestReadModeSmokeTestBehaviour>()",
+        "root.AddComponent<UnityEnvironmentSurfaceRaycaster>()",
         "questOcrSmoke.SetSceneReferences(runtimeDriver, presenter, ocrBootstrap)",
+        "environmentSurfaceRaycaster.SetEnvironmentRaycastManager(environmentRaycastManager)",
+        "spatialProjection.SetSceneReferences(cameraBridge, environmentSurfaceRaycaster)",
         "questReadModeSmoke.SetSceneReferences(questOcrSmoke, liveReadMode, worldTextTracking)",
     ):
         require(setup, fragment, "demo scene setup")
@@ -78,6 +86,8 @@ def validate() -> dict[str, object]:
         "synthetic_ocr_can_pass": False,
         "ocr_region_required": True,
         "recognizer_runtime_observation_required": True,
+        "mruk_live_depth_surface_required": True,
+        "physics_only_can_pass": False,
         "world_surface_required": True,
         "current_track_required": True,
         "source_mask_required": True,
