@@ -33,28 +33,10 @@ namespace UnityEngine
         public TextAreaAttribute(int minLines, int maxLines) { }
     }
 
-    public enum FontStyle
-    {
-        Normal = 0,
-        Bold = 1
-    }
-
-    public enum TextAnchor
-    {
-        MiddleCenter = 0
-    }
-
-    public enum TextAlignment
-    {
-        Center = 0
-    }
-
-    public enum QueryTriggerInteraction
-    {
-        UseGlobal = 0,
-        Ignore = 1,
-        Collide = 2
-    }
+    public enum FontStyle { Normal = 0, Bold = 1 }
+    public enum TextAnchor { MiddleCenter = 0 }
+    public enum TextAlignment { Center = 0 }
+    public enum QueryTriggerInteraction { UseGlobal = 0, Ignore = 1, Collide = 2 }
 
     public struct LayerMask
     {
@@ -93,7 +75,6 @@ namespace UnityEngine
             this.b = b;
             this.a = a;
         }
-
         public float r;
         public float g;
         public float b;
@@ -206,7 +187,6 @@ namespace UnityEngine
             this.width = width;
             this.height = height;
         }
-
         public float x;
         public float y;
         public float width;
@@ -294,21 +274,60 @@ namespace UnityEngine
     public static class Application
     {
         public static string dataPath => "Assets";
+        public static string unityVersion => "6000.0.66f2";
     }
 }
 
 namespace UnityEngine.SceneManagement
 {
     public struct Scene { }
+    public enum NewSceneMode { Single = 0 }
+}
 
-    public enum NewSceneMode
+namespace UnityEditor.Build
+{
+    public readonly struct NamedBuildTarget
     {
-        Single = 0
+        private NamedBuildTarget(string name) { Name = name; }
+        public string Name { get; }
+        public static NamedBuildTarget Android => new NamedBuildTarget("Android");
+    }
+}
+
+namespace UnityEditor.Build.Reporting
+{
+    public enum BuildResult
+    {
+        Unknown = 0,
+        Succeeded = 1,
+        Failed = 2,
+        Cancelled = 3
+    }
+
+    public struct BuildSummary
+    {
+        public BuildResult result;
+        public int totalErrors;
+        public int totalWarnings;
+        public ulong totalSize;
+        public TimeSpan totalTime;
+    }
+
+    public sealed class BuildReport
+    {
+        public BuildSummary summary { get; set; } = new BuildSummary
+        {
+            result = BuildResult.Succeeded,
+            totalTime = TimeSpan.Zero
+        };
     }
 }
 
 namespace UnityEditor
 {
+    using UnityEditor.Build;
+    using UnityEditor.Build.Reporting;
+
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class MenuItem : Attribute
     {
@@ -316,15 +335,33 @@ namespace UnityEditor
     }
 
     [Flags]
-    public enum ImportAssetOptions
+    public enum ImportAssetOptions { Default = 0, ForceUpdate = 1 }
+    public enum BuildTarget { Android = 0 }
+    public enum BuildTargetGroup { Android = 0 }
+    public enum BuildOptions { None = 0 }
+    public enum ScriptingImplementation { Mono2x = 0, IL2CPP = 1 }
+    [Flags]
+    public enum AndroidArchitecture { None = 0, ARM64 = 1 }
+    public enum AndroidBuildSystem { Gradle = 0 }
+
+    public sealed class BuildPlayerOptions
     {
-        Default = 0,
-        ForceUpdate = 1
+        public string[] scenes { get; set; } = Array.Empty<string>();
+        public string locationPathName { get; set; }
+        public BuildTarget target { get; set; }
+        public BuildTargetGroup targetGroup { get; set; }
+        public BuildOptions options { get; set; }
     }
 
     public sealed class EditorBuildSettingsScene
     {
-        public EditorBuildSettingsScene(string path, bool enabled) { }
+        public EditorBuildSettingsScene(string path, bool enabled)
+        {
+            this.path = path;
+            this.enabled = enabled;
+        }
+        public string path { get; set; }
+        public bool enabled { get; set; }
     }
 
     public static class EditorBuildSettings
@@ -332,9 +369,44 @@ namespace UnityEditor
         public static EditorBuildSettingsScene[] scenes { get; set; } = Array.Empty<EditorBuildSettingsScene>();
     }
 
+    public static class BuildPipeline
+    {
+        public static bool IsBuildTargetSupported(BuildTargetGroup group, BuildTarget target) => true;
+        public static BuildReport BuildPlayer(BuildPlayerOptions options) => new BuildReport();
+    }
+
+    public static class EditorUserBuildSettings
+    {
+        public static BuildTarget activeBuildTarget { get; set; } = BuildTarget.Android;
+        public static bool buildAppBundle { get; set; }
+        public static AndroidBuildSystem androidBuildSystem { get; set; }
+        public static bool SwitchActiveBuildTarget(BuildTargetGroup group, BuildTarget target)
+        {
+            activeBuildTarget = target;
+            return true;
+        }
+    }
+
+    public static class PlayerSettings
+    {
+        private static string applicationIdentifier = "com.unjuno.phraselayer";
+        private static ScriptingImplementation scriptingBackend = ScriptingImplementation.IL2CPP;
+
+        public static void SetApplicationIdentifier(NamedBuildTarget target, string value) => applicationIdentifier = value;
+        public static string GetApplicationIdentifier(NamedBuildTarget target) => applicationIdentifier;
+        public static void SetScriptingBackend(NamedBuildTarget target, ScriptingImplementation value) => scriptingBackend = value;
+        public static ScriptingImplementation GetScriptingBackend(NamedBuildTarget target) => scriptingBackend;
+
+        public static class Android
+        {
+            public static AndroidArchitecture targetArchitectures { get; set; } = AndroidArchitecture.ARM64;
+        }
+    }
+
     public static class AssetDatabase
     {
         public static void SaveAssets() { }
+        public static void Refresh() { }
         public static void ImportAsset(string path, ImportAssetOptions options = ImportAssetOptions.Default) { }
         public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object, new() => new T();
         public static void CreateAsset(UnityEngine.Object asset, string path) { }
@@ -355,14 +427,12 @@ namespace UnityEditor.SceneManagement
 {
     using UnityEngine.SceneManagement;
 
-    public enum NewSceneSetup
-    {
-        DefaultGameObjects = 0
-    }
+    public enum NewSceneSetup { DefaultGameObjects = 0 }
 
     public static class EditorSceneManager
     {
         public static Scene NewScene(NewSceneSetup setup, NewSceneMode mode) => new Scene();
         public static bool SaveScene(Scene scene, string path) => true;
+        public static bool SaveOpenScenes() => true;
     }
 }
