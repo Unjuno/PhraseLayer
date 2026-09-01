@@ -2,9 +2,9 @@
 """Install and verify the instrumented PhraseLayer Read Mode fixture on a real Quest 3.
 
 This gate intentionally validates the hardware/visual vertical slice only. The APK uses the explicit
-DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR and the
-full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese world-text marker.
-Raw adb serials are never written to uploaded evidence.
+DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR, captured-pose
+projection, and the full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese
+world-text marker. Raw adb serials are never written to uploaded evidence.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ READ_MODE_PASS_MARKER = "PhraseLayer Quest Read Mode smoke test PASS"
 READ_MODE_TIMEOUT_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT"
 READ_MODE_EXCEPTION_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_EXCEPTION"
 SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"
+CAPTURED_POSE_MARKER = "captured_pose_projection=true"
 FATAL_MARKER = "FATAL EXCEPTION"
 
 
@@ -94,6 +95,7 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
         "ocr_smoke_passed": OCR_PASS_MARKER in logcat,
         "read_mode_smoke_passed": READ_MODE_PASS_MARKER in logcat,
         "mruk_environment_raycast_observed": SURFACE_RUNTIME_MARKER in logcat,
+        "captured_pose_projection_observed": CAPTURED_POSE_MARKER in logcat,
         "read_mode_timeout": READ_MODE_TIMEOUT_MARKER in logcat,
         "read_mode_exception": READ_MODE_EXCEPTION_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
@@ -188,6 +190,7 @@ def wait_for_read_mode_pass(
             last_readiness["ocr_smoke_passed"]
             and last_readiness["read_mode_smoke_passed"]
             and last_readiness["mruk_environment_raycast_observed"]
+            and last_readiness["captured_pose_projection_observed"]
         ):
             return last_log, last_readiness
         time.sleep(1.0)
@@ -255,16 +258,20 @@ def build_evidence(
         "surface_runtime": "MRUKEnvironmentRaycast",
         "translation_runtime": "DemoDictionaryFixture",
         "product_translation_gate": False,
-        "camera_timestamp_source": "unity-realtime-observation",
-        "camera_hardware_timestamp_pose_sync_verified": False,
+        "camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp",
+        "camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose",
+        "captured_pose_projection_required": True,
+        "camera_timestamp_pose_binding_implemented": True,
+        "camera_pixel_pose_sync_verified": False,
         "expected_device_model": args.expected_device_model,
         "device": device,
         "files": {"logcat": "quest-read-mode-logcat.txt"},
         "scope": (
-            "Real Quest camera/OCR + MRUK live-depth surface fit/tracking + source mask + Japanese world-text vertical slice. "
-            "Translation remains the explicit demo dictionary fixture. Camera timestamps remain Unity observation time, "
-            "so hardware timestamp/pose synchronization, Marian product translation, visual quality, stereo comfort, "
-            "endurance, thermal and performance remain separate gates."
+            "Real Quest camera/OCR + captured camera-pose projection + MRUK live-depth surface fit/tracking + "
+            "source mask + Japanese world-text vertical slice. Translation remains the explicit demo dictionary fixture. "
+            "Meta Timestamp/GetCameraPose binding is implemented, but the current PP-OCR detector still uses a blocking "
+            "Graphics.Blit/readback preprocessing path, so end-to-end pixel/pose synchronization remains unverified. "
+            "Marian product translation, visual quality, stereo comfort, endurance, thermal and performance remain separate gates."
         ),
     }
     if error is not None:
@@ -350,6 +357,7 @@ def main() -> None:
             "ocr_smoke_passed",
             "read_mode_smoke_passed",
             "mruk_environment_raycast_observed",
+            "captured_pose_projection_observed",
         )
         if not all(readiness[name] for name in required):
             missing = [name for name in required if not readiness[name]]
