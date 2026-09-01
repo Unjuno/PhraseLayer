@@ -14,8 +14,9 @@ namespace PhraseLayer.Unity.Editor
     /// <summary>
     /// Deterministic translation-only scene used to prove that the reviewed Marian ModelAssets, managed tokenizer
     /// runtime and reflection-preservation descriptor are serialized into an Android player before any Quest run.
-    /// This is intentionally separate from the Read Mode hardware fixture so product translation packaging cannot be
-    /// confused with camera/OCR/MRUK hardware validation.
+    /// The scene also auto-runs a deterministic semantic-span translation smoke when launched on Android. This remains
+    /// separate from the Read Mode hardware fixture so product translation validation cannot be confused with camera,
+    /// OCR, MRUK, or Quest hardware validation.
     /// </summary>
     public static class PhraseLayerMarianProductFixtureSetup
     {
@@ -32,15 +33,20 @@ namespace PhraseLayer.Unity.Editor
             var root = new GameObject("PhraseLayer Marian Product Fixture");
             var demo = root.AddComponent<PhraseLayerDemoBehaviour>();
             var bootstrap = root.AddComponent<UnityMarianTranslationBootstrapBehaviour>();
+            var runtimeSmoke = root.AddComponent<MarianAndroidRuntimeSmokeTestBehaviour>();
 
             var encoder = LoadRequired<ModelAsset>(PhraseLayerLocalMarianAssets.EncoderPath);
             var decoder = LoadRequired<ModelAsset>(PhraseLayerLocalMarianAssets.DecoderPath);
             var decoderWithPast = LoadRequired<ModelAsset>(PhraseLayerLocalMarianAssets.DecoderWithPastPath);
 
+            demo.SetAutoRunOnStart(false);
             bootstrap.SetSceneReferences(demo, encoder, decoder, decoderWithPast);
             bootstrap.SetTokenizerResourceRoot(PhraseLayerLocalMarianAssets.TokenizerResourceRoot);
             bootstrap.SetGenerationLimits(MaximumSourceTokens, MaximumTargetTokens);
             bootstrap.SetDeviceResidentCache(true);
+            runtimeSmoke.SetSceneReferences(demo, bootstrap);
+            runtimeSmoke.SetAutoRun(true);
+            EditorUtility.SetDirty(runtimeSmoke);
             EditorUtility.SetDirty(bootstrap);
             EditorUtility.SetDirty(demo);
 
@@ -52,8 +58,8 @@ namespace PhraseLayer.Unity.Editor
             AssetDatabase.SaveAssets();
             Debug.Log(
                 "PhraseLayer Marian product fixture scene created: offline OPUS-MT en->ja, managed SentencePiece tokenizer, " +
-                "device-resident cache backend, semantic-span LanguagePipeline injection; Quest execution not performed: " +
-                ScenePath);
+                "device-resident cache backend, semantic-span LanguagePipeline injection, Android runtime smoke autorun; " +
+                "Quest execution not performed: " + ScenePath);
 #else
             throw new InvalidOperationException(
                 "PHRASELAYER_UNITY_AI_INFERENCE_2_2 is not active. Resolve com.unity.ai.inference 2.2.1 before creating the Marian product fixture scene.");
