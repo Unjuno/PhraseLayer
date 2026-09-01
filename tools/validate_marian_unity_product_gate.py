@@ -11,6 +11,7 @@ WORKFLOW = ROOT / ".github/workflows/marian-unity-host-gate.yml"
 REFERENCE = ROOT / "tools/generate_marian_reference_fixture.py"
 STAGER = ROOT / "tools/prepare_unity_marian_assets.py"
 EDITOR = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
+EVIDENCE_EDITOR = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs"
 SHELL = ROOT / "tools/unity/verify-local-marian-translation.sh"
 BOOTSTRAP = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs"
 GITIGNORE = ROOT / ".gitignore"
@@ -36,6 +37,7 @@ def validate() -> dict[str, object]:
     reference = REFERENCE.read_text(encoding="utf-8")
     stager = STAGER.read_text(encoding="utf-8")
     editor = EDITOR.read_text(encoding="utf-8")
+    evidence_editor = EVIDENCE_EDITOR.read_text(encoding="utf-8")
     shell = SHELL.read_text(encoding="utf-8")
     bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
     ignore = GITIGNORE.read_text(encoding="utf-8")
@@ -129,8 +131,28 @@ def validate() -> dict[str, object]:
         require(editor, fragment, "Marian real-Unity parity probe")
 
     for fragment in (
+        "PhraseLayerLocalMarianAssets.RunTranslationParityProbe()",
+        "PHRASELAYER_MARIAN_PARITY_EVIDENCE_PATH",
+        "phrase-layer-real-unity-marian-parity",
+        "real_unity_execution",
+        "model_graph_contract_passed",
+        "managed_tokenizer_source_token_parity_passed",
+        "cpu_clone_backend_generated_token_parity_passed",
+        "device_resident_backend_generated_token_parity_passed",
+        "decoded_text_parity_passed",
+        "language_pipeline_semantic_replacement_passed",
+        "gloss_marker_injection_detected",
+        "minimum_reference_samples",
+        "File.WriteAllText(evidencePath, json)",
+        "RunBatch()",
+    ):
+        require(evidence_editor, fragment, "Marian Unity parity evidence wrapper")
+
+    for fragment in (
         "Intentionally no -nographics",
-        "PhraseLayerLocalMarianAssets.RunTranslationParityProbeBatch",
+        "PHRASELAYER_MARIAN_PARITY_EVIDENCE_PATH",
+        "PhraseLayerMarianParityEvidence.RunBatch",
+        "Real Unity Marian parity evidence was not produced",
         "real Unity Marian exact-token translation parity for baseline and device-resident backends",
     ):
         require(shell, fragment, "Marian Unity parity shell")
@@ -155,11 +177,17 @@ def validate() -> dict[str, object]:
         "generate_marian_reference_fixture.py",
         "prepare_unity_marian_assets.py",
         "verify-local-marian-translation.sh",
-        '"language_pipeline_semantic_replacement_passed": True',
-        '"gloss_marker_injection_detected": False',
+        "PHRASELAYER_MARIAN_PARITY_EVIDENCE_PATH:",
+        "Require Unity-authored Marian parity evidence",
+        'assert data["purpose"] == "phrase-layer-real-unity-marian-parity"',
+        'assert data["real_unity_execution"] is True',
+        'assert unity_parity["language_pipeline_semantic_replacement_passed"] is True',
+        'assert unity_parity["gloss_marker_injection_detected"] is False',
+        '"unity_parity_evidence_authored_by_unity": True',
         '"product_translation_gate": True',
         '"uploaded_model_weights": False',
         '"quest_device_execution_performed": False',
+        "PhraseLayer.marian-unity-parity-evidence.json",
         "phraselayer-marian-unity-host-evidence",
     ):
         require(workflow, fragment, "Marian Unity host workflow")
@@ -187,6 +215,7 @@ def validate() -> dict[str, object]:
         "device_resident_backend_required": True,
         "language_pipeline_semantic_span_integration_required": True,
         "no_gloss_marker_pipeline_output_required": True,
+        "unity_authored_parity_evidence_required": True,
         "real_unity_required": True,
         "source_weight_staged_into_unity": False,
         "model_weights_uploaded_as_artifacts": False,
