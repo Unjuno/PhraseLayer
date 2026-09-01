@@ -53,6 +53,12 @@ def main() -> None:
     assert module.permission_granted(permissions, module.HEADSET_CAMERA_PERMISSION) is False
     assert module.permission_granted(permissions, "android.permission.RECORD_AUDIO") is None
 
+    fingerprint = module.serial_fingerprint("1WMHH000000000")
+    assert fingerprint is not None and len(fingerprint) == 12
+    assert fingerprint == module.serial_fingerprint("1WMHH000000000")
+    assert fingerprint != "1WMHH000000000"
+    assert module.serial_fingerprint(None) is None
+
     empty = module.readiness_from_logcat("")
     assert empty == {
         "ocr_smoke_passed": False,
@@ -85,9 +91,15 @@ def main() -> None:
     assert failed["read_mode_timeout"] is True
     assert failed["fatal_exception"] is True
 
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    assert '"adb_serial": serial' not in source
+    assert '"adb_serial_sha256_12": serial_fingerprint(serial)' in source
+    assert 'status="fail"' in source
+    assert 'evidence_path.write_text' in source
+
     print(
-        "PASS: Quest Read Mode device smoke parsing, Quest identity, camera permission declaration, "
-        "and MRUK anti-false-positive contracts"
+        "PASS: Quest Read Mode device smoke parsing, permission declaration, redacted device identity, "
+        "failure evidence, and MRUK anti-false-positive contracts"
     )
 
 
