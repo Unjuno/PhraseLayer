@@ -123,6 +123,18 @@ The 5 Hz value is a starting hypothesis, not a measured Quest 3 result. `OcrFram
 
 A failed OCR inference does not advance the last-processed timestamp, so a later frame can retry immediately. `Reset()` starts a new timestamp sequence, for example after restarting the camera stream.
 
+## Quest smoke evidence privacy boundary
+
+The device smoke runner uses process-scoped logcat only as an in-memory readiness source. Raw process logcat is not written to disk and is not uploaded as a workflow artifact. This is deliberate because real-world OCR may contain private text even when the current smoke behaviours redact their own recognized/display strings.
+
+The only persisted text diagnostic is `quest-read-mode-diagnostics.txt`. Each candidate line must fully match one of the reviewed counter/status grammars in `SAFE_DIAGNOSTIC_PATTERNS`; matching a safe prefix is insufficient. A future change such as appending `recognized_text=...` to an otherwise valid counters line therefore causes that whole line to be discarded rather than partially preserved.
+
+The persisted diagnostics are limited to smoke state, timings, counts, captured-pose counters, MRUK status/confidence, layout/mask/render counters, compact OCR stage, and the literal `FATAL EXCEPTION` marker. Fatal stack/message content is discarded. `recognized_text=` and `display_text=` are not valid diagnostic grammars.
+
+ADB serials are also excluded from evidence. The JSON stores only a truncated SHA-256 fingerprint, and failure messages are scrubbed of the selected raw serial before serialization. The Quest workflow uploads explicit safe evidence files rather than a wildcard device-output directory.
+
+This privacy boundary is part of the device gate contract, not a logging convention. Reintroducing raw logcat persistence, wildcard Quest output upload, or recognized/display text in the diagnostic grammar must fail Hosted validation before a device gate can be considered valid.
+
 ## Production status
 
 PP-OCRv6 Tiny detection + recognition is no longer only an abstract candidate: the Unity adapter has a pinned Inference Engine 2.2.1 detector/recognizer implementation, local asset staging, model/dictionary contract probes, a guarded Hosted compile shell, and the real-Unity detector preprocessing parity gate described above.
