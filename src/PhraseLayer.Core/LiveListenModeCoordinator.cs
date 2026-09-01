@@ -160,7 +160,7 @@ namespace PhraseLayer.Core.Pipeline
     /// adapter ignores cancellation, the generation gate prevents an older transcript from replacing a newer one.
     /// Continuous microphone buffering and VAD are intentionally outside Core and feed this boundary.
     /// CancellationTokenSource disposal is owned by the SubmitAsync call that created it, so a superseding request
-    /// never disposes a token source while the older adapter may still be unwinding cancellation callbacks.
+    /// never intentionally disposes a token source while the older adapter may still be unwinding callbacks.
     /// </summary>
     public sealed class LiveListenModeCoordinator : IDisposable
     {
@@ -308,7 +308,16 @@ namespace PhraseLayer.Core.Pipeline
 
         private static void Cancel(CancellationTokenSource? cancellation)
         {
-            cancellation?.Cancel();
+            if (cancellation == null) return;
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The owning SubmitAsync completed and disposed the source after it was detached under the lock.
+                // In that race there is no remaining operation to cancel.
+            }
         }
 
         private void ThrowIfDisposed()
