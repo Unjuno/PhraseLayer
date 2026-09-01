@@ -159,6 +159,8 @@ namespace PhraseLayer.Core.Pipeline
     /// utterance or rolling recognition window). A newer timestamp cancels older work. Even if an ASR/translation
     /// adapter ignores cancellation, the generation gate prevents an older transcript from replacing a newer one.
     /// Continuous microphone buffering and VAD are intentionally outside Core and feed this boundary.
+    /// CancellationTokenSource disposal is owned by the SubmitAsync call that created it, so a superseding request
+    /// never disposes a token source while the older adapter may still be unwinding cancellation callbacks.
     /// </summary>
     public sealed class LiveListenModeCoordinator : IDisposable
     {
@@ -219,7 +221,7 @@ namespace PhraseLayer.Core.Pipeline
                 activeCancellation = localCancellation;
             }
 
-            CancelAndDispose(previousCancellation);
+            Cancel(previousCancellation);
             var localToken = localCancellation.Token;
             ListenModeObservationResult output;
             try
@@ -236,16 +238,12 @@ namespace PhraseLayer.Core.Pipeline
             }
             finally
             {
-                var disposeLocal = false;
                 lock (gate)
                 {
                     if (ReferenceEquals(activeCancellation, localCancellation))
-                    {
                         activeCancellation = null;
-                        disposeLocal = true;
-                    }
                 }
-                if (disposeLocal) localCancellation.Dispose();
+                localCancellation.Dispose();
             }
 
             lock (gate)
@@ -277,7 +275,7 @@ namespace PhraseLayer.Core.Pipeline
                 cancellation = activeCancellation;
                 activeCancellation = null;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
         public void Reset()
@@ -291,7 +289,7 @@ namespace PhraseLayer.Core.Pipeline
                 activeCancellation = null;
                 latestAcceptedTimestampMicroseconds = -1;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
         public void Dispose()
@@ -305,20 +303,12 @@ namespace PhraseLayer.Core.Pipeline
                 cancellation = activeCancellation;
                 activeCancellation = null;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
-        private static void CancelAndDispose(CancellationTokenSource? cancellation)
+        private static void Cancel(CancellationTokenSource? cancellation)
         {
-            if (cancellation == null) return;
-            try
-            {
-                cancellation.Cancel();
-            }
-            finally
-            {
-                cancellation.Dispose();
-            }
+            cancellation?.Cancel();
         }
 
         private void ThrowIfDisposed()
