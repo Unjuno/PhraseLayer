@@ -23,10 +23,17 @@ namespace PhraseLayer.Unity.Editor
         [MenuItem("PhraseLayer/Read Mode/Stage Local Visual Assets And Recreate Demo")]
         public static void StageAndCreateDemoScene()
         {
-            StageAndCreateDemoScene(false);
+            StageAndCreateDemoScene(false, null);
         }
 
         public static void StageAndCreateDemoScene(bool autoRunQuestReadModeSmoke)
+        {
+            StageAndCreateDemoScene(autoRunQuestReadModeSmoke, null);
+        }
+
+        public static void StageAndCreateDemoScene(
+            bool autoRunQuestReadModeSmoke,
+            Action<GameObject, PhraseLayerDemoBehaviour> configureRoot)
         {
             var source = Environment.GetEnvironmentVariable(FontSourceEnvironment);
             if (string.IsNullOrWhiteSpace(source))
@@ -89,12 +96,17 @@ namespace PhraseLayer.Unity.Editor
             }
 
             WriteEvidence(source, sourceHash, fontAssetPath, material, autoRunQuestReadModeSmoke);
-            PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke);
+            PhraseLayerEditorSetup.CreateDemoScene(
+                font,
+                material,
+                autoRunQuestReadModeSmoke,
+                configureRoot);
             AssetDatabase.SaveAssets();
             Debug.Log(
                 "PhraseLayer local Read Mode visual assets PASS: font=" + fontAssetPath +
                 "; mask=" + MaskMaterialPath +
                 "; smoke_autorun=" + (autoRunQuestReadModeSmoke ? "true" : "false") +
+                "; product_root_configurator=" + (configureRoot == null ? "none" : "provided") +
                 "; evidence=" + EvidencePath +
                 ". Font bytes remain under the git-ignored LocalReadModeAssets directory.");
         }
@@ -103,7 +115,7 @@ namespace PhraseLayer.Unity.Editor
         {
             try
             {
-                StageAndCreateDemoScene(false);
+                StageAndCreateDemoScene(false, null);
                 EditorApplication.Exit(0);
             }
             catch (Exception exception)
