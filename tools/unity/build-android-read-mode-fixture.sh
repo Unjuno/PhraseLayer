@@ -25,6 +25,16 @@ fi
 OUTPUT="${PHRASELAYER_READ_MODE_FIXTURE_APK_PATH:-$ROOT/Builds/Android/PhraseLayerReadModeFixture.apk}"
 export PHRASELAYER_READ_MODE_FIXTURE_APK_PATH="$OUTPUT"
 
+# A clean repository intentionally does not commit generated Unity XR settings. Let the pinned Meta XR Core SDK
+# apply its Required Android/Quest configuration first, and only build in a fresh second Editor process after those
+# settings have been saved.
+"$UNITY_EDITOR" \
+  -batchmode \
+  -nographics \
+  -projectPath "$PROJECT" \
+  -executeMethod PhraseLayer.Unity.Editor.PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch \
+  -logFile -
+
 "$UNITY_EDITOR" \
   -batchmode \
   -nographics \
@@ -43,4 +53,4 @@ if [[ ! -s "$EVIDENCE" ]]; then
   exit 3
 fi
 
-printf 'PASS: Read Mode fixture Android ARM64 IL2CPP APK=%s evidence=%s\n' "$OUTPUT" "$EVIDENCE"
+printf 'PASS: Meta Quest project setup + Read Mode fixture Android ARM64 IL2CPP APK=%s evidence=%s\n' "$OUTPUT" "$EVIDENCE"
