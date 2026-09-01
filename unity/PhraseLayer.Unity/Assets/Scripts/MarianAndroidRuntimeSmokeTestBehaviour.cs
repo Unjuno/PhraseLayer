@@ -86,7 +86,7 @@ namespace PhraseLayer.Unity
                 }
 
                 var expectedTranslation = LoadExpectedTranslation(FixtureSource);
-                demo.SetSourceText(FixtureSource);
+                demo.PrepareDeterministicTranslationSmokeFixture(FixtureSource, 0.0);
                 await demo.ReplanAsync();
 
                 var plan = demo.CurrentPlan;
