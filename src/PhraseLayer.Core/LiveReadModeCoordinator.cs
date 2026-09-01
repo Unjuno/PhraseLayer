@@ -44,7 +44,8 @@ namespace PhraseLayer.Core.Pipeline
     /// A newer frame cancels an older in-flight language/alignment operation. If an adapter ignores cancellation and
     /// the older operation eventually completes, its generation is still rejected as Superseded, preventing stale
     /// semantic/world-space output from replacing the result for a newer camera observation.
-    /// Cancellation callbacks are never invoked while the coordinator lock is held.
+    /// Cancellation callbacks are never invoked while the coordinator lock is held. Each SubmitAsync invocation owns
+    /// disposal of its linked CancellationTokenSource after the platform adapter has finished unwinding cancellation.
     /// </summary>
     public sealed class LiveReadModeCoordinator : IDisposable
     {
@@ -105,7 +106,7 @@ namespace PhraseLayer.Core.Pipeline
                 activeCancellation = localCancellation;
             }
 
-            CancelAndDispose(previousCancellation);
+            Cancel(previousCancellation);
             var localToken = localCancellation.Token;
             ReadModeAlignedResult aligned;
             try
@@ -126,17 +127,12 @@ namespace PhraseLayer.Core.Pipeline
             }
             finally
             {
-                var disposeLocal = false;
                 lock (gate)
                 {
                     if (ReferenceEquals(activeCancellation, localCancellation))
-                    {
                         activeCancellation = null;
-                        disposeLocal = true;
-                    }
                 }
-                if (disposeLocal)
-                    localCancellation.Dispose();
+                localCancellation.Dispose();
             }
 
             lock (gate)
@@ -168,7 +164,7 @@ namespace PhraseLayer.Core.Pipeline
                 cancellation = activeCancellation;
                 activeCancellation = null;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
         public void Reset()
@@ -182,7 +178,7 @@ namespace PhraseLayer.Core.Pipeline
                 activeCancellation = null;
                 latestAcceptedTimestampMicroseconds = -1;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
         public void Dispose()
@@ -196,20 +192,12 @@ namespace PhraseLayer.Core.Pipeline
                 cancellation = activeCancellation;
                 activeCancellation = null;
             }
-            CancelAndDispose(cancellation);
+            Cancel(cancellation);
         }
 
-        private static void CancelAndDispose(CancellationTokenSource? cancellation)
+        private static void Cancel(CancellationTokenSource? cancellation)
         {
-            if (cancellation == null) return;
-            try
-            {
-                cancellation.Cancel();
-            }
-            finally
-            {
-                cancellation.Dispose();
-            }
+            cancellation?.Cancel();
         }
 
         private void ThrowIfDisposed()
