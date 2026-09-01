@@ -27,6 +27,18 @@ class QuestListenModeSmokeTests(unittest.TestCase):
         with self.assertRaisesRegex(subject.SmokeError, "not connected/authorized"):
             subject.choose_serial(["a"], "missing")
 
+    def test_device_model_normalization_accepts_adb_separator_variants(self) -> None:
+        subject.require_device_model("Quest 3", "Quest_3")
+        subject.require_device_model("quest-3", "QUEST 3")
+
+    def test_device_model_gate_rejects_non_quest3_device(self) -> None:
+        with self.assertRaisesRegex(subject.SmokeError, "refusing to claim Quest device evidence"):
+            subject.require_device_model("Pixel 9", "Quest 3")
+
+    def test_device_model_gate_rejects_empty_expectation(self) -> None:
+        with self.assertRaisesRegex(subject.SmokeError, "must not be empty"):
+            subject.require_device_model("Quest 3", "  ")
+
     def test_record_audio_permission_parser(self) -> None:
         granted = "android.permission.RECORD_AUDIO: granted=true, flags=[ USER_SENSITIVE_WHEN_GRANTED ]"
         denied = "android.permission.RECORD_AUDIO: granted=false, flags=[ USER_SENSITIVE_WHEN_DENIED ]"
