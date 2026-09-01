@@ -64,6 +64,7 @@ def main() -> None:
         "ocr_smoke_passed": False,
         "read_mode_smoke_passed": False,
         "mruk_environment_raycast_observed": False,
+        "captured_pose_projection_observed": False,
         "read_mode_timeout": False,
         "read_mode_exception": False,
         "fatal_exception": False,
@@ -72,18 +73,22 @@ def main() -> None:
     passed = module.readiness_from_logcat(
         "PhraseLayer Quest OCR smoke test PASS\n"
         "PhraseLayer Quest Read Mode smoke test PASS\n"
+        "camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp captured_pose_projection=true captured_pose_rays=5\n"
         "surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true\n"
     )
     assert passed["ocr_smoke_passed"] is True
     assert passed["read_mode_smoke_passed"] is True
     assert passed["mruk_environment_raycast_observed"] is True
+    assert passed["captured_pose_projection_observed"] is True
     assert passed["fatal_exception"] is False
 
     incomplete = module.readiness_from_logcat(
         "PhraseLayer Quest OCR smoke test PASS\n"
         "PhraseLayer Quest Read Mode smoke test PASS\n"
+        "surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true\n"
     )
-    assert incomplete["mruk_environment_raycast_observed"] is False
+    assert incomplete["mruk_environment_raycast_observed"] is True
+    assert incomplete["captured_pose_projection_observed"] is False
 
     failed = module.readiness_from_logcat(
         "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT\nFATAL EXCEPTION\n"
@@ -96,10 +101,14 @@ def main() -> None:
     assert '"adb_serial_sha256_12": serial_fingerprint(serial)' in source
     assert 'status="fail"' in source
     assert 'evidence_path.write_text' in source
+    assert '"camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp"' in source
+    assert '"camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose"' in source
+    assert '"captured_pose_projection_required": True' in source
+    assert '"camera_pixel_pose_sync_verified": False' in source
 
     print(
         "PASS: Quest Read Mode device smoke parsing, permission declaration, redacted device identity, "
-        "failure evidence, and MRUK anti-false-positive contracts"
+        "failure evidence, captured camera-pose requirement, and MRUK anti-false-positive contracts"
     )
 
 
