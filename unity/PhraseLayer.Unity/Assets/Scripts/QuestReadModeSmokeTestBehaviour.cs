@@ -11,8 +11,9 @@ namespace PhraseLayer.Unity
     /// Real-device vertical-slice smoke test for Read Mode.
     ///
     /// PASS requires the real Quest camera/OCR smoke to pass first, then a newer adaptive Read Mode observation must
-    /// reach MRUK live-depth surface fitting/tracking and produce both a currently eligible source mask and world-space
-    /// text. The report contains geometry/count diagnostics only; recognized source/translated text is not copied.
+    /// use the retained Meta camera pose from that exact ImageFrame, reach MRUK live-depth surface fitting/tracking,
+    /// and produce both a currently eligible source mask and world-space text. The report contains geometry/count
+    /// diagnostics only; recognized source/translated text is not copied.
     /// </summary>
     public sealed class QuestReadModeSmokeTestBehaviour : MonoBehaviour
     {
@@ -102,6 +103,8 @@ namespace PhraseLayer.Unity
                 throw new InvalidOperationException("Assign a reviewed opaque source-mask Material before the Quest Read Mode smoke test runs.");
             if (worldTextTracking.Projection == null || worldTextTracking.Projection.EnvironmentSurfaceRaycaster == null)
                 throw new InvalidOperationException("Quest Read Mode smoke requires MRUK EnvironmentRaycastManager live-depth projection.");
+            if (worldTextTracking.Projection.RayProvider == null)
+                throw new InvalidOperationException("Quest Read Mode smoke requires MetaPassthroughCameraBridge capture-pose projection.");
 
             isRunning = true;
             lastPassed = false;
@@ -109,6 +112,7 @@ namespace PhraseLayer.Unity
             lastReport = string.Empty;
             var startedAt = Time.realtimeSinceStartupAsDouble;
             var processedBefore = liveReadMode.ProcessedObservationCount;
+            var capturedPoseRaysBefore = worldTextTracking.Projection.RayProvider.CapturedPoseRayCount;
 
             using (var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
@@ -136,9 +140,20 @@ namespace PhraseLayer.Unity
                             projection.UsesEnvironmentRaycast &&
                             projection.EnvironmentSurfaceRaycaster != null &&
                             projection.EnvironmentSurfaceRaycaster.AbiValidated;
+                        var capturePoseBound = projection != null &&
+                            projection.UsesCapturedCameraPose &&
+                            liveReadMode.LastAlignedResult != null &&
+                            projection.LastProjectionFrameTimestampMicroseconds.HasValue &&
+                            projection.LastProjectionFrameTimestampMicroseconds.Value ==
+                                liveReadMode.LastAlignedResult.Spatial.Frame.TimestampMicroseconds;
+                        var capturedPoseRayObserved = projection != null &&
+                            projection.RayProvider != null &&
+                            projection.RayProvider.CapturedPoseRayCount > capturedPoseRaysBefore;
 
                         if (newerReadProcessed &&
                             liveDepthSurface &&
+                            capturePoseBound &&
+                            capturedPoseRayObserved &&
                             fittedWorldText &&
                             enoughObservedTracks &&
                             worldTextTracking.LastMaskSucceeded &&
@@ -186,18 +201,26 @@ namespace PhraseLayer.Unity
 
         private string BuildReport(string status, double elapsedSeconds, string ocrReport)
         {
-            var builder = new StringBuilder(1792);
+            var builder = new StringBuilder(2048);
             var plan = worldTextTracking == null ? null : worldTextTracking.LastPlan;
             var projection = worldTextTracking == null ? null : worldTextTracking.Projection;
             var renderer = worldTextTracking == null ? null : worldTextTracking.Renderer;
             var mask = worldTextTracking == null ? null : worldTextTracking.SourceMask;
             var environment = projection == null ? null : projection.EnvironmentSurfaceRaycaster;
+            var camera = projection == null ? null : projection.RayProvider;
 
             builder.AppendLine("PhraseLayer Quest Read Mode smoke test " + status);
             builder.Append("elapsed_ms=").Append((elapsedSeconds * 1000.0).ToString("F1"))
                 .Append(" read_processed=").Append(liveReadMode == null ? 0 : liveReadMode.ProcessedObservationCount)
                 .Append(" read_superseded=").Append(liveReadMode == null ? 0 : liveReadMode.SupersededObservationCount)
                 .Append(" read_stale=").Append(liveReadMode == null ? 0 : liveReadMode.StaleObservationCount)
+                .AppendLine();
+            builder.Append("camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp")
+                .Append(" captured_pose_projection=").Append(projection != null && projection.UsesCapturedCameraPose ? "true" : "false")
+                .Append(" captured_pose_rays=").Append(camera == null ? 0 : camera.CapturedPoseRayCount)
+                .Append(" stable_capture_metadata=").Append(camera == null ? 0 : camera.StableCaptureMetadataCount)
+                .Append(" unstable_capture_metadata=").Append(camera == null ? 0 : camera.UnstableCaptureMetadataCount)
+                .Append(" pixel_pose_sync_verified=false")
                 .AppendLine();
             builder.Append("surface_runtime=")
                 .Append(projection != null && projection.UsesEnvironmentRaycast ? "MRUKEnvironmentRaycast" : "OtherOrUnconfigured")
