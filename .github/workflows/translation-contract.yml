@@ -11,6 +11,7 @@ on:
       - "tests/PhraseLayer.Core.Tests/**"
       - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
       - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
+      - "unity/PhraseLayer.Unity/Assets/Scripts/MarianAndroidRuntimeSmokeTestBehaviour.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs"
@@ -24,6 +25,9 @@ on:
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
       - "tools/validate_marian_android_fixture_gate.py"
+      - "tools/validate_marian_android_runtime_device_gate.py"
+      - "tools/run_marian_android_runtime_smoke.py"
+      - "tools/test_run_marian_android_runtime_smoke.py"
       - "tools/inspect_android_apk_structure.py"
       - "tools/test_inspect_android_apk_structure.py"
       - "tools/unity/verify-local-marian-translation.sh"
@@ -40,6 +44,7 @@ on:
       - "tools/inspect_marian_onnx_bundle.py"
       - "tools/test_inspect_marian_onnx_bundle.py"
       - ".github/workflows/marian-unity-host-gate.yml"
+      - ".github/workflows/marian-android-runtime-smoke.yml"
       - ".github/workflows/translation-contract.yml"
   pull_request:
     paths:
@@ -50,6 +55,7 @@ on:
       - "tests/PhraseLayer.Core.Tests/**"
       - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
       - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
+      - "unity/PhraseLayer.Unity/Assets/Scripts/MarianAndroidRuntimeSmokeTestBehaviour.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs"
@@ -63,6 +69,9 @@ on:
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
       - "tools/validate_marian_android_fixture_gate.py"
+      - "tools/validate_marian_android_runtime_device_gate.py"
+      - "tools/run_marian_android_runtime_smoke.py"
+      - "tools/test_run_marian_android_runtime_smoke.py"
       - "tools/inspect_android_apk_structure.py"
       - "tools/test_inspect_android_apk_structure.py"
       - "tools/unity/verify-local-marian-translation.sh"
@@ -79,6 +88,7 @@ on:
       - "tools/inspect_marian_onnx_bundle.py"
       - "tools/test_inspect_marian_onnx_bundle.py"
       - ".github/workflows/marian-unity-host-gate.yml"
+      - ".github/workflows/marian-android-runtime-smoke.yml"
       - ".github/workflows/translation-contract.yml"
 
 concurrency:
@@ -101,6 +111,8 @@ jobs:
       - run: python tools/test_generate_marian_reference_fixture.py
       - run: python tools/validate_marian_unity_product_gate.py
       - run: python tools/validate_marian_android_fixture_gate.py
+      - run: python tools/validate_marian_android_runtime_device_gate.py
+      - run: python tools/test_run_marian_android_runtime_smoke.py
       - run: python tools/test_inspect_android_apk_structure.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
