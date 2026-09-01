@@ -46,9 +46,41 @@ jobs:
           python tools/validate_ppocr_gpu_preprocess_gate.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
+          python tools/validate_unity_host_preflight.py
           python tools/validate_quest_read_mode_device_gate.py
           python tools/test_run_quest_read_mode_smoke.py
           python tools/test_inspect_android_apk_structure.py
+
+      - name: Run real Unity host capability preflight
+        shell: bash
+        env:
+          PHRASELAYER_UNITY_HOST_PREFLIGHT_EVIDENCE_PATH: ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
+        run: |
+          chmod +x tools/unity/run-host-preflight.sh
+          ./tools/unity/run-host-preflight.sh
+
+      - name: Require Unity host preflight evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "PhraseLayer.unity-host-preflight.json"
+          assert path.is_file() and path.stat().st_size > 0
+          data = json.loads(path.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-real-unity-host-preflight"
+          assert data["real_unity_execution"] is True
+          assert data["expected_unity_version"] == "6000.0.66f2"
+          assert data["actual_unity_version"] == "6000.0.66f2"
+          assert data["exact_unity_version_match"] is True
+          assert data["android_build_support_available"] is True
+          assert data["inference_engine_compile_gate_active"] is True
+          assert data["local_asset_paths_serialized"] is False
+          assert data["adb_required"] is False
+          assert data["quest_device_execution_performed"] is False
+          print(json.dumps(data, sort_keys=True))
+          PY
 
       - name: Download exact pinned PP-OCR assets
         shell: bash
@@ -243,6 +275,7 @@ jobs:
         with:
           name: phraselayer-quest3-read-mode-evidence
           path: |
+            ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
             ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
             ${{ runner.temp }}/read-mode-apk-fingerprint.json
             ${{ runner.temp }}/read-mode-apk-structure.json
