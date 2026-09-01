@@ -54,6 +54,7 @@ jobs:
       - run: python tools/test_run_moonshine_v1_onnx_reference.py
       - run: python tools/test_validate_moonshine_v1_reference_trace.py
       - run: python tools/validate_moonshine_v1_reference_trace.py
+      - run: python tools/test_run_quest_listen_mode_smoke.py
       - run: python tools/test_summarize_listen_mode_metrics.py
       - run: python tools/test_capture_quest_listen_mode_metrics.py
       - run: dotnet restore tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj
