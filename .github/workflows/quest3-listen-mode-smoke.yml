@@ -1,0 +1,109 @@
+name: Quest 3 Listen Mode Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_serial:
+        description: "Optional adb serial when more than one device is attached"
+        required: false
+        default: ""
+        type: string
+      startup_timeout_seconds:
+        description: "Maximum seconds to wait for microphone and Listen Mode readiness"
+        required: true
+        default: "90"
+        type: string
+      capture_metrics:
+        description: "After startup, capture real utterance metrics; speak into the headset during the capture window"
+        required: true
+        default: false
+        type: boolean
+      metric_capture_seconds:
+        description: "Metric capture window when capture_metrics is enabled"
+        required: true
+        default: "90"
+        type: string
+
+jobs:
+  quest-smoke:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2, quest3, adb]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned Hugging Face client
+        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2"
+      - name: Stage exact Moonshine v1 deployment graphs
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              repo_id="UsefulSensors/moonshine",
+              revision="35b4aae79f7d598a4d36d5252ec26ad642faab60",
+              allow_patterns=[
+                  "onnx/tiny/preprocess.onnx",
+                  "onnx/tiny/encode.onnx",
+                  "onnx/tiny/uncached_decode.onnx",
+                  "onnx/tiny/cached_decode.onnx",
+              ],
+              local_dir=os.path.join(os.environ["RUNNER_TEMP"], "moonshine-v1-reference"),
+          )
+          PY
+          python tools/prepare_unity_moonshine_v1_assets.py \
+            --snapshot-root "$RUNNER_TEMP/moonshine-v1-reference"
+      - name: Stage exact managed Moonshine token decoder
+        shell: bash
+        run: |
+          python tools/fetch_moonshine_snapshot_metadata.py \
+            --revision "390624ed33d594443aa4aa221f5b9f283b545b5a" \
+            --destination "$RUNNER_TEMP/moonshine-tiny-small" \
+            --output-manifest "$RUNNER_TEMP/moonshine-tiny.snapshot.json"
+          python tools/prepare_unity_moonshine_token_decoder.py \
+            --snapshot-dir "$RUNNER_TEMP/moonshine-tiny-small"
+      - name: Build exact Android ARM64 IL2CPP APK
+        shell: bash
+        env:
+          PHRASELAYER_ANDROID_BUILD_PATH: ${{ runner.temp }}/PhraseLayer.apk
+        run: |
+          chmod +x tools/unity/build-android-listen-mode.sh
+          ./tools/unity/build-android-listen-mode.sh
+      - name: Install, launch, and verify Quest Listen Mode startup
+        shell: bash
+        run: |
+          SERIAL_ARGS=()
+          if [[ -n "${{ inputs.device_serial }}" ]]; then
+            SERIAL_ARGS+=(--serial "${{ inputs.device_serial }}")
+          fi
+          python tools/run_quest_listen_mode_smoke.py \
+            --apk "$RUNNER_TEMP/PhraseLayer.apk" \
+            --startup-timeout-seconds "${{ inputs.startup_timeout_seconds }}" \
+            --output-dir "$RUNNER_TEMP/quest-smoke" \
+            "${SERIAL_ARGS[@]}"
+      - name: Capture real Listen Mode utterance metrics
+        if: ${{ inputs.capture_metrics }}
+        shell: bash
+        run: |
+          SERIAL_ARGS=()
+          if [[ -n "${{ inputs.device_serial }}" ]]; then
+            SERIAL_ARGS+=(--serial "${{ inputs.device_serial }}")
+          fi
+          python tools/capture_quest_listen_mode_metrics.py \
+            --duration-seconds "${{ inputs.metric_capture_seconds }}" \
+            --clear-logcat \
+            --output-dir "$RUNNER_TEMP/quest-metrics" \
+            "${SERIAL_ARGS[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-quest3-listen-mode-evidence
+          path: |
+            ${{ runner.temp }}/PhraseLayer.apk
+            ${{ runner.temp }}/PhraseLayer.android-build-evidence.json
+            ${{ runner.temp }}/quest-smoke/**
+            ${{ runner.temp }}/quest-metrics/**
+          if-no-files-found: warn
+          retention-days: 7
