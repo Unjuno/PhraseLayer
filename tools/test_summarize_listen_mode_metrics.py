@@ -49,7 +49,7 @@ class ListenModeMetricsTests(unittest.TestCase):
 
     def test_nearest_rank_percentile(self) -> None:
         self.assertEqual(10.0, subject.percentile_nearest_rank([1.0, 2.0, 3.0, 4.0, 10.0], 95.0))
-        self.assertEqual(3.0, subject.percentile_nearest_rank([1.0, 2.0, 3.0], 50.1))
+        self.assertEqual(2.0, subject.percentile_nearest_rank([1.0, 2.0, 3.0], 50.1))
 
 
 if __name__ == "__main__":
