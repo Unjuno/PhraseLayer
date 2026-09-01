@@ -21,6 +21,8 @@ from typing import Dict, List, Sequence
 
 DEFAULT_PACKAGE = "com.unjuno.phraselayer.readmodefixture"
 DEFAULT_EXPECTED_DEVICE_MODEL = "Quest 3"
+CAMERA_PERMISSION = "android.permission.CAMERA"
+HEADSET_CAMERA_PERMISSION = "horizonos.permission.HEADSET_CAMERA"
 OCR_PASS_MARKER = "PhraseLayer Quest OCR smoke test PASS"
 READ_MODE_PASS_MARKER = "PhraseLayer Quest Read Mode smoke test PASS"
 READ_MODE_TIMEOUT_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT"
@@ -70,6 +72,10 @@ def require_device_model(actual: str, expected: str) -> None:
         raise SmokeError(
             f"selected adb device is {actual!r}, expected {expected!r}; refusing to claim Quest 3 evidence"
         )
+
+
+def permission_declared(dumpsys_package: str, permission: str) -> bool:
+    return permission in dumpsys_package
 
 
 def permission_granted(dumpsys_package: str, permission: str) -> bool | None:
@@ -213,10 +219,19 @@ def main() -> None:
         raise SmokeError(f"package manager did not report installed package {args.package}")
 
     package_dump = _adb(args.adb, serial, "shell", "dumpsys", "package", args.package)
-    camera_permission = permission_granted(package_dump, "android.permission.CAMERA")
-    headset_camera_permission = permission_granted(package_dump, "horizonos.permission.HEADSET_CAMERA")
+    camera_declared = permission_declared(package_dump, CAMERA_PERMISSION)
+    headset_camera_declared = permission_declared(package_dump, HEADSET_CAMERA_PERMISSION)
+    if not camera_declared:
+        raise SmokeError(f"installed APK does not declare required permission {CAMERA_PERMISSION}")
+    if not headset_camera_declared:
+        raise SmokeError(f"installed APK does not declare required permission {HEADSET_CAMERA_PERMISSION}")
+
+    camera_permission = permission_granted(package_dump, CAMERA_PERMISSION)
+    headset_camera_permission = permission_granted(package_dump, HEADSET_CAMERA_PERMISSION)
     if camera_permission is False:
-        raise SmokeError("android.permission.CAMERA is explicitly denied after adb install -g")
+        raise SmokeError(f"{CAMERA_PERMISSION} is explicitly denied after adb install -g")
+    if headset_camera_permission is False:
+        raise SmokeError(f"{HEADSET_CAMERA_PERMISSION} is explicitly denied after adb install -g")
 
     _adb(args.adb, serial, "logcat", "-c")
     _adb(args.adb, serial, "shell", "am", "force-stop", args.package)
@@ -268,14 +283,22 @@ def main() -> None:
             "sha256": sha256_file(args.apk),
         },
         "permissions": {
-            "android.permission.CAMERA": camera_permission,
-            "horizonos.permission.HEADSET_CAMERA": headset_camera_permission,
+            CAMERA_PERMISSION: {
+                "declared": camera_declared,
+                "granted": camera_permission,
+            },
+            HEADSET_CAMERA_PERMISSION: {
+                "declared": headset_camera_declared,
+                "granted": headset_camera_permission,
+            },
         },
         "readiness": readiness,
         "ocr_runtime": "PaddleOCR",
         "surface_runtime": "MRUKEnvironmentRaycast",
         "translation_runtime": "DemoDictionaryFixture",
         "product_translation_gate": False,
+        "camera_timestamp_source": "unity-realtime-observation",
+        "camera_hardware_timestamp_pose_sync_verified": False,
         "expected_device_model": args.expected_device_model,
         "device": {
             "manufacturer": _prop(args.adb, serial, "ro.product.manufacturer"),
@@ -288,8 +311,9 @@ def main() -> None:
         "files": {"logcat": log_path.name},
         "scope": (
             "Real Quest camera/OCR + MRUK live-depth surface fit/tracking + source mask + Japanese world-text vertical slice. "
-            "Translation remains the explicit demo dictionary fixture; Marian product translation, visual quality, "
-            "stereo comfort, endurance, thermal and performance remain separate gates."
+            "Translation remains the explicit demo dictionary fixture. Camera timestamps remain Unity observation time, "
+            "so hardware timestamp/pose synchronization, Marian product translation, visual quality, stereo comfort, "
+            "endurance, thermal and performance remain separate gates."
         ),
     }
     evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
