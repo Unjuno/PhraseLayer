@@ -2,8 +2,8 @@
 """Static safety/diagnostic contract for the real Quest Read Mode smoke harness.
 
 The actual PASS still requires a headset. This gate prevents host-side changes from reintroducing synthetic OCR
-false positives, allowing OCR-only/Physics-only success to masquerade as Read Mode success, or leaking recognized
-text in the end-to-end report.
+false positives, allowing OCR-only/Physics-only/current-pose success to masquerade as Read Mode success, or leaking
+recognized text in the end-to-end report.
 """
 
 from __future__ import annotations
@@ -55,12 +55,19 @@ def validate() -> dict[str, object]:
         "liveReadMode.ProcessedObservationCount > processedBefore",
         "projection.UsesEnvironmentRaycast",
         "projection.EnvironmentSurfaceRaycaster.AbiValidated",
+        "projection.UsesCapturedCameraPose",
+        "projection.RayProvider.CapturedPoseRayCount > capturedPoseRaysBefore",
+        "projection.LastProjectionFrameTimestampMicroseconds.Value ==",
+        "liveReadMode.LastAlignedResult.Spatial.Frame.TimestampMicroseconds",
         "projection.LastWorldTextLayout.ReadyCount >= minimumObservedTracks",
         "plan.ObservedCount >= minimumObservedTracks",
         "worldTextTracking.LastMaskSucceeded",
         "worldTextTracking.LastRenderSucceeded",
         "mask.ActiveMaskCount >= minimumActiveMasks",
         "renderer.ActiveViewCount >= minimumRenderedViews",
+        "camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp",
+        "captured_pose_projection=",
+        "pixel_pose_sync_verified=false",
         "surface_runtime=",
         "MRUKEnvironmentRaycast",
         "last_normal_confidence=",
@@ -86,6 +93,8 @@ def validate() -> dict[str, object]:
         "synthetic_ocr_can_pass": False,
         "ocr_region_required": True,
         "recognizer_runtime_observation_required": True,
+        "captured_camera_pose_required": True,
+        "current_camera_pose_only_can_pass": False,
         "mruk_live_depth_surface_required": True,
         "physics_only_can_pass": False,
         "world_surface_required": True,
@@ -93,6 +102,7 @@ def validate() -> dict[str, object]:
         "source_mask_required": True,
         "world_text_render_required": True,
         "recognized_text_redacted_by_default": True,
+        "pixel_pose_sync_verified": False,
         "quest_device_run_still_required": True,
     }
 
