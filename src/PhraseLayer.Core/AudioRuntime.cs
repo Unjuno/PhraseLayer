@@ -13,6 +13,9 @@ namespace PhraseLayer.Core.Audio
     /// </summary>
     public static class AudioChunkPreprocessor
     {
+        private const int DownsampleFilterHalfWidth = 16;
+        private const double DownsampleNyquistGuard = 0.94;
+
         public static AudioChunk PrepareMono(AudioChunk input, int targetSampleRate)
         {
             if (input == null) throw new ArgumentNullException(nameof(input));
@@ -22,19 +25,23 @@ namespace PhraseLayer.Core.Audio
             if (source.Length == 0 || input.SampleRate == targetSampleRate)
                 return new AudioChunk(source, targetSampleRate, input.TimestampMicroseconds);
 
-            var outputLength = Math.Max(
-                1,
-                (int)Math.Round(
-                    source.Length * (double)targetSampleRate / input.SampleRate,
-                    MidpointRounding.AwayFromZero));
+            var output = targetSampleRate > input.SampleRate
+                ? ResampleLinear(source, input.SampleRate, targetSampleRate)
+                : ResampleBandLimited(source, input.SampleRate, targetSampleRate);
+            return new AudioChunk(output, targetSampleRate, input.TimestampMicroseconds);
+        }
+
+        private static float[] ResampleLinear(float[] source, int sourceSampleRate, int targetSampleRate)
+        {
+            var outputLength = GetOutputLength(source.Length, sourceSampleRate, targetSampleRate);
             var output = new float[outputLength];
             if (source.Length == 1)
             {
                 for (var index = 0; index < output.Length; index++) output[index] = source[0];
-                return new AudioChunk(output, targetSampleRate, input.TimestampMicroseconds);
+                return output;
             }
 
-            var ratio = input.SampleRate / (double)targetSampleRate;
+            var ratio = sourceSampleRate / (double)targetSampleRate;
             for (var index = 0; index < output.Length; index++)
             {
                 var sourcePosition = index * ratio;
@@ -49,8 +56,84 @@ namespace PhraseLayer.Core.Audio
                 var blend = sourcePosition - lower;
                 output[index] = (float)(source[lower] + ((source[upper] - source[lower]) * blend));
             }
+            return output;
+        }
 
-            return new AudioChunk(output, targetSampleRate, input.TimestampMicroseconds);
+        private static float[] ResampleBandLimited(float[] source, int sourceSampleRate, int targetSampleRate)
+        {
+            var outputLength = GetOutputLength(source.Length, sourceSampleRate, targetSampleRate);
+            var output = new float[outputLength];
+            if (source.Length == 1)
+            {
+                for (var index = 0; index < output.Length; index++) output[index] = source[0];
+                return output;
+            }
+
+            var sourcePerOutput = sourceSampleRate / (double)targetSampleRate;
+            var cutoff = (targetSampleRate / (double)sourceSampleRate) * DownsampleNyquistGuard;
+            for (var outputIndex = 0; outputIndex < output.Length; outputIndex++)
+            {
+                var sourcePosition = outputIndex * sourcePerOutput;
+                var firstSourceIndex = (int)Math.Ceiling(sourcePosition - DownsampleFilterHalfWidth);
+                var lastSourceIndex = (int)Math.Floor(sourcePosition + DownsampleFilterHalfWidth);
+                double weightedSum = 0.0;
+                double weightSum = 0.0;
+
+                for (var sourceIndex = firstSourceIndex; sourceIndex <= lastSourceIndex; sourceIndex++)
+                {
+                    var distance = sourcePosition - sourceIndex;
+                    var normalizedDistance = distance / DownsampleFilterHalfWidth;
+                    if (normalizedDistance < -1.0 || normalizedDistance > 1.0)
+                        continue;
+
+                    // Hann-windowed sinc low-pass. The cutoff is reduced below the target Nyquist frequency
+                    // so source content that cannot be represented after decimation is attenuated before sampling.
+                    var window = 0.5 * (1.0 + Math.Cos(Math.PI * normalizedDistance));
+                    var weight = cutoff * NormalizedSinc(distance * cutoff) * window;
+                    var clampedSourceIndex = sourceIndex;
+                    if (clampedSourceIndex < 0) clampedSourceIndex = 0;
+                    if (clampedSourceIndex >= source.Length) clampedSourceIndex = source.Length - 1;
+
+                    weightedSum += source[clampedSourceIndex] * weight;
+                    weightSum += weight;
+                }
+
+                double value;
+                if (Math.Abs(weightSum) > 1e-12)
+                {
+                    value = weightedSum / weightSum;
+                }
+                else
+                {
+                    var nearest = (int)Math.Round(sourcePosition, MidpointRounding.AwayFromZero);
+                    if (nearest < 0) nearest = 0;
+                    if (nearest >= source.Length) nearest = source.Length - 1;
+                    value = source[nearest];
+                }
+
+                if (value > 1.0) value = 1.0;
+                if (value < -1.0) value = -1.0;
+                output[outputIndex] = (float)value;
+            }
+
+            return output;
+        }
+
+        private static int GetOutputLength(int sourceLength, int sourceSampleRate, int targetSampleRate)
+        {
+            return Math.Max(
+                1,
+                (int)Math.Round(
+                    sourceLength * (double)targetSampleRate / sourceSampleRate,
+                    MidpointRounding.AwayFromZero));
+        }
+
+        private static double NormalizedSinc(double value)
+        {
+            if (Math.Abs(value) < 1e-12)
+                return 1.0;
+            var angle = Math.PI * value;
+            return Math.Sin(angle) / angle;
         }
 
         private static float[] ValidateAndClamp(IReadOnlyList<float> samples)
