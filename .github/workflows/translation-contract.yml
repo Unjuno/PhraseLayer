@@ -12,13 +12,19 @@ on:
       - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
       - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
       - "tools/prepare_unity_marian_assets.py"
+      - "tools/prepare_unity_tokenizer_runtime.py"
+      - "tools/test_prepare_unity_tokenizer_runtime.py"
       - "tools/generate_marian_reference_fixture.py"
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
+      - "tools/validate_marian_android_fixture_gate.py"
       - "tools/unity/verify-local-marian-translation.sh"
+      - "tools/unity/build-marian-product-android-fixture.sh"
       - "tools/validate_marian_snapshot_contract.py"
       - "tools/test_validate_marian_snapshot_contract.py"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -42,13 +48,19 @@ on:
       - "tests/PhraseLayer.UnityMarianInferenceShell.Compile/**"
       - "unity/PhraseLayer.Unity/Assets/Scripts/UnityMarian**"
       - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs"
+      - "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs"
       - "tools/prepare_marian_translation.py"
       - "tools/test_prepare_marian_translation.py"
       - "tools/prepare_unity_marian_assets.py"
+      - "tools/prepare_unity_tokenizer_runtime.py"
+      - "tools/test_prepare_unity_tokenizer_runtime.py"
       - "tools/generate_marian_reference_fixture.py"
       - "tools/test_generate_marian_reference_fixture.py"
       - "tools/validate_marian_unity_product_gate.py"
+      - "tools/validate_marian_android_fixture_gate.py"
       - "tools/unity/verify-local-marian-translation.sh"
+      - "tools/unity/build-marian-product-android-fixture.sh"
       - "tools/validate_marian_snapshot_contract.py"
       - "tools/test_validate_marian_snapshot_contract.py"
       - "tools/fetch_marian_snapshot_metadata.py"
@@ -79,8 +91,10 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - run: python tools/test_prepare_marian_translation.py
+      - run: python tools/test_prepare_unity_tokenizer_runtime.py
       - run: python tools/test_generate_marian_reference_fixture.py
       - run: python tools/validate_marian_unity_product_gate.py
+      - run: python tools/validate_marian_android_fixture_gate.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_validate_marian_lock_evidence.py
