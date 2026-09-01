@@ -11,8 +11,8 @@ namespace PhraseLayer.Unity
     /// Real-device vertical-slice smoke test for Read Mode.
     ///
     /// PASS requires the real Quest camera/OCR smoke to pass first, then a newer adaptive Read Mode observation must
-    /// reach physical surface fitting/tracking and produce both a currently eligible source mask and world-space text.
-    /// The report contains geometry/count diagnostics only; recognized source/translated text is not copied into it.
+    /// reach MRUK live-depth surface fitting/tracking and produce both a currently eligible source mask and world-space
+    /// text. The report contains geometry/count diagnostics only; recognized source/translated text is not copied.
     /// </summary>
     public sealed class QuestReadModeSmokeTestBehaviour : MonoBehaviour
     {
@@ -100,6 +100,8 @@ namespace PhraseLayer.Unity
                 throw new InvalidOperationException("Assign a reviewed Japanese-capable Font before the Quest Read Mode smoke test runs.");
             if (worldTextTracking.SourceMask == null || !worldTextTracking.SourceMask.IsConfigured)
                 throw new InvalidOperationException("Assign a reviewed opaque source-mask Material before the Quest Read Mode smoke test runs.");
+            if (worldTextTracking.Projection == null || worldTextTracking.Projection.EnvironmentSurfaceRaycaster == null)
+                throw new InvalidOperationException("Quest Read Mode smoke requires MRUK EnvironmentRaycastManager live-depth projection.");
 
             isRunning = true;
             lastPassed = false;
@@ -130,8 +132,13 @@ namespace PhraseLayer.Unity
                         var fittedWorldText = projection != null &&
                             projection.LastWorldTextLayout != null &&
                             projection.LastWorldTextLayout.ReadyCount >= minimumObservedTracks;
+                        var liveDepthSurface = projection != null &&
+                            projection.UsesEnvironmentRaycast &&
+                            projection.EnvironmentSurfaceRaycaster != null &&
+                            projection.EnvironmentSurfaceRaycaster.AbiValidated;
 
                         if (newerReadProcessed &&
+                            liveDepthSurface &&
                             fittedWorldText &&
                             enoughObservedTracks &&
                             worldTextTracking.LastMaskSucceeded &&
@@ -179,17 +186,24 @@ namespace PhraseLayer.Unity
 
         private string BuildReport(string status, double elapsedSeconds, string ocrReport)
         {
-            var builder = new StringBuilder(1536);
+            var builder = new StringBuilder(1792);
             var plan = worldTextTracking == null ? null : worldTextTracking.LastPlan;
             var projection = worldTextTracking == null ? null : worldTextTracking.Projection;
             var renderer = worldTextTracking == null ? null : worldTextTracking.Renderer;
             var mask = worldTextTracking == null ? null : worldTextTracking.SourceMask;
+            var environment = projection == null ? null : projection.EnvironmentSurfaceRaycaster;
 
             builder.AppendLine("PhraseLayer Quest Read Mode smoke test " + status);
             builder.Append("elapsed_ms=").Append((elapsedSeconds * 1000.0).ToString("F1"))
                 .Append(" read_processed=").Append(liveReadMode == null ? 0 : liveReadMode.ProcessedObservationCount)
                 .Append(" read_superseded=").Append(liveReadMode == null ? 0 : liveReadMode.SupersededObservationCount)
                 .Append(" read_stale=").Append(liveReadMode == null ? 0 : liveReadMode.StaleObservationCount)
+                .AppendLine();
+            builder.Append("surface_runtime=")
+                .Append(projection != null && projection.UsesEnvironmentRaycast ? "MRUKEnvironmentRaycast" : "OtherOrUnconfigured")
+                .Append(" environment_abi_validated=").Append(environment != null && environment.AbiValidated ? "true" : "false")
+                .Append(" last_environment_status=").Append(environment == null || string.IsNullOrEmpty(environment.LastHitStatus) ? "unobserved" : environment.LastHitStatus)
+                .Append(" last_normal_confidence=").Append(environment == null || !environment.LastNormalConfidence.HasValue ? "unobserved" : environment.LastNormalConfidence.Value.ToString("F4"))
                 .AppendLine();
             builder.Append("layout_ready=")
                 .Append(projection == null || projection.LastWorldTextLayout == null ? 0 : projection.LastWorldTextLayout.ReadyCount)
