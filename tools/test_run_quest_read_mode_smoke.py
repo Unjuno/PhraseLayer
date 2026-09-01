@@ -101,6 +101,10 @@ def main() -> None:
     assert '"adb_serial_sha256_12": serial_fingerprint(serial)' in source
     assert 'status="fail"' in source
     assert 'evidence_path.write_text' in source
+    assert '"detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization"' in source
+    assert '"detector_input_layout": "NCHW/BGR/TopLeft"' in source
+    assert '"detector_input_cpu_image_readback": False' in source
+    assert 'Graphics.Blit/readback preprocessing path' not in source
     assert '"camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp"' in source
     assert '"camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose"' in source
     assert '"captured_pose_projection_required": True' in source
@@ -108,7 +112,7 @@ def main() -> None:
 
     print(
         "PASS: Quest Read Mode device smoke parsing, permission declaration, redacted device identity, "
-        "failure evidence, captured camera-pose requirement, and MRUK anti-false-positive contracts"
+        "GPU OCR preprocessing evidence, failure evidence, captured camera-pose requirement, and MRUK anti-false-positive contracts"
     )
 
 
