@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Install and launch a PhraseLayer Android APK on an attached Quest/Android device.
+"""Install and launch a PhraseLayer Android APK on an attached Quest 3 device.
 
-This is a real-device smoke gate, not a performance benchmark. It verifies the package installs,
-RECORD_AUDIO is granted, the launcher starts, the process remains alive, and startup logcat proves both
-offline model stacks initialized: Marian translation plus Moonshine Listen Mode. Utterance latency/RTF is
-captured separately by capture_quest_listen_mode_metrics.py so a startup smoke cannot be mistaken for
-performance evidence.
+This is a real-device smoke gate, not a performance benchmark. It verifies the selected ADB device
+matches the required Quest model, the package installs, RECORD_AUDIO is granted, the launcher starts,
+the process remains alive, and startup logcat proves both offline model stacks initialized: Marian
+translation plus Moonshine Listen Mode. Utterance latency/RTF is captured separately by
+capture_quest_listen_mode_metrics.py so a startup smoke cannot be mistaken for performance evidence.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import time
 from typing import Dict, List, Sequence
 
 DEFAULT_PACKAGE = "com.unjuno.phraselayer"
+DEFAULT_EXPECTED_DEVICE_MODEL = "Quest 3"
 MICROPHONE_MARKER = "Microphone capture started:"
 MARIAN_READY_MARKER = "Marian offline translation ready:"
 LISTEN_READY_MARKER = "Listen Mode ready: microphone -> Moonshine ASR -> adaptive language plan."
@@ -54,6 +55,21 @@ def choose_serial(devices: Sequence[str], requested: str | None) -> str:
     if not devices:
         raise SmokeError("no authorized adb device found")
     raise SmokeError("multiple adb devices are connected; pass --serial explicitly")
+
+
+def normalize_device_model(value: str) -> str:
+    return re.sub(r"[\s_-]+", "", value).casefold()
+
+
+def require_device_model(actual: str, expected: str) -> None:
+    expected = expected.strip()
+    actual = actual.strip()
+    if not expected:
+        raise SmokeError("expected device model must not be empty")
+    if normalize_device_model(actual) != normalize_device_model(expected):
+        raise SmokeError(
+            f"selected adb device is {actual!r}, expected {expected!r}; refusing to claim Quest device evidence"
+        )
 
 
 def record_audio_granted(dumpsys_package: str) -> bool:
@@ -159,6 +175,7 @@ def main() -> None:
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial")
     parser.add_argument("--package", default=DEFAULT_PACKAGE)
+    parser.add_argument("--expected-device-model", default=DEFAULT_EXPECTED_DEVICE_MODEL)
     parser.add_argument("--startup-timeout-seconds", type=float, default=90.0)
     parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     args = parser.parse_args()
@@ -170,6 +187,8 @@ def main() -> None:
 
     devices = parse_adb_devices(_run([args.adb, "devices", "-l"]))
     serial = choose_serial(devices, args.serial)
+    actual_device_model = _prop(args.adb, serial, "ro.product.model")
+    require_device_model(actual_device_model, args.expected_device_model)
     started = dt.datetime.now(dt.timezone.utc)
 
     _adb(args.adb, serial, "install", "-r", "-g", str(args.apk), timeout_seconds=180.0)
@@ -226,16 +245,17 @@ def main() -> None:
         "readiness": readiness,
         "offline_translation_runtime": "Marian",
         "offline_asr_runtime": "MoonshineV1",
+        "expected_device_model": args.expected_device_model,
         "device": {
             "manufacturer": _prop(args.adb, serial, "ro.product.manufacturer"),
-            "model": _prop(args.adb, serial, "ro.product.model"),
+            "model": actual_device_model,
             "device": _prop(args.adb, serial, "ro.product.device"),
             "android_release": _prop(args.adb, serial, "ro.build.version.release"),
             "sdk": _prop(args.adb, serial, "ro.build.version.sdk"),
             "build_fingerprint": _prop(args.adb, serial, "ro.build.fingerprint"),
         },
         "files": {"startup_logcat": log_path.name},
-        "scope": "Startup smoke for Marian + Moonshine initialization only. Transcript correctness and Quest latency/memory/thermal remain separate gates.",
+        "scope": "Startup smoke for an explicitly verified Quest model with Marian + Moonshine initialization only. Transcript correctness and Quest latency/memory/thermal remain separate gates.",
     }
     evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"status": "pass", **evidence}, sort_keys=True))
