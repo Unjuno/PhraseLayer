@@ -25,6 +25,7 @@ FAIL_MARKER = "PhraseLayer Marian Android runtime smoke FAIL_EXCEPTION"
 REFERENCE_MARKER = "reference_match=true"
 PRODUCT_GATE_MARKER = "product_translation_gate=true"
 BACKEND_MARKER = "generation_backend=UnityMarianDeviceResidentGenerationBackend"
+SUCCESS_STATE_MARKER = "bootstrap_ready=true translation_override=true assisted_units=1 segments=1 reference_match=true"
 FATAL_MARKER = "FATAL EXCEPTION"
 DIAGNOSTIC_FILE_NAME = "marian-android-runtime-diagnostics.txt"
 DIAGNOSTIC_START_MARKERS = (
@@ -36,11 +37,12 @@ DIAGNOSTIC_START_MARKERS = (
 )
 _NUM = r"[0-9]+(?:\.[0-9]+)?"
 _TOKEN = r"[A-Za-z0-9_.-]+"
+_BOOL = r"(?:true|false)"
 SAFE_DIAGNOSTIC_PATTERNS = tuple(
     re.compile(pattern)
     for pattern in (
         r"^PhraseLayer Marian Android runtime smoke (?:PASS|FAIL_EXCEPTION)$",
-        rf"^elapsed_ms={_NUM} bootstrap_ready=true translation_override=true assisted_units=[0-9]+ segments=[0-9]+ reference_match=(?:true|false) display_length=[0-9]+$",
+        rf"^elapsed_ms={_NUM} bootstrap_ready={_BOOL} translation_override={_BOOL} assisted_units=[0-9]+ segments=[0-9]+ reference_match={_BOOL} display_length=[0-9]+$",
         r"^translation_runtime=MarianOpusMtEnJa generation_backend=UnityMarianDeviceResidentGenerationBackend tokenizer_runtime=Microsoft\.ML\.Tokenizers semantic_span_pipeline=true product_translation_gate=true$",
         r"^fixture_source=keep-off translated_text=<redacted; exact offline reference match required>$",
         rf"^failure_type={_TOKEN}$",
@@ -96,6 +98,7 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
         "exact_reference_match_observed": REFERENCE_MARKER in logcat,
         "product_translation_gate_observed": PRODUCT_GATE_MARKER in logcat,
         "device_resident_backend_observed": BACKEND_MARKER in logcat,
+        "successful_pipeline_state_observed": SUCCESS_STATE_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
     }
 
@@ -152,7 +155,8 @@ def _run(args: Sequence[str], timeout_seconds: float = 30.0) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        raise SmokeError("command failed: " + " ".join(args) + "\n" + completed.stderr.strip())
+        command_name = pathlib.Path(str(args[0])).name if args else "command"
+        raise SmokeError(f"{command_name} failed with exit code {completed.returncode}")
     return completed.stdout
 
 
@@ -211,6 +215,7 @@ def wait_for_pass(
             and last_readiness["exact_reference_match_observed"]
             and last_readiness["product_translation_gate_observed"]
             and last_readiness["device_resident_backend_observed"]
+            and last_readiness["successful_pipeline_state_observed"]
         ):
             return last_log, last_readiness
         time.sleep(1.0)
@@ -229,6 +234,7 @@ def build_evidence(
     android_release: str | None,
     sdk: str | None,
     activity: str | None,
+    runtime_started: bool,
     readiness: Dict[str, bool],
     error: BaseException | None = None,
 ) -> Dict[str, object]:
@@ -261,7 +267,7 @@ def build_evidence(
         "semantic_span_pipeline": True,
         "exact_offline_reference_match_required": True,
         "product_translation_gate": True,
-        "android_runtime_execution_performed": True,
+        "android_runtime_execution_performed": runtime_started,
         "quest_device_execution_performed": False,
         "network_required": False,
         "log_privacy": {
@@ -269,6 +275,7 @@ def build_evidence(
             "raw_process_logcat_uploaded": False,
             "diagnostic_lines_require_full_grammar_match": True,
             "translated_text_allowed_in_diagnostics": False,
+            "raw_command_stderr_in_failure_evidence": False,
         },
         "files": {"sanitized_diagnostics": DIAGNOSTIC_FILE_NAME},
     }
@@ -309,6 +316,7 @@ def main() -> None:
     abis: List[str] = []
     activity: str | None = None
     pid: str | None = None
+    runtime_started = False
     logcat = ""
     readiness = readiness_from_logcat(logcat)
 
@@ -333,6 +341,7 @@ def main() -> None:
         activity = resolve_main_activity(args.adb, serial, args.package)
         _adb(args.adb, serial, "shell", "am", "start", "-W", "-n", activity, timeout_seconds=60.0)
         pid = wait_for_pid(args.adb, serial, args.package, min(30.0, args.smoke_timeout_seconds))
+        runtime_started = True
         logcat, readiness = wait_for_pass(args.adb, serial, args.package, pid, args.smoke_timeout_seconds)
 
         required = (
@@ -340,6 +349,7 @@ def main() -> None:
             "exact_reference_match_observed",
             "product_translation_gate_observed",
             "device_resident_backend_observed",
+            "successful_pipeline_state_observed",
         )
         if not all(readiness[name] for name in required):
             missing = [name for name in required if not readiness[name]]
@@ -356,6 +366,7 @@ def main() -> None:
             android_release=android_release,
             sdk=sdk,
             activity=activity,
+            runtime_started=runtime_started,
             readiness=readiness,
         )
         evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -380,6 +391,7 @@ def main() -> None:
             android_release=android_release,
             sdk=sdk,
             activity=activity,
+            runtime_started=runtime_started,
             readiness=readiness,
             error=error,
         )
