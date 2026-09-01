@@ -13,8 +13,8 @@ namespace PhraseLayer.Unity.Editor
     /// <summary>
     /// Android ARM64 IL2CPP build used only for the Quest Read Mode hardware/visual vertical-slice gate.
     ///
-    /// This intentionally keeps the demo dictionary translation path so camera/OCR, surface fitting, masking and
-    /// Japanese world-text rendering can be validated independently of Marian. Evidence therefore records
+    /// This intentionally keeps the demo dictionary translation path so camera/OCR, MRUK live-depth surface fitting,
+    /// masking and Japanese world-text rendering can be validated independently of Marian. Evidence therefore records
     /// product_translation_gate=false and translation_runtime=DemoDictionaryFixture; this build must never be
     /// presented as the final offline NMT product build.
     /// </summary>
@@ -88,7 +88,7 @@ namespace PhraseLayer.Unity.Editor
             Debug.Log(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "PhraseLayer Read Mode Quest fixture Android build PASS: {0}; bytes={1}; time={2}; runtime=PaddleOCR+DemoDictionaryFixture; product_translation_gate=false.",
+                    "PhraseLayer Read Mode Quest fixture Android build PASS: {0}; bytes={1}; time={2}; runtime=PaddleOCR+MRUKEnvironmentRaycast+DemoDictionaryFixture; product_translation_gate=false.",
                     outputPath,
                     new FileInfo(outputPath).Length,
                     summary.totalTime));
@@ -170,7 +170,7 @@ namespace PhraseLayer.Unity.Editor
             var sceneJson = string.Join(",", scenes.Select(scene => "\"" + EscapeJson(scene) + "\""));
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-quest-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"translation_runtime\": \"DemoDictionaryFixture\",\n  \"product_translation_gate\": false,\n  \"quest_read_mode_smoke_autorun\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"visual_asset_evidence_file\": \"{2}\",\n  \"visual_asset_evidence_size_bytes\": {3},\n  \"ocr_asset_manifest_file\": \"{4}\",\n  \"ocr_asset_manifest_size_bytes\": {5},\n  \"result\": \"{6}\",\n  \"total_errors\": {7},\n  \"total_warnings\": {8},\n  \"total_size_bytes_reported\": {9},\n  \"apk_size_bytes\": {10},\n  \"elapsed_seconds\": {11:F6},\n  \"scenes\": [{12}]\n}}\n",
+                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-quest-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"surface_runtime\": \"MRUKEnvironmentRaycast\",\n  \"translation_runtime\": \"DemoDictionaryFixture\",\n  \"product_translation_gate\": false,\n  \"quest_read_mode_smoke_autorun\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"visual_asset_evidence_file\": \"{2}\",\n  \"visual_asset_evidence_size_bytes\": {3},\n  \"ocr_asset_manifest_file\": \"{4}\",\n  \"ocr_asset_manifest_size_bytes\": {5},\n  \"result\": \"{6}\",\n  \"total_errors\": {7},\n  \"total_warnings\": {8},\n  \"total_size_bytes_reported\": {9},\n  \"apk_size_bytes\": {10},\n  \"elapsed_seconds\": {11:F6},\n  \"scenes\": [{12}]\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Android)),
                 EscapeJson(visualEvidence.Name),
