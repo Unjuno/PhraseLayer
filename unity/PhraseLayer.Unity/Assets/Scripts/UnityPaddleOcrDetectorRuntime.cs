@@ -39,8 +39,9 @@ namespace PhraseLayer.Unity
     /// - a FunctionalGraph prepends the reviewed PP-OCR mean/std normalization to the detector model;
     /// - only the detector probability-map output is synchronously copied back to CPU for DB postprocessing.
     ///
-    /// This removes Graphics.Blit/Texture2D.ReadPixels from the live detector-input path so the passthrough
-    /// texture is sampled immediately when Execute is called instead of after a blocking CPU image readback.
+    /// This removes Graphics.Blit/Texture2D.ReadPixels from the live detector-input path. Exact camera pixel/pose
+    /// synchronization still requires real Quest timing evidence because the Meta texture producer and GPU submission
+    /// are asynchronous even though no CPU image readback now delays detector input submission.
     /// </summary>
     public sealed class UnityPaddleOcrDetectorRuntime : IDisposable
     {
@@ -80,6 +81,48 @@ namespace PhraseLayer.Unity
         public bool UsesGpuTexturePreprocessing => true;
 
         /// <summary>
+        /// Returns the exact TextureConverter transform used by the production detector input path. Editor parity
+        /// probes call this method too so channel order and row-origin verification cannot silently drift from runtime.
+        /// </summary>
+        public static TextureTransform CreateReviewedTextureTransform(bool flipReadbackRows = true)
+        {
+            return new TextureTransform()
+                .SetTensorLayout(TensorLayout.NCHW)
+                .SetCoordOrigin(flipReadbackRows ? CoordOrigin.TopLeft : CoordOrigin.BottomLeft)
+                .SetChannelSwizzle(ChannelSwizzle.BGRA);
+        }
+
+        /// <summary>
+        /// Applies the exact reviewed PP-OCR detector normalization used ahead of the imported model. This remains
+        /// public inside the Unity adapter so the real-Unity parity probe can compile the same functional expression.
+        /// </summary>
+        public static FunctionalTensor ApplyReviewedNormalization(FunctionalTensor input)
+        {
+            if (input == null) throw new ArgumentNullException(nameof(input));
+
+            // TextureConverter produces BGR values in [0,1]. Match the existing reviewed CPU contract exactly:
+            // normalized[channel] = (value - mean[channel]) / std[channel].
+            var mean = Functional.Constant(
+                new TensorShape(1, 3, 1, 1),
+                new[]
+                {
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(0),
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(1),
+                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(2)
+                });
+            var standardDeviation = Functional.Constant(
+                new TensorShape(1, 3, 1, 1),
+                new[]
+                {
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(0),
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(1),
+                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(2)
+                });
+
+            return (input - mean) / standardDeviation;
+        }
+
+        /// <summary>
         /// Runs the detector and returns its first output as a flat row-major float array.
         /// This method remains Unity-thread-affine because TextureConverter and Worker scheduling submit graphics work.
         /// </summary>
@@ -116,11 +159,7 @@ namespace PhraseLayer.Unity
             var inputTensor = new Tensor<float>(inputShape);
             try
             {
-                var textureTransform = new TextureTransform()
-                    .SetTensorLayout(TensorLayout.NCHW)
-                    .SetCoordOrigin(flipReadbackRows ? CoordOrigin.TopLeft : CoordOrigin.BottomLeft)
-                    .SetChannelSwizzle(ChannelSwizzle.BGRA);
-
+                var textureTransform = CreateReviewedTextureTransform(flipReadbackRows);
                 TextureConverter.ToTensor(texture, inputTensor, textureTransform);
                 worker.Schedule(inputTensor);
 
@@ -153,27 +192,7 @@ namespace PhraseLayer.Unity
         {
             var graph = new FunctionalGraph();
             var input = graph.AddInput(sourceModel, 0);
-
-            // TextureConverter produces BGR values in [0,1]. Match the existing reviewed CPU contract exactly:
-            // normalized[channel] = (value - mean[channel]) / std[channel].
-            var mean = Functional.Constant(
-                new TensorShape(1, 3, 1, 1),
-                new[]
-                {
-                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(0),
-                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(1),
-                    PaddleOcrV6TinyDetectionPreprocess.MeanForChannel(2)
-                });
-            var standardDeviation = Functional.Constant(
-                new TensorShape(1, 3, 1, 1),
-                new[]
-                {
-                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(0),
-                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(1),
-                    PaddleOcrV6TinyDetectionPreprocess.StandardDeviationForChannel(2)
-                });
-
-            var normalized = (input - mean) / standardDeviation;
+            var normalized = ApplyReviewedNormalization(input);
             var outputs = Functional.Forward(sourceModel, normalized);
             graph.AddOutputs(outputs);
             return graph.Compile();
