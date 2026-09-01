@@ -32,7 +32,7 @@ SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"
 CAPTURED_POSE_MARKER = "captured_pose_projection=true"
 FATAL_MARKER = "FATAL EXCEPTION"
 DIAGNOSTIC_FILE_NAME = "quest-read-mode-diagnostics.txt"
-SAFE_DIAGNOSTIC_MARKERS = (
+DIAGNOSTIC_START_MARKERS = (
     "PhraseLayer Quest OCR smoke test ",
     "attempts=",
     "camera_state=",
@@ -45,6 +45,25 @@ SAFE_DIAGNOSTIC_MARKERS = (
     "mask_render_success=",
     "text_render_success=",
     "ocr_stage=",
+)
+_NUM = r"[0-9]+(?:\.[0-9]+)?"
+_TOKEN = r"[A-Za-z0-9_.-]+"
+SAFE_DIAGNOSTIC_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"^PhraseLayer Quest OCR smoke test (?:PASS|FAIL_TIMEOUT|FAIL_CAMERA|FAIL_EXCEPTION)$",
+        rf"^attempts=[0-9]+ total_ms={_NUM} last_attempt_ms={_NUM}$",
+        rf"^camera_state={_TOKEN} schedule_status={_TOKEN} presented=(?:true|false) frame_timestamp_us=(?:[0-9]+|unobserved)$",
+        rf"^regions=[0-9]+ overall_confidence={_NUM} text_length=[0-9]+$",
+        r"^PhraseLayer Quest Read Mode smoke test (?:PASS|FAIL_TIMEOUT|FAIL_EXCEPTION)$",
+        rf"^elapsed_ms={_NUM} read_processed=[0-9]+ read_superseded=[0-9]+ read_stale=[0-9]+$",
+        r"^camera_timestamp_source=MetaPassthroughCameraAccess\.Timestamp captured_pose_projection=(?:true|false) captured_pose_rays=[0-9]+ stable_capture_metadata=[0-9]+ unstable_capture_metadata=[0-9]+ pixel_pose_sync_verified=false$",
+        rf"^surface_runtime=(?:MRUKEnvironmentRaycast|OtherOrUnconfigured) environment_abi_validated=(?:true|false) last_environment_status={_TOKEN} last_normal_confidence=(?:{_NUM}|unobserved)$",
+        r"^layout_ready=[0-9]+ layout_failed=[0-9]+ tracks_observed=[0-9]+ tracks_retained=[0-9]+$",
+        r"^mask_render_success=(?:true|false) masks_active=[0-9]+ masks_eligible=[0-9]+ masks_suppressed=[0-9]+$",
+        rf"^text_render_success=(?:true|false) rendered_views=[0-9]+ max_observed_planarity_error_m={_NUM}$",
+        r"^ocr_stage=(?:PASS|FAIL_TIMEOUT|FAIL_CAMERA|FAIL_OR_INCOMPLETE|unobserved)$",
+    )
 )
 
 
@@ -118,17 +137,22 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
 
 
 def sanitize_logcat_diagnostics(logcat: str) -> str:
-    """Extract only reviewed PhraseLayer diagnostic fields; never persist arbitrary app log messages."""
+    """Persist only exact reviewed diagnostic grammars; arbitrary app text remains memory-only."""
     safe_lines: List[str] = []
     for raw in logcat.splitlines():
         if FATAL_MARKER in raw:
             safe_lines.append(FATAL_MARKER)
             continue
-        for marker in SAFE_DIAGNOSTIC_MARKERS:
+        candidate = None
+        for marker in DIAGNOSTIC_START_MARKERS:
             index = raw.find(marker)
             if index >= 0:
-                safe_lines.append(raw[index:].strip())
+                candidate = raw[index:].strip()
                 break
+        if candidate is None:
+            continue
+        if any(pattern.fullmatch(candidate) for pattern in SAFE_DIAGNOSTIC_PATTERNS):
+            safe_lines.append(candidate)
     if not safe_lines:
         return ""
     return "\n".join(safe_lines) + "\n"
@@ -311,6 +335,7 @@ def build_evidence(
             "raw_process_logcat_written_to_disk": False,
             "raw_process_logcat_uploaded": False,
             "sanitized_diagnostics_allowlist": True,
+            "diagnostic_lines_require_full_grammar_match": True,
             "recognized_text_allowed_in_diagnostics": False,
             "display_text_allowed_in_diagnostics": False,
         },
@@ -321,7 +346,7 @@ def build_evidence(
             "PP-OCR detector input uses GPU TextureConverter plus functional mean/std normalization without CPU image "
             "readback. Exact end-to-end camera pixel/pose synchronization remains unverified until calibrated Quest "
             "exposure/timing evidence is captured. Raw process logcat remains runner-memory-only; uploaded diagnostics "
-            "contain reviewed counters/status markers only. Marian product translation, visual quality, stereo comfort, "
+            "must fully match reviewed counter/status grammars. Marian product translation, visual quality, stereo comfort, "
             "endurance, thermal and performance remain separate gates."
         ),
     }
