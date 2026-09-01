@@ -41,6 +41,7 @@ jobs:
       - run: python tools/test_prepare_unity_marian_tokenizer_assets.py
       - run: python tools/test_generate_marian_reference_fixture.py
       - run: python tools/validate_marian_unity_product_gate.py
+      - run: python tools/validate_marian_android_fixture_gate.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_validate_marian_lock_evidence.py
