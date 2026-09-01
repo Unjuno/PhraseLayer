@@ -44,6 +44,15 @@ namespace PhraseLayer.Unity
 
         private void OnEnable()
         {
+#if UNITY_EDITOR
+            // Adding this component while generating/verifying a scene must not open the host workstation's
+            // microphone. Capture begins when entering Play Mode or in the Android player instead.
+            if (!Application.isPlaying)
+            {
+                lastStatus = "Microphone capture deferred until Play Mode.";
+                return;
+            }
+#endif
             if (startOnEnable)
             {
                 try
