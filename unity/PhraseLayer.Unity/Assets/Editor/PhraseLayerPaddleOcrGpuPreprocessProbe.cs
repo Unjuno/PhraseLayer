@@ -26,6 +26,7 @@ namespace PhraseLayer.Unity.Editor
         private const float RawTolerance = 2.0f / 255.0f;
         private const float NormalizedTolerance = 0.04f;
 
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
         private static readonly Vector2Int[] SamplePoints =
         {
             new Vector2Int(0, 0),
@@ -36,6 +37,7 @@ namespace PhraseLayer.Unity.Editor
             new Vector2Int(37, 113),
             new Vector2Int(521, 289),
         };
+#endif
 
         [MenuItem("PhraseLayer/PP-OCR/Run GPU Preprocess Parity Probe")]
         public static void Run()
