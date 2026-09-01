@@ -41,6 +41,7 @@ jobs:
         run: |
           python tools/validate_read_mode_mask_gate.py
           python tools/validate_mruk_environment_raycast_gate.py
+          python tools/validate_quest_project_setup_gate.py
           python tools/validate_quest_read_mode_smoke_harness.py
           python tools/validate_read_mode_visual_asset_staging.py
           python tools/validate_quest_read_mode_device_gate.py
@@ -132,11 +133,16 @@ jobs:
           assert data["purpose"] == "phrase-layer-quest-read-mode-hardware-visual-smoke"
           assert data["readiness"]["ocr_smoke_passed"] is True
           assert data["readiness"]["read_mode_smoke_passed"] is True
+          assert data["readiness"]["mruk_environment_raycast_observed"] is True
           assert data["readiness"]["fatal_exception"] is False
+          assert data["permissions"]["android.permission.CAMERA"]["declared"] is True
+          assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True
           assert data["ocr_runtime"] == "PaddleOCR"
           assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
           assert data["translation_runtime"] == "DemoDictionaryFixture"
           assert data["product_translation_gate"] is False
+          assert data["camera_timestamp_source"] == "unity-realtime-observation"
+          assert data["camera_hardware_timestamp_pose_sync_verified"] is False
           print(json.dumps(data, sort_keys=True))
           PY
 
