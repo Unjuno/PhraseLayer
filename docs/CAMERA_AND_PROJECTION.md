@@ -30,11 +30,25 @@ Any denied permission, start failure, missing frame, or backend exception moves 
 
 The Unity/Meta adapter maps the platform boundary as follows:
 
-- `ICameraPermissionService` → the platform Passthrough-camera permission mechanism;
+- `ICameraPermissionService` → `android.permission.CAMERA` + `horizonos.permission.HEADSET_CAMERA` on Android;
 - `ICameraStreamBackend.IsPlaying` → reflected `PassthroughCameraAccess.IsPlaying`;
-- stream capture → reflected `PassthroughCameraAccess.GetTexture()` carried as `UnityTextureFramePayload`.
+- stream capture → reflected `PassthroughCameraAccess.GetTexture()` carried as `UnityTextureFramePayload`;
+- viewport rays → reflected `PassthroughCameraAccess.ViewportPointToRay(Vector2)`.
 
-Core does not import `Meta.XR`, `OVRPermissionsRequester`, `Texture2D`, or Android types.
+Core does not import `Meta.XR`, Android permission types, Unity textures, or MRUK runtime types.
+
+### Camera timestamp status
+
+`MetaPassthroughCameraBridge` currently timestamps each observed texture with `Time.realtimeSinceStartupAsDouble` when PhraseLayer receives the frame. This is **local observation time**, not a verified Passthrough Camera hardware timestamp.
+
+The Quest Read Mode evidence therefore records:
+
+```text
+camera_timestamp_source=unity-realtime-observation
+camera_hardware_timestamp_pose_sync_verified=false
+```
+
+Hardware timestamp / camera-pose / depth synchronization remains a separate device gate. The current timestamp must not be interpreted as sensor-time registration evidence.
 
 ## Viewport to world
 
@@ -54,13 +68,39 @@ SurfaceHit
 ProjectedAssistanceTarget
 ```
 
-`MetaPassthroughCameraBridge` implements `IViewportRayProvider` by delegating to the real Passthrough Camera API `ViewportPointToRay` call. PhraseLayer does not reconstruct a ray from an assumed symmetric field of view and does not assume viewport center is the optical axis.
+`MetaPassthroughCameraBridge` implements `IViewportRayProvider` by delegating to the real Passthrough Camera `ViewportPointToRay` call. PhraseLayer does not reconstruct a ray from an assumed symmetric field of view and does not assume viewport center is the optical axis.
 
-`UnityPhysicsSurfaceRaycaster` implements `ISurfaceRaycaster` over `UnityEngine.Physics.Raycast`. It normalizes the Core ray direction, validates finite coordinates and a positive maximum range, and converts a successful Unity `RaycastHit` into the platform-neutral `SurfaceHit` contract.
+### Quest path: MRUK live environment depth
 
-The adapter deliberately does **not** assume where physical-environment colliders come from. A scene may provide controlled test colliders or a reviewed Quest/MR environment-mesh path. If no valid collider is hit, projection fails as `SurfaceNotFound` rather than inventing depth.
+The generated Quest demo/fixture scene uses:
 
-`UnitySpatialProjectionBehaviour` connects `MetaPassthroughCameraBridge` + `UnityPhysicsSurfaceRaycaster` to the platform-neutral projection and world-text layout planners.
+```text
+Meta.XR.EnvironmentRaycastManager
+        ↓
+UnityEnvironmentSurfaceRaycaster
+        ↓
+ISurfaceRaycaster
+```
+
+`UnityEnvironmentSurfaceRaycaster` validates the pinned MRUK API boundary at runtime before it can report a hit:
+
+- exact manager type `Meta.XR.EnvironmentRaycastManager`;
+- static `bool IsSupported`;
+- `bool Raycast(Ray, out EnvironmentRaycastHit, float)`;
+- hit point and normal;
+- optional normal-confidence and status diagnostics.
+
+A false/unsupported/not-ready environment raycast remains `SurfaceNotFound`; PhraseLayer never fabricates depth. The Quest smoke gate additionally requires `projection.UsesEnvironmentRaycast` and a successfully validated MRUK ABI, so a Unity Physics fallback cannot accidentally satisfy the hardware gate.
+
+This path does **not** require a prior room Scene scan or generated Physics environment colliders. It is intended to use the Quest live environment-depth raycast supplied by the pinned Meta stack.
+
+### Controlled geometry path
+
+`UnityPhysicsSurfaceRaycaster` remains available for editor tests, controlled fixtures, and explicit caller-provided geometry. It normalizes the Core ray direction and converts a successful `Physics.Raycast` into `SurfaceHit`.
+
+It is not the default Quest fixture path and cannot satisfy `QuestReadModeSmokeTestBehaviour` by itself.
+
+`UnitySpatialProjectionBehaviour` can consume either adapter through the same Core `ISurfaceRaycaster` boundary, but chooses the MRUK environment adapter when it is configured.
 
 ## Four-corner physical text-plane fitting
 
@@ -95,9 +135,21 @@ These are implementation defaults, **not Quest-validated perceptual thresholds**
 
 Every corner must have both a valid viewport ray and a surface hit. Missing corners, divergent normals, degenerate extents, or excessive non-planarity prevent in-place layout. PhraseLayer does not extrapolate a missing corner from the center hit.
 
-Collider normal sign is not used to flip recognized text. `WorldTextSurface.Right` and `.Up` preserve viewport orientation, while `.Normal` is canonicalized to the corresponding right-handed layout frame. This prevents a collider's front/back convention from silently mirroring or inverting the OCR text orientation.
+Surface-normal sign is not used to flip recognized text. `WorldTextSurface.Right` and `.Up` preserve viewport orientation, while `.Normal` is canonicalized to the corresponding right-handed layout frame. This prevents a surface provider's front/back convention from silently mirroring or inverting the OCR text orientation.
 
-`UnityWorldTextLayoutDebugBehaviour` can draw the fitted metric envelope in world space for Quest registration checks. It is a verification visualization, not the final text replacement renderer.
+`UnityWorldTextLayoutDebugBehaviour` can draw the fitted metric envelope in world space for registration checks. It is a verification visualization, not the final text replacement renderer.
+
+## Clean-checkout Quest project setup
+
+The repository intentionally does not commit machine-generated Unity XR settings as authoritative evidence. Before the Read Mode fixture build, `PhraseLayerQuestProjectSetup` invokes the pinned Meta Project Setup Tool's public `OVRProjectSetup.FixAllAsync(BuildTargetGroup.Android)` path in a dedicated Unity process, saves the resulting Required Quest settings, then starts a fresh Unity process for the Android build.
+
+The reviewed package pins currently include:
+
+- MRUK `85.0.0`;
+- Unity OpenXR `1.15.1`;
+- Unity OpenXR: Meta `2.2.1`.
+
+Host CI verifies this setup/build ordering structurally. Only a real self-hosted Unity run proves that the pinned Meta packages still apply valid Android Quest settings.
 
 ## Conservative overlay policy
 
@@ -116,12 +168,35 @@ This is deliberately conservative. A translation should not be painted over the 
 
 Later UX experiments may introduce a screen-space fallback, but it should be a distinct rendering mode rather than silently pretending world registration succeeded.
 
-## What remains platform-specific / unverified
+## What is implemented but not yet Quest-proven
 
-- Quest runtime permission behavior and camera timestamps;
-- actual Quest environment collider/depth source used by `UnityPhysicsSurfaceRaycaster`;
-- temporal smoothing/tracking across successive OCR observations;
-- the production world-space Japanese text renderer, font sizing, occlusion/masking, and source-text covering;
-- real Quest device registration error and performance/thermal measurements.
+The branch now contains a reproducible fixture path for:
 
-A Unity Physics adapter or a successful four-corner fit in host tests is **not** evidence that Quest environment surfaces are available or correctly registered. That claim requires a real-device test with the chosen environment-mesh/depth source.
+```text
+Quest Passthrough Camera
+        ↓
+PP-OCR
+        ↓
+adaptive Read Mode planning
+        ↓
+semantic ↔ OCR geometry
+        ↓
+MRUK live-depth four-corner fit
+        ↓
+world tracking
+        ↓
+source mask + Japanese world text
+```
+
+`QuestReadModeSmokeTestBehaviour` requires the real OCR smoke, MRUK environment raycast, layout-ready world text, current observed tracks, source-mask rendering, and world-text rendering before emitting PASS.
+
+Still unverified until a real Quest 3 workflow run produces evidence:
+
+- actual camera permission/runtime behavior;
+- actual MRUK environment-depth availability and registration error;
+- hardware camera timestamp / pose / depth synchronization;
+- stereo visual alignment and source-mask quality;
+- Japanese font appearance on headset;
+- frame-time, memory, thermal, and battery behavior.
+
+Host tests and Unity shell compilation are not substitutes for those measurements.
