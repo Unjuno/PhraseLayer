@@ -4,7 +4,7 @@
 This gate intentionally validates the hardware/visual vertical slice only. The APK uses the explicit
 DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR, captured-pose
 projection, and the full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese
-world-text marker. Raw adb serials are never written to uploaded evidence.
+world-text marker. Raw adb serials and raw process logcat are never written to uploaded evidence.
 """
 
 from __future__ import annotations
@@ -31,6 +31,21 @@ READ_MODE_EXCEPTION_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_EXCEPT
 SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"
 CAPTURED_POSE_MARKER = "captured_pose_projection=true"
 FATAL_MARKER = "FATAL EXCEPTION"
+DIAGNOSTIC_FILE_NAME = "quest-read-mode-diagnostics.txt"
+SAFE_DIAGNOSTIC_MARKERS = (
+    "PhraseLayer Quest OCR smoke test ",
+    "attempts=",
+    "camera_state=",
+    "regions=",
+    "PhraseLayer Quest Read Mode smoke test ",
+    "elapsed_ms=",
+    "camera_timestamp_source=",
+    "surface_runtime=",
+    "layout_ready=",
+    "mask_render_success=",
+    "text_render_success=",
+    "ocr_stage=",
+)
 
 
 class SmokeError(RuntimeError):
@@ -52,7 +67,7 @@ def parse_adb_devices(output: str) -> List[str]:
 def choose_serial(devices: Sequence[str], requested: str | None) -> str:
     if requested:
         if requested not in devices:
-            raise SmokeError(f"requested adb device {requested!r} is not connected/authorized")
+            raise SmokeError("requested adb device is not connected/authorized")
         return requested
     if len(devices) == 1:
         return devices[0]
@@ -100,6 +115,30 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
         "read_mode_exception": READ_MODE_EXCEPTION_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
     }
+
+
+def sanitize_logcat_diagnostics(logcat: str) -> str:
+    """Extract only reviewed PhraseLayer diagnostic fields; never persist arbitrary app log messages."""
+    safe_lines: List[str] = []
+    for raw in logcat.splitlines():
+        if FATAL_MARKER in raw:
+            safe_lines.append(FATAL_MARKER)
+            continue
+        for marker in SAFE_DIAGNOSTIC_MARKERS:
+            index = raw.find(marker)
+            if index >= 0:
+                safe_lines.append(raw[index:].strip())
+                break
+    if not safe_lines:
+        return ""
+    return "\n".join(safe_lines) + "\n"
+
+
+def redact_failure_message(error: BaseException, serial: str | None) -> str:
+    message = str(error)
+    if serial:
+        message = message.replace(serial, "<redacted-adb-serial>")
+    return message
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -229,7 +268,7 @@ def build_evidence(
                 device[key] = "unobserved"
 
     evidence: Dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "purpose": "phrase-layer-quest-read-mode-hardware-visual-smoke",
         "status": status,
         "started_at_utc": started.isoformat(),
@@ -268,20 +307,28 @@ def build_evidence(
         "camera_pixel_pose_sync_verified": False,
         "expected_device_model": args.expected_device_model,
         "device": device,
-        "files": {"logcat": "quest-read-mode-logcat.txt"},
+        "log_privacy": {
+            "raw_process_logcat_written_to_disk": False,
+            "raw_process_logcat_uploaded": False,
+            "sanitized_diagnostics_allowlist": True,
+            "recognized_text_allowed_in_diagnostics": False,
+            "display_text_allowed_in_diagnostics": False,
+        },
+        "files": {"sanitized_diagnostics": DIAGNOSTIC_FILE_NAME},
         "scope": (
             "Real Quest camera/OCR + captured camera-pose projection + MRUK live-depth surface fit/tracking + "
             "source mask + Japanese world-text vertical slice. Translation remains the explicit demo dictionary fixture. "
             "PP-OCR detector input uses GPU TextureConverter plus functional mean/std normalization without CPU image "
             "readback. Exact end-to-end camera pixel/pose synchronization remains unverified until calibrated Quest "
-            "exposure/timing evidence is captured. Marian product translation, visual quality, stereo comfort, endurance, "
-            "thermal and performance remain separate gates."
+            "exposure/timing evidence is captured. Raw process logcat remains runner-memory-only; uploaded diagnostics "
+            "contain reviewed counters/status markers only. Marian product translation, visual quality, stereo comfort, "
+            "endurance, thermal and performance remain separate gates."
         ),
     }
     if error is not None:
         evidence["failure"] = {
             "type": type(error).__name__,
-            "message": str(error),
+            "message": redact_failure_message(error, serial),
         }
     return evidence
 
@@ -303,7 +350,7 @@ def main() -> None:
         raise SmokeError("smoke timeout must be positive")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = args.output_dir / "quest-read-mode-logcat.txt"
+    diagnostics_path = args.output_dir / DIAGNOSTIC_FILE_NAME
     evidence_path = args.output_dir / "quest-read-mode-smoke.json"
     started = dt.datetime.now(dt.timezone.utc)
 
@@ -410,7 +457,7 @@ def main() -> None:
         evidence_path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         raise
     finally:
-        log_path.write_text(logcat, encoding="utf-8")
+        diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat), encoding="utf-8")
 
 
 if __name__ == "__main__":
