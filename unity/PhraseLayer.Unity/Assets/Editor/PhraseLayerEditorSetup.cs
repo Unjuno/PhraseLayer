@@ -28,6 +28,11 @@ namespace PhraseLayer.Unity.Editor
             var worldTextTracking = root.AddComponent<UnityWorldTextTrackingBehaviour>();
             var worldTextRenderer = root.AddComponent<UnityWorldTextRendererBehaviour>();
             var liveReadMode = root.AddComponent<UnityLiveReadModeBehaviour>();
+
+            var asrBootstrap = root.AddComponent<UnityMoonshineAsrBootstrapBehaviour>();
+            var microphoneSource = root.AddComponent<UnityMicrophoneUtteranceSourceBehaviour>();
+            var liveListenMode = root.AddComponent<UnityLiveListenModeBehaviour>();
+
             var metaCamera = AddMetaPassthroughCameraAccess(root);
 
             // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
@@ -41,6 +46,11 @@ namespace PhraseLayer.Unity.Editor
             liveReadMode.SetSceneReferences(presenter, worldTextTracking);
             demo.SetLiveReadMode(liveReadMode);
 
+            // ASR ModelAssets are intentionally not assigned here. They are git-ignored deployment inputs and
+            // must pass PhraseLayerLocalAsrAssets verification before assignment. The stable scene relationship
+            // between microphone, ASR bootstrap, demo language pipeline, and live coordinator can be serialized now.
+            liveListenMode.SetSceneReferences(demo, asrBootstrap, microphoneSource);
+
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
             if (!EditorSceneManager.SaveScene(scene, DemoScenePath))
                 throw new IOException("Failed to save PhraseLayer demo scene.");
@@ -48,7 +58,8 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based; assign a reviewed Japanese-capable Font before rendering: " +
+                "PhraseLayer demo scene created with Read Mode (Meta camera -> OCR -> semantic geometry -> world text) and Listen Mode (microphone -> Moonshine bootstrap -> adaptive language pipeline) wiring. " +
+                "The demo language pipeline remains dictionary-based until the Marian bootstrap is explicitly installed, Moonshine ModelAssets must be assigned through the verified local-ASR tool, and a reviewed Japanese-capable Font must be assigned before final rendering: " +
                 DemoScenePath);
         }
 
