@@ -15,8 +15,9 @@ namespace PhraseLayer.Unity.Editor
     /// configured through the Unity API on the machine that actually owns the Android/IL2CPP modules rather than
     /// by committing a generated ProjectSettings.asset from an unverified environment.
     ///
-    /// The build includes the deterministic demo scene and, when the separately verified local Moonshine assets
-    /// are staged, assigns them to the scene bootstrap before building. It does not silently download model files.
+    /// The build includes the deterministic demo scene and requires separately verified local Marian translation
+    /// plus Moonshine ASR deployment assets before building. It does not silently download model files or permit
+    /// the dictionary fallback in a build reported as the real Listen Mode product gate.
     /// </summary>
     public static class PhraseLayerAndroidBuild
     {
@@ -79,7 +80,7 @@ namespace PhraseLayer.Unity.Editor
             Debug.Log(
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "PhraseLayer Android ARM64 IL2CPP build PASS: {0}; bytes={1}; time={2}; warnings={3}.",
+                    "PhraseLayer Android ARM64 IL2CPP build PASS: {0}; bytes={1}; time={2}; warnings={3}; runtime=Marian+Moonshine.",
                     outputPath,
                     new FileInfo(outputPath).Length,
                     summary.totalTime,
@@ -138,11 +139,12 @@ namespace PhraseLayer.Unity.Editor
             PhraseLayerEditorSetup.CreateDemoScene();
             AssetDatabase.Refresh();
 
-            // Local ASR deployment assets are required for the Listen Mode build gate. They must have been staged
-            // by the hash-verifying Python tools before this Unity invocation.
+            // Both offline model stacks are required for the product-level Listen Mode build. Each assignment
+            // performs real-Unity import/runtime checks and fails loudly if verified local assets are absent.
+            PhraseLayerLocalTranslationAssets.AssignLocalAssetsToDemo();
             PhraseLayerLocalAsrAssets.AssignLocalAssetsToSceneBootstrap();
             if (!EditorSceneManager.SaveOpenScenes())
-                throw new IOException("Failed to save PhraseLayer scenes after assigning verified ASR assets.");
+                throw new IOException("Failed to save PhraseLayer scenes after assigning verified offline model assets.");
             AssetDatabase.SaveAssets();
         }
 
@@ -162,7 +164,7 @@ namespace PhraseLayer.Unity.Editor
             var sceneJson = string.Join(",", scenes.Select(scene => "\"" + EscapeJson(scene) + "\""));
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-android-arm64-il2cpp-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"result\": \"{2}\",\n  \"total_errors\": {3},\n  \"total_warnings\": {4},\n  \"total_size_bytes_reported\": {5},\n  \"apk_size_bytes\": {6},\n  \"elapsed_seconds\": {7:F6},\n  \"scenes\": [{8}]\n}}\n",
+                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-android-arm64-il2cpp-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"translation_runtime\": \"Marian\",\n  \"asr_runtime\": \"MoonshineV1\",\n  \"dictionary_fallback_allowed\": false,\n  \"result\": \"{2}\",\n  \"total_errors\": {3},\n  \"total_warnings\": {4},\n  \"total_size_bytes_reported\": {5},\n  \"apk_size_bytes\": {6},\n  \"elapsed_seconds\": {7:F6},\n  \"scenes\": [{8}]\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Android)),
                 EscapeJson(summary.result.ToString()),
