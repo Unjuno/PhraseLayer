@@ -66,15 +66,20 @@ namespace PhraseLayer.Unity
             isRunning = true;
             lastPassed = false;
             var started = Time.realtimeSinceStartupAsDouble;
+            var bootstrapReady = false;
+            var translationOverride = false;
             try
             {
                 InitializeBootstrap();
-                if (!bootstrap.IsSupported || !bootstrap.IsReady)
+                bootstrapReady = bootstrap.IsSupported && bootstrap.IsReady;
+                if (!bootstrapReady)
                 {
                     throw new InvalidOperationException(
                         "Marian Android runtime smoke requires an initialized product translation bootstrap.");
                 }
-                if (!demo.UsesTranslationEngineOverride)
+
+                translationOverride = demo.UsesTranslationEngineOverride;
+                if (!translationOverride)
                 {
                     throw new InvalidOperationException(
                         "Marian Android runtime smoke refuses to run against the demo dictionary fallback.");
@@ -112,6 +117,8 @@ namespace PhraseLayer.Unity
                 lastReport = BuildReport(
                     "PASS",
                     Time.realtimeSinceStartupAsDouble - started,
+                    bootstrapReady,
+                    translationOverride,
                     plan.Assistance.Decisions.Count,
                     plan.Segments.Count,
                     plan.DisplayText.Length,
@@ -124,6 +131,8 @@ namespace PhraseLayer.Unity
                 lastReport = BuildReport(
                     "FAIL_EXCEPTION",
                     Time.realtimeSinceStartupAsDouble - started,
+                    bootstrapReady,
+                    translationOverride,
                     0,
                     0,
                     0,
@@ -185,6 +194,8 @@ namespace PhraseLayer.Unity
         private static string BuildReport(
             string status,
             double elapsedSeconds,
+            bool bootstrapReady,
+            bool translationOverride,
             int assistedUnits,
             int segments,
             int displayLength,
@@ -193,8 +204,8 @@ namespace PhraseLayer.Unity
             var builder = new StringBuilder(512);
             builder.AppendLine("PhraseLayer Marian Android runtime smoke " + status);
             builder.Append("elapsed_ms=").Append((elapsedSeconds * 1000.0).ToString("F1"))
-                .Append(" bootstrap_ready=true")
-                .Append(" translation_override=true")
+                .Append(" bootstrap_ready=").Append(bootstrapReady ? "true" : "false")
+                .Append(" translation_override=").Append(translationOverride ? "true" : "false")
                 .Append(" assisted_units=").Append(assistedUnits)
                 .Append(" segments=").Append(segments)
                 .Append(" reference_match=").Append(referenceMatched ? "true" : "false")
