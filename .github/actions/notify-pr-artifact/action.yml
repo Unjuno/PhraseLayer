@@ -1,0 +1,65 @@
+name: Notify PR artifact
+description: Publish a successful workflow artifact link to the open pull request associated with the current commit.
+
+inputs:
+  github-token:
+    description: GitHub token with issues/pull-requests write permission.
+    required: true
+  artifact-url:
+    description: URL returned by actions/upload-artifact.
+    required: true
+  artifact-name:
+    description: Human-readable artifact name.
+    required: true
+  message:
+    description: Short status message placed before the artifact link.
+    required: true
+  contents:
+    description: Optional short description of the artifact contents.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Publish artifact link to associated pull request
+      uses: actions/github-script@v7
+      env:
+        PHRASELAYER_ARTIFACT_URL: ${{ inputs.artifact-url }}
+        PHRASELAYER_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        PHRASELAYER_ARTIFACT_MESSAGE: ${{ inputs.message }}
+        PHRASELAYER_ARTIFACT_CONTENTS: ${{ inputs.contents }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const pulls = await github.paginate(
+            github.rest.repos.listPullRequestsAssociatedWithCommit,
+            {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              per_page: 100,
+            },
+          );
+          const pull = pulls.find(candidate => candidate.state === 'open');
+          const lines = [
+            `@${context.actor} ${process.env.PHRASELAYER_ARTIFACT_MESSAGE}`,
+            '',
+            `Artifact \`${process.env.PHRASELAYER_ARTIFACT_NAME}\`: ${process.env.PHRASELAYER_ARTIFACT_URL}`,
+          ];
+          if (process.env.PHRASELAYER_ARTIFACT_CONTENTS) {
+            lines.push('', process.env.PHRASELAYER_ARTIFACT_CONTENTS);
+          }
+          const body = lines.join('\n');
+          if (!pull) {
+            core.summary.addHeading('Workflow artifact');
+            core.summary.addRaw(body, true);
+            await core.summary.write();
+            return;
+          }
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: pull.number,
+            body,
+          });

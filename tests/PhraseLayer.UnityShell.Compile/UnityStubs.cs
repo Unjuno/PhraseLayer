@@ -118,6 +118,24 @@ namespace UnityEngine
         public int height { get; set; }
     }
 
+    public sealed class AudioClip : Object
+    {
+        public int frequency { get; set; } = 48000;
+        public int channels { get; set; } = 1;
+        public int samples { get; set; } = 480000;
+        public bool GetData(float[] data, int offsetSamples) => true;
+    }
+
+    public static class Microphone
+    {
+        public static string[] devices { get; set; } = new[] { "Stub Microphone" };
+        public static AudioClip Start(string deviceName, bool loop, int lengthSec, int frequency) =>
+            new AudioClip { frequency = frequency, channels = 1, samples = Math.Max(1, lengthSec * frequency) };
+        public static void End(string deviceName) { }
+        public static bool IsRecording(string deviceName) => false;
+        public static int GetPosition(string deviceName) => 0;
+    }
+
     public class TextAsset : Object
     {
         public byte[] bytes { get; set; } = Array.Empty<byte>();
@@ -241,6 +259,7 @@ namespace UnityEngine
     public static class Debug
     {
         public static void Log(object message) { }
+        public static void Log(object message, Object context) { }
         public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
         public static void DrawLine(Vector3 start, Vector3 end) { }

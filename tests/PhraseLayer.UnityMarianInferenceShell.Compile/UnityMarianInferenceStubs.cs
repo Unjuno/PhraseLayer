@@ -8,6 +8,17 @@ namespace UnityEngine
     public class Component : Object { }
     public class Behaviour : Component { public bool enabled { get; set; } = true; }
     public class MonoBehaviour : Behaviour { }
+    public sealed class TextAsset : Object
+    {
+        public TextAsset() : this(Array.Empty<byte>()) { }
+        public TextAsset(byte[] value) { bytes = value ?? Array.Empty<byte>(); }
+        public byte[] bytes { get; }
+    }
+
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object => null;
+    }
 
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class SerializeField : Attribute { }

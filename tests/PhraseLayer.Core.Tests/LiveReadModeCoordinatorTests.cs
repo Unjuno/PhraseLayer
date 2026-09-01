@@ -107,6 +107,30 @@ namespace PhraseLayer.Core.Tests
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
         }
 
+        [Fact]
+        public async Task SupersedingObservationDoesNotDisposeOlderCancellationSourceWhileAdapterUnwinds()
+        {
+            var translator = new CancellationRegistrationAfterCancellationTranslationEngine();
+            using var coordinator = CreateCoordinator(translator);
+            var policy = AssistancePolicy.ForMode(AssistanceMode.Easy);
+
+            var olderTask = coordinator.SubmitAsync(
+                Frame(5_000_000),
+                new OcrObservation("hello", 0.99),
+                policy);
+            await translator.FirstCallEntered.Task;
+
+            var newer = await coordinator.SubmitAsync(
+                Frame(6_000_000),
+                new OcrObservation("world", 0.99),
+                policy);
+            var older = await olderTask;
+
+            Assert.Equal(LiveReadModeProcessingStatus.Processed, newer.Status);
+            Assert.Equal(LiveReadModeProcessingStatus.Superseded, older.Status);
+            Assert.True(translator.RegisteredAfterCancellation);
+        }
+
         private static LiveReadModeCoordinator CreateCoordinator(ITranslationEngine translator)
         {
             var language = new LanguagePipeline(
@@ -180,6 +204,42 @@ namespace PhraseLayer.Core.Tests
                 Entered.TrySetResult(true);
                 await Task.Delay(Timeout.Infinite, cancellationToken);
                 return "unused";
+            }
+        }
+
+        private sealed class CancellationRegistrationAfterCancellationTranslationEngine : ITranslationEngine
+        {
+            private int callCount;
+
+            public TaskCompletionSource<bool> FirstCallEntered { get; } =
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public bool RegisteredAfterCancellation { get; private set; }
+
+            public async Task<string> TranslateAsync(
+                string sourceText,
+                string context,
+                CancellationToken cancellationToken = default)
+            {
+                var call = Interlocked.Increment(ref callCount);
+                if (call == 1)
+                {
+                    FirstCallEntered.TrySetResult(true);
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        using (cancellationToken.Register(() => { }))
+                        {
+                            RegisteredAfterCancellation = true;
+                        }
+                        throw;
+                    }
+                }
+
+                return "新";
             }
         }
     }

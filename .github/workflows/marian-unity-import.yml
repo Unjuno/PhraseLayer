@@ -1,0 +1,102 @@
+name: Marian Unity Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_dir:
+        description: "Absolute path on the self-hosted runner to the exact pinned opus-mt-en-jap source snapshot"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  import:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install pinned Marian export/reference environment
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-marian-export.txt
+      - name: Validate local source, export, inspect, and stage Marian runtime
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_SOURCE_DIR: ${{ inputs.source_dir }}
+          PHRASELAYER_MARIAN_WORK_DIR: ${{ runner.temp }}/marian-unity
+        run: |
+          chmod +x tools/unity/stage-marian-runtime.sh
+          ./tools/unity/stage-marian-runtime.sh
+      - name: Build independent PyTorch and ONNX Runtime greedy reference
+        shell: bash
+        run: |
+          python tools/run_marian_onnx_reference.py \
+            --source-dir "${{ inputs.source_dir }}" \
+            --bundle-dir "$RUNNER_TEMP/marian-unity/onnx" \
+            --output-json "$RUNNER_TEMP/marian-unity/marian.reference-trace.json" \
+            --output-tokens "$RUNNER_TEMP/marian-unity/marian.reference-tokens.txt" \
+            --output-translation "$RUNNER_TEMP/marian-unity/marian.reference-translation.txt"
+      - name: Verify Unity 6000.0.66f2 Marian import and tokenizer runtime
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-marian-translation.sh
+          ./tools/unity/verify-marian-translation.sh
+      - name: Compare Unity Marian generation with independent reference
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_SOURCE_TEXT: "I was tired, so I went home, and I fell asleep immediately."
+          PHRASELAYER_MARIAN_EXPECTED_TOKENS: ${{ runner.temp }}/marian-unity/marian.reference-tokens.txt
+          PHRASELAYER_MARIAN_EXPECTED_TRANSLATION: ${{ runner.temp }}/marian-unity/marian.reference-translation.txt
+          PHRASELAYER_MARIAN_ACTUAL_TOKENS: ${{ runner.temp }}/marian-unity/marian.unity-tokens.txt
+          PHRASELAYER_MARIAN_ACTUAL_TRANSLATION: ${{ runner.temp }}/marian-unity/marian.unity-translation.txt
+        run: |
+          chmod +x tools/unity/verify-marian-parity.sh
+          ./tools/unity/verify-marian-parity.sh
+      - name: Require complete Marian parity evidence
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/marian-unity/marian-export.json" \
+            "$RUNNER_TEMP/marian-unity/marian-tokenizer-assets.json" \
+            "$RUNNER_TEMP/marian-unity/marian-tokenizer-runtime.json" \
+            "$RUNNER_TEMP/marian-unity/marian.reference-trace.json" \
+            "$RUNNER_TEMP/marian-unity/marian.reference-tokens.txt" \
+            "$RUNNER_TEMP/marian-unity/marian.reference-translation.txt" \
+            "$RUNNER_TEMP/marian-unity/marian.unity-tokens.txt" \
+            "$RUNNER_TEMP/marian-unity/marian.unity-translation.txt"; do
+            test -s "$file" || { echo "Missing required Marian evidence: $file" >&2; exit 1; }
+          done
+      - name: Upload Marian Unity parity evidence
+        id: upload-parity
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marian-unity-parity-evidence
+          path: |
+            ${{ runner.temp }}/marian-unity/marian-export.json
+            ${{ runner.temp }}/marian-unity/marian-tokenizer-assets.json
+            ${{ runner.temp }}/marian-unity/marian-tokenizer-runtime.json
+            ${{ runner.temp }}/marian-unity/marian.reference-trace.json
+            ${{ runner.temp }}/marian-unity/marian.reference-tokens.txt
+            ${{ runner.temp }}/marian-unity/marian.reference-translation.txt
+            ${{ runner.temp }}/marian-unity/marian.unity-tokens.txt
+            ${{ runner.temp }}/marian-unity/marian.unity-translation.txt
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Notify pull request of Marian parity artifact
+        if: success()
+        uses: ./.github/actions/notify-pr-artifact
+        with:
+          github-token: ${{ github.token }}
+          artifact-url: ${{ steps.upload-parity.outputs.artifact-url }}
+          artifact-name: marian-unity-parity-evidence
+          message: Marian Unity parity evidence is ready.
+          contents: Contains PyTorch/ONNX Runtime reference output and exact Unity token/translation parity evidence.

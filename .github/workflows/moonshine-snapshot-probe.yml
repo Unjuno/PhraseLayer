@@ -1,0 +1,74 @@
+name: Moonshine Snapshot Probe
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: moonshine-snapshot-probe-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate committed evidence and lock binding before network access
+        run: |
+          python tools/validate_moonshine_evidence.py
+          python tools/validate_moonshine_lock_evidence.py
+      - name: Read exact pinned revision and evidence from lock
+        id: lock
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          lock = json.loads(Path("models/models.lock.json").read_text(encoding="utf-8"))
+          candidate = next(item for item in lock["candidates"] if item["id"] == "moonshine-tiny")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print("revision=" + candidate["revision"], file=output)
+              print("evidence=" + candidate["evidence_manifest"], file=output)
+          PY
+      - name: Install pinned Hub client
+        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2"
+      - name: Stage exact pinned metadata/tokenizer snapshot
+        run: |
+          python tools/fetch_moonshine_snapshot_metadata.py \
+            --revision "${{ steps.lock.outputs.revision }}" \
+            --destination "$RUNNER_TEMP/moonshine-tiny-small" \
+            --output-manifest "$RUNNER_TEMP/moonshine-tiny.snapshot.json"
+      - name: Require live evidence to equal committed evidence
+        env:
+          COMMITTED_EVIDENCE: ${{ steps.lock.outputs.evidence }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          committed = json.loads(Path(os.environ["COMMITTED_EVIDENCE"]).read_text(encoding="utf-8"))
+          live = json.loads((Path(os.environ["RUNNER_TEMP"]) / "moonshine-tiny.snapshot.json").read_text(encoding="utf-8"))
+          if live != committed:
+              raise SystemExit("live Moonshine snapshot evidence does not exactly match committed evidence")
+          print("PASS: live Moonshine snapshot exactly matches committed evidence")
+          PY
+      - name: Print reviewed evidence
+        run: cat "$RUNNER_TEMP/moonshine-tiny.snapshot.json"
+      - name: Prove no model weight or graph was staged
+        shell: bash
+        run: |
+          test ! -e "$RUNNER_TEMP/moonshine-tiny-small/model.safetensors"
+          test ! -e "$RUNNER_TEMP/moonshine-tiny-small/pytorch_model.bin"
+          test ! -e "$RUNNER_TEMP/moonshine-tiny-small/encode.onnx"
+          test ! -e "$RUNNER_TEMP/moonshine-tiny-small/cached_decode.onnx"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moonshine-tiny-snapshot-evidence
+          path: ${{ runner.temp }}/moonshine-tiny.snapshot.json
+          if-no-files-found: error
+          retention-days: 7

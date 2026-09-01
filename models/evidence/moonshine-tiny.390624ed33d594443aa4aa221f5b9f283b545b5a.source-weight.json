@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "model_id": "moonshine-ai/moonshine-tiny",
+  "revision": "390624ed33d594443aa4aa221f5b9f283b545b5a",
+  "artifact": {
+    "name": "model.safetensors",
+    "size_bytes": 108389192,
+    "sha256": "867cd2215804859c55aa972d740bd5002be149b4e7526328c895d2408848c736"
+  },
+  "identity_source": "huggingface-head-metadata-etag",
+  "local_file_hash_required_before_export": true,
+  "weight_downloaded": false,
+  "bundled": false
+}

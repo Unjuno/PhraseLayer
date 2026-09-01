@@ -1,0 +1,67 @@
+{
+  "artifacts": [
+    {
+      "name": "README.md",
+      "sha256": "e78d23eeed44c568f638f60c0f84437674c12724056714c374ba24d02e278277",
+      "size_bytes": 7959
+    },
+    {
+      "name": "config.json",
+      "sha256": "47a43777a14e17b1ffd5f533e021d4d18c3c475cbb96de0947ce409e16444ded",
+      "size_bytes": 897
+    },
+    {
+      "name": "generation_config.json",
+      "sha256": "a8e1437432c3ba7d0fca84ced5b3a254bf0c42b8e75fc336497cdcb56675e303",
+      "size_bytes": 189
+    },
+    {
+      "name": "preprocessor_config.json",
+      "sha256": "99272fe8ccfab114b68b478681ea47ee3a1ce62bb788cb92dd6e4f69fb1f1da2",
+      "size_bytes": 215
+    },
+    {
+      "name": "tokenizer.json",
+      "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb",
+      "size_bytes": 1985530
+    }
+  ],
+  "audio_contract": {
+    "feature_size": 1,
+    "normalize": false,
+    "return_attention_mask": true,
+    "sampling_rate": 16000
+  },
+  "generation_contract": {
+    "bos_token_id": 1,
+    "decoder_start_token_id": 1,
+    "eos_token_id": 2,
+    "max_length": 194,
+    "pad_token_id": 2,
+    "vocabulary_size": 32768
+  },
+  "language": "en",
+  "license": "mit",
+  "model_id": "moonshine-ai/moonshine-tiny",
+  "revision": "390624ed33d594443aa4aa221f5b9f283b545b5a",
+  "schema_version": 1,
+  "staging": {
+    "allow_list": [
+      "README.md",
+      "config.json",
+      "generation_config.json",
+      "preprocessor_config.json",
+      "tokenizer.json"
+    ],
+    "mode": "huggingface-small-artifacts-only",
+    "weights_downloaded": false
+  },
+  "tokenizer_contract": {
+    "added_token_entries": 771,
+    "base_vocabulary_size": 32000,
+    "maximum_token_id": 32767,
+    "minimum_token_id": 0,
+    "unique_token_id_count": 32768
+  },
+  "weights_downloaded": false
+}
