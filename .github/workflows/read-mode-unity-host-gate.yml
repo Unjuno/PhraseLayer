@@ -1,0 +1,151 @@
+name: Read Mode Unity Host Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      japanese_font_source:
+        description: "Absolute path on the self-hosted Unity runner to a license-reviewed Japanese-capable .ttf or .otf"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  read-mode-unity-host-gate:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate pre-device Read Mode contracts
+        shell: bash
+        run: |
+          python tools/validate_repo.py
+          python tools/validate_local_ocr_asset_staging.py
+          python tools/validate_ppocr_gpu_preprocess_gate.py
+          python tools/validate_read_mode_mask_gate.py
+          python tools/validate_mruk_environment_raycast_gate.py
+          python tools/validate_quest_project_setup_gate.py
+          python tools/validate_passthrough_camera_frame_sync.py
+          python tools/validate_quest_read_mode_smoke_harness.py
+          python tools/validate_read_mode_visual_asset_staging.py
+          python tools/validate_read_mode_unity_host_gate.py
+
+      - name: Download exact pinned PP-OCR assets
+        shell: bash
+        run: |
+          python tools/stage_models.py --purpose-prefix ocr- --include-support
+
+      - name: Verify and stage PP-OCR into Unity
+        shell: bash
+        run: |
+          python tools/prepare_unity_ocr_assets.py
+
+      - name: Require real Unity pinned PP-OCR synthetic inference
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-local-ocr-inference.sh
+          ./tools/unity/verify-local-ocr-inference.sh
+
+      - name: Require real Unity PP-OCR GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-ppocr-gpu-preprocess.sh
+          ./tools/unity/verify-ppocr-gpu-preprocess.sh
+
+      - name: Build deterministic Read Mode Android ARM64 IL2CPP fixture
+        shell: bash
+        env:
+          PHRASELAYER_JAPANESE_FONT_SOURCE: ${{ inputs.japanese_font_source }}
+          PHRASELAYER_READ_MODE_FIXTURE_APK_PATH: ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
+        run: |
+          chmod +x tools/unity/build-android-read-mode-fixture.sh
+          ./tools/unity/build-android-read-mode-fixture.sh
+
+      - name: Require complete pre-device build evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          apk = temp / "PhraseLayerReadModeFixture.apk"
+          build_evidence = temp / "PhraseLayer.read-mode-fixture-build-evidence.json"
+          visual_evidence = Path("unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json")
+          ocr_manifest = Path("unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json")
+          for path in (apk, build_evidence, visual_evidence, ocr_manifest):
+              assert path.is_file() and path.stat().st_size > 0, path
+
+          build = json.loads(build_evidence.read_text(encoding="utf-8"))
+          assert build["purpose"] == "phrase-layer-read-mode-quest-fixture-build"
+          assert build["result"] == "Succeeded"
+          assert build["target"] == "Android"
+          assert build["architecture"] == "ARM64"
+          assert build["scripting_backend"] == "IL2CPP"
+          assert build["ocr_runtime"] == "PaddleOCR"
+          assert build["surface_runtime"] == "MRUKEnvironmentRaycast"
+          assert build["translation_runtime"] == "DemoDictionaryFixture"
+          assert build["product_translation_gate"] is False
+          assert build["quest_read_mode_smoke_autorun"] is True
+          assert build["deterministic_single_scene_build"] is True
+          assert build["project_paths_anchored_to_application_data_path"] is True
+          assert build["source_mask_shader"] == "PhraseLayer/SourceMask"
+          assert build["scenes"] == ["Assets/Scenes/PhraseLayerDemo.unity"]
+          assert build["apk_size_bytes"] == apk.stat().st_size
+
+          visual = json.loads(visual_evidence.read_text(encoding="utf-8"))
+          assert visual["purpose"] == "phrase-layer-read-mode-visual-assets"
+          assert visual["font_staged_bytes_verified"] is True
+          assert visual["mask_shader"] == "PhraseLayer/SourceMask"
+          assert visual["mask_shader_reasserted"] is True
+          assert visual["quest_read_mode_smoke_autorun"] is True
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          manifest = {
+              "schema_version": 1,
+              "purpose": "phrase-layer-read-mode-pre-device-unity-host-gate",
+              "status": "pass",
+              "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
+              "real_unity_pinned_ocr_inference_passed": True,
+              "real_unity_gpu_preprocess_parity_passed": True,
+              "android_arm64_il2cpp_fixture_built": True,
+              "quest_device_execution_performed": False,
+              "product_translation_gate": False,
+              "files": {
+                  "apk": {"name": apk.name, "size_bytes": apk.stat().st_size, "sha256": sha256(apk)},
+                  "build_evidence": {"name": build_evidence.name, "sha256": sha256(build_evidence)},
+                  "visual_evidence": {"name": visual_evidence.name, "sha256": sha256(visual_evidence)},
+                  "ocr_manifest": {"name": ocr_manifest.name, "sha256": sha256(ocr_manifest)},
+              },
+          }
+          output = temp / "PhraseLayer.read-mode-unity-host-gate.json"
+          output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(manifest, sort_keys=True))
+          PY
+
+      - name: Upload pre-device Read Mode Unity evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-read-mode-unity-host-evidence
+          path: |
+            ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
+            ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
+            ${{ runner.temp }}/PhraseLayer.read-mode-unity-host-gate.json
+            unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
+            unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
+          if-no-files-found: warn
+          retention-days: 7
