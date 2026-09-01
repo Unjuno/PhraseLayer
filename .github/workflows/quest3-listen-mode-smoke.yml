@@ -12,6 +12,11 @@ on:
         required: false
         default: ""
         type: string
+      expected_device_model:
+        description: "Required ro.product.model for the attached headset"
+        required: true
+        default: "Quest 3"
+        type: string
       startup_timeout_seconds:
         description: "Maximum seconds to wait for microphone and Listen Mode readiness"
         required: true
@@ -27,6 +32,11 @@ on:
         required: true
         default: "90"
         type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   quest-smoke:
@@ -113,6 +123,7 @@ jobs:
           fi
           python tools/run_quest_listen_mode_smoke.py \
             --apk "$RUNNER_TEMP/PhraseLayer.apk" \
+            --expected-device-model "${{ inputs.expected_device_model }}" \
             --startup-timeout-seconds "${{ inputs.startup_timeout_seconds }}" \
             --output-dir "$RUNNER_TEMP/quest-smoke" \
             "${SERIAL_ARGS[@]}"
@@ -129,7 +140,28 @@ jobs:
             --clear-logcat \
             --output-dir "$RUNNER_TEMP/quest-metrics" \
             "${SERIAL_ARGS[@]}"
-      - uses: actions/upload-artifact@v4
+      - name: Require complete Quest device evidence
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/PhraseLayer.apk" \
+            "$RUNNER_TEMP/PhraseLayer.android-build-evidence.json" \
+            "$RUNNER_TEMP/quest-smoke/quest-listen-mode-smoke.json" \
+            "$RUNNER_TEMP/quest-smoke/quest-startup-logcat.txt"; do
+            test -s "$file" || { echo "Missing required Quest evidence: $file" >&2; exit 1; }
+          done
+          if [[ "${{ inputs.capture_metrics }}" == "true" ]]; then
+            for file in \
+              "$RUNNER_TEMP/quest-metrics/quest-logcat.txt" \
+              "$RUNNER_TEMP/quest-metrics/listen-mode-metrics.log" \
+              "$RUNNER_TEMP/quest-metrics/listen-mode-metrics.json" \
+              "$RUNNER_TEMP/quest-metrics/listen-mode-device-evidence.json"; do
+              test -s "$file" || { echo "Missing required Quest metric evidence: $file" >&2; exit 1; }
+            done
+          fi
+      - name: Upload Quest 3 device evidence
+        id: upload-device-evidence
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phraselayer-quest3-listen-mode-evidence
@@ -141,3 +173,12 @@ jobs:
             ${{ runner.temp }}/quest-metrics/**
           if-no-files-found: warn
           retention-days: 7
+      - name: Notify pull request of Quest 3 evidence artifact
+        if: success()
+        uses: ./.github/actions/notify-pr-artifact
+        with:
+          github-token: ${{ github.token }}
+          artifact-url: ${{ steps.upload-device-evidence.outputs.artifact-url }}
+          artifact-name: phraselayer-quest3-listen-mode-evidence
+          message: Quest 3 Listen Mode device evidence is ready.
+          contents: The smoke gate verified the attached headset model before install and captured startup evidence; utterance metrics are included when requested.
