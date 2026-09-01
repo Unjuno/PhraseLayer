@@ -7,7 +7,11 @@ on:
       - ".github/workflows/moonshine-v1-onnx-reference-probe.yml"
       - "tools/inspect_moonshine_v1_onnx_bundle.py"
       - "tools/test_inspect_moonshine_v1_onnx_bundle.py"
+      - "tools/fetch_moonshine_beckett_fixture.py"
+      - "tools/run_moonshine_v1_onnx_reference.py"
+      - "tools/test_run_moonshine_v1_onnx_reference.py"
       - "src/PhraseLayer.Core/MoonshineOnnxGraphContract.cs"
+      - "src/PhraseLayer.Core/MoonshineGreedyAsrRuntime.cs"
 
 concurrency:
   group: moonshine-v1-onnx-reference-probe-${{ github.ref_name }}
@@ -21,9 +25,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python tools/test_inspect_moonshine_v1_onnx_bundle.py
+      - run: |
+          python tools/test_inspect_moonshine_v1_onnx_bundle.py
+          python tools/test_fetch_moonshine_beckett_fixture.py
+          python tools/test_run_moonshine_v1_onnx_reference.py
       - name: Install pinned probe dependencies
-        run: python -m pip install --disable-pip-version-check "huggingface_hub==0.36.2" "onnx==1.17.0"
+        run: |
+          python -m pip install --disable-pip-version-check \
+            "huggingface_hub==0.36.2" \
+            "onnx==1.17.0" \
+            "onnxruntime==1.29.0" \
+            "numpy==2.5.2" \
+            "tokenizers==0.22.1"
       - name: Stage published v1 reference graphs at an exact repository revision
         env:
           HF_HUB_DISABLE_XET: "0"
@@ -31,7 +44,7 @@ jobs:
           python - <<'PY'
           from huggingface_hub import snapshot_download
           snapshot_download(
-              repo_id="moonshine-ai/moonshine",
+              repo_id="UsefulSensors/moonshine",
               revision="35b4aae79f7d598a4d36d5252ec26ad642faab60",
               allow_patterns=[
                   "onnx/tiny/preprocess.onnx",
@@ -41,15 +54,52 @@ jobs:
               ],
               local_dir="${{ runner.temp }}/moonshine-v1-reference",
           )
+          snapshot_download(
+              repo_id="moonshine-ai/moonshine-tiny",
+              revision="390624ed33d594443aa4aa221f5b9f283b545b5a",
+              allow_patterns=["tokenizer.json"],
+              local_dir="${{ runner.temp }}/moonshine-tokenizer",
+          )
           PY
       - name: Inspect published graph ABI
         run: |
           python tools/inspect_moonshine_v1_onnx_bundle.py \
             --bundle-dir "$RUNNER_TEMP/moonshine-v1-reference/onnx/tiny" \
             --output "$RUNNER_TEMP/moonshine-v1-reference-abi.json"
+      - name: Fetch pinned speech fixture
+        run: |
+          python tools/fetch_moonshine_beckett_fixture.py \
+            --output "$RUNNER_TEMP/beckett.wav" \
+            --manifest "$RUNNER_TEMP/beckett.fixture.json"
+      - name: Run independent ONNX Runtime greedy reference
+        run: |
+          python tools/run_moonshine_v1_onnx_reference.py \
+            --bundle-dir "$RUNNER_TEMP/moonshine-v1-reference/onnx/tiny" \
+            --wav "$RUNNER_TEMP/beckett.wav" \
+            --tokenizer "$RUNNER_TEMP/moonshine-tokenizer/tokenizer.json" \
+            --output-json "$RUNNER_TEMP/beckett.reference-trace.json" \
+            --output-tokens "$RUNNER_TEMP/beckett.reference-tokens.txt" \
+            --output-transcript "$RUNNER_TEMP/beckett.reference-transcript.txt"
+      - name: Assert canonical fixture transcript
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          expected = "Ever tried, ever failed. No matter. Try again. Fail again. Fail better."
+          actual = Path("${{ runner.temp }}/beckett.reference-transcript.txt").read_text(encoding="utf-8").strip()
+          normalize = lambda value: " ".join(re.findall(r"[a-z0-9]+", value.lower()))
+          if normalize(actual) != normalize(expected):
+              raise SystemExit(f"Moonshine reference transcript drift: {actual!r}")
+          print("PASS: canonical Beckett transcript", actual)
+          PY
       - uses: actions/upload-artifact@v4
         with:
-          name: moonshine-v1-reference-abi
-          path: ${{ runner.temp }}/moonshine-v1-reference-abi.json
+          name: moonshine-v1-reference-parity
+          path: |
+            ${{ runner.temp }}/moonshine-v1-reference-abi.json
+            ${{ runner.temp }}/beckett.fixture.json
+            ${{ runner.temp }}/beckett.reference-trace.json
+            ${{ runner.temp }}/beckett.reference-tokens.txt
+            ${{ runner.temp }}/beckett.reference-transcript.txt
           if-no-files-found: error
           retention-days: 7
