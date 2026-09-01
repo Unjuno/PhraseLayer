@@ -15,15 +15,23 @@ namespace PhraseLayer.Unity.Editor
         [MenuItem("PhraseLayer/Create or Reset Demo Scene")]
         public static void CreateDemoScene()
         {
-            CreateDemoScene(null, null);
+            CreateDemoScene(null, null, false);
+        }
+
+        public static void CreateDemoScene(Font reviewedJapaneseFont, Material reviewedSourceMaskMaterial)
+        {
+            CreateDemoScene(reviewedJapaneseFont, reviewedSourceMaskMaterial, false);
         }
 
         /// <summary>
         /// Deterministically creates the demo scene and optionally injects locally reviewed visual assets.
-        /// The font/material arguments are deliberately optional so the repository shell can compile without
-        /// redistributing font binaries, while self-hosted Quest gates can require and stage them explicitly.
+        /// The explicit smoke autorun flag is reserved for instrumented Quest fixture builds so ordinary editor
+        /// use never starts a hardware gate merely by opening the scene.
         /// </summary>
-        public static void CreateDemoScene(Font reviewedJapaneseFont, Material reviewedSourceMaskMaterial)
+        public static void CreateDemoScene(
+            Font reviewedJapaneseFont,
+            Material reviewedSourceMaskMaterial,
+            bool autoRunQuestReadModeSmoke)
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var root = new GameObject("PhraseLayer Demo");
@@ -43,8 +51,6 @@ namespace PhraseLayer.Unity.Editor
             var questReadModeSmoke = root.AddComponent<QuestReadModeSmokeTestBehaviour>();
             var metaCamera = AddMetaPassthroughCameraAccess(root);
 
-            // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
-            // MRUK package drifts away from IsPlaying/GetTexture/ViewportPointToRay, scene creation fails loudly.
             cameraBridge.SetPassthroughCameraAccess(metaCamera);
             runtimeDriver.SetSceneReferences(cameraBridge, presenter);
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
@@ -55,6 +61,7 @@ namespace PhraseLayer.Unity.Editor
             worldTextTracking.SetRenderer(worldTextRenderer);
             liveReadMode.SetSceneReferences(presenter, worldTextTracking);
             questReadModeSmoke.SetSceneReferences(questOcrSmoke, liveReadMode, worldTextTracking);
+            questReadModeSmoke.AutoRunOnStart = autoRunQuestReadModeSmoke;
             demo.SetLiveReadMode(liveReadMode);
 
             if (reviewedJapaneseFont != null)
