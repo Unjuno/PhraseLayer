@@ -23,6 +23,7 @@ namespace PhraseLayer.Unity.Editor
             var cameraBridge = root.AddComponent<MetaPassthroughCameraBridge>();
             var runtimeDriver = root.AddComponent<OcrDebugRuntimeBehaviour>();
             var ocrBootstrap = root.AddComponent<UnityPaddleOcrBootstrapBehaviour>();
+            var questOcrSmoke = root.AddComponent<QuestOcrSmokeTestBehaviour>();
             var surfaceRaycaster = root.AddComponent<UnityPhysicsSurfaceRaycaster>();
             var spatialProjection = root.AddComponent<UnitySpatialProjectionBehaviour>();
             var worldTextTracking = root.AddComponent<UnityWorldTextTrackingBehaviour>();
@@ -36,6 +37,7 @@ namespace PhraseLayer.Unity.Editor
             cameraBridge.SetPassthroughCameraAccess(metaCamera);
             runtimeDriver.SetSceneReferences(cameraBridge, presenter);
             ocrBootstrap.SetRuntimeDriver(runtimeDriver);
+            questOcrSmoke.SetSceneReferences(runtimeDriver, presenter, ocrBootstrap);
             spatialProjection.SetSceneReferences(cameraBridge, surfaceRaycaster);
             worldTextTracking.SetProjection(spatialProjection);
             worldTextTracking.SetSourceMask(worldTextSourceMask);
@@ -50,7 +52,7 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
+                "PhraseLayer demo scene created with Meta camera → real-device OCR smoke harness → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
                 DemoScenePath);
         }
 
