@@ -29,6 +29,22 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public async Task DiagnosticTraceCapturesTokenIdsEosAndDecoderStepCount()
+        {
+            var backend = new ScriptedBackend(42, 99, MoonshineTinyAsrContract.EosTokenId);
+            var runtime = new MoonshineGreedyAsrRuntime(backend, new CapturingTokenDecoder(" traced text "));
+
+            var trace = await runtime.TranscribePreparedWithTraceAsync(
+                new AudioChunk(new float[160], 16000, 5));
+
+            Assert.Equal("traced text", trace.Observation.Text);
+            Assert.Equal(new[] { 42, 99 }, trace.TokenIds);
+            Assert.True(trace.TerminatedByEos);
+            Assert.Equal(3, trace.DecoderSteps);
+            Assert.True(backend.SessionDisposed);
+        }
+
+        [Fact]
         public async Task OfflineEngineResamplesBeforeMoonshineGeneration()
         {
             var backend = new ScriptedBackend(MoonshineTinyAsrContract.EosTokenId);
@@ -90,11 +106,14 @@ namespace PhraseLayer.Core.Tests
             var decoder = new CapturingTokenDecoder("  partial transcript  ");
             var runtime = new MoonshineGreedyAsrRuntime(backend, decoder, maximumGenerationLength: 2);
 
-            var observation = await runtime.TranscribePreparedAsync(
+            var trace = await runtime.TranscribePreparedWithTraceAsync(
                 new AudioChunk(new float[4], 16000, 0));
 
             Assert.Equal(new[] { 10, 11 }, decoder.LastTokenIds);
-            Assert.Equal("partial transcript", observation.Text);
+            Assert.Equal(new[] { 10, 11 }, trace.TokenIds);
+            Assert.Equal("partial transcript", trace.Observation.Text);
+            Assert.False(trace.TerminatedByEos);
+            Assert.Equal(2, trace.DecoderSteps);
             Assert.Equal(2, backend.PreviousTokens.Count);
         }
 
