@@ -25,6 +25,11 @@ def require(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} is missing required marker: {fragment}")
 
 
+def forbid(text: str, fragment: str, label: str) -> None:
+    if fragment in text:
+        raise GateError(f"{label} contains forbidden stale marker: {fragment}")
+
+
 def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     runner = RUNNER.read_text(encoding="utf-8")
@@ -90,6 +95,9 @@ def validate() -> dict[str, object]:
         '"adb_serial_sha256_12": serial_fingerprint(serial)',
         'status="fail"',
         'evidence_path.write_text',
+        '"detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization"',
+        '"detector_input_layout": "NCHW/BGR/TopLeft"',
+        '"detector_input_cpu_image_readback": False',
         '"surface_runtime": "MRUKEnvironmentRaycast"',
         '"translation_runtime": "DemoDictionaryFixture"',
         '"product_translation_gate": False',
@@ -103,6 +111,7 @@ def validate() -> dict[str, object]:
         require(runner, fragment, "Quest Read Mode device runner")
     if '"adb_serial": serial' in runner:
         raise GateError("Quest evidence must not upload the raw adb serial")
+    forbid(runner, "Graphics.Blit/readback preprocessing path", "Quest Read Mode device runner")
 
     for fragment in (
         "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
@@ -175,6 +184,7 @@ def validate() -> dict[str, object]:
         "pinned_ocr_staged": True,
         "real_unity_pinned_ocr_inference_required": True,
         "real_unity_gpu_preprocess_parity_required": True,
+        "detector_cpu_image_readback_forbidden": True,
         "captured_camera_pose_required": True,
         "mruk_live_depth_surface_required": True,
         "reviewed_external_japanese_font_required": True,
