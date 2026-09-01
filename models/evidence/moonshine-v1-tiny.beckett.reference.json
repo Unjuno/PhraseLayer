@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "purpose": "moonshine-v1-greedy-reference-parity",
+  "deployment": {
+    "model_id": "moonshine-ai/moonshine",
+    "revision": "35b4aae79f7d598a4d36d5252ec26ad642faab60",
+    "variant": "tiny",
+    "bundle_kind": "moonshine-v1-four-graph",
+    "binding": "positional",
+    "graph_evidence": "models/evidence/moonshine-v1-tiny.35b4aae79f7d598a4d36d5252ec26ad642faab60.onnx.json"
+  },
+  "tokenizer": {
+    "model_id": "moonshine-ai/moonshine-tiny",
+    "revision": "390624ed33d594443aa4aa221f5b9f283b545b5a",
+    "vocabulary_size": 32768,
+    "decoder_start_token_id": 1,
+    "eos_token_id": 2
+  },
+  "fixture": {
+    "repository": "moonshine-ai/moonshine-v2",
+    "revision": "49bc3af5bb0d767d5156fb579fa5f9853b559bf3",
+    "path": "android/java/androidTest/assets/beckett.wav",
+    "git_blob_sha1": "603c2b82ae532fd569006ef84f72f23b3aa7e37c",
+    "size_bytes": 318978,
+    "sha256": "e5a26b3d29e5b0bc8dbd72c11d16a3808a4ec0ac45b21f12a27d2a2fe5c5ae61",
+    "canonical_spoken_text": "Ever tried, ever failed. No matter. Try again. Fail again. Fail better."
+  },
+  "reference_runtime": {
+    "engine": "onnxruntime",
+    "engine_version": "1.29.0",
+    "provider": "CPUExecutionProvider",
+    "numpy_version": "2.5.2",
+    "tokenizers_version": "0.22.1",
+    "workflow_head": "7e3ba17213d229332a29d33a215884020a86c884",
+    "workflow_run_id": 33492313879,
+    "artifact_digest": "sha256:cd8af6a236fcee9d14a55d7fae9f33074b6f51ac80661dde93fbbdcf51f5bd5e"
+  },
+  "generation": {
+    "strategy": "greedy",
+    "maximum_generation_length": 194,
+    "terminated_by_eos": true,
+    "decoder_steps": 17,
+    "emitted_token_count": 16,
+    "token_ids": [
+      18274,
+      1898,
+      3926,
+      5229,
+      29892,
+      694,
+      4383,
+      1018,
+      1449,
+      29892,
+      4418,
+      1449,
+      29892,
+      4418,
+      2253,
+      29889
+    ],
+    "transcript": "Ever tried ever failed, no matter try again, fail again, fail better.",
+    "minimum_argmax_margin": 0.19562053680419922,
+    "steps": [
+      {"step": 0, "selected_token_id": 18274, "selected_logit": 14.437082290649414, "runner_up_logit": 13.007118225097656, "argmax_margin": 1.4299640655517578},
+      {"step": 1, "selected_token_id": 1898, "selected_logit": 19.095075607299805, "runner_up_logit": 14.34320068359375, "argmax_margin": 4.751874923706055},
+      {"step": 2, "selected_token_id": 3926, "selected_logit": 15.633525848388672, "runner_up_logit": 15.437905311584473, "argmax_margin": 0.19562053680419922},
+      {"step": 3, "selected_token_id": 5229, "selected_logit": 24.08795928955078, "runner_up_logit": 18.12030029296875, "argmax_margin": 5.967658996582031},
+      {"step": 4, "selected_token_id": 29892, "selected_logit": 14.926567077636719, "runner_up_logit": 13.542482376098633, "argmax_margin": 1.384084701538086},
+      {"step": 5, "selected_token_id": 694, "selected_logit": 16.593137741088867, "runner_up_logit": 14.130685806274414, "argmax_margin": 2.462451934814453},
+      {"step": 6, "selected_token_id": 4383, "selected_logit": 23.474876403808594, "runner_up_logit": 17.081987380981445, "argmax_margin": 6.392889022827148},
+      {"step": 7, "selected_token_id": 1018, "selected_logit": 16.186670303344727, "runner_up_logit": 15.005830764770508, "argmax_margin": 1.1808395385742188},
+      {"step": 8, "selected_token_id": 1449, "selected_logit": 18.103500366210938, "runner_up_logit": 13.454191207885742, "argmax_margin": 4.649309158325195},
+      {"step": 9, "selected_token_id": 29892, "selected_logit": 15.355234146118164, "runner_up_logit": 14.05479621887207, "argmax_margin": 1.3004379272460938},
+      {"step": 10, "selected_token_id": 4418, "selected_logit": 22.94837760925293, "runner_up_logit": 19.24523162841797, "argmax_margin": 3.703145980834961},
+      {"step": 11, "selected_token_id": 1449, "selected_logit": 18.252538681030273, "runner_up_logit": 13.166666984558105, "argmax_margin": 5.085871696472168},
+      {"step": 12, "selected_token_id": 29892, "selected_logit": 15.872201919555664, "runner_up_logit": 13.222881317138672, "argmax_margin": 2.649320602416992},
+      {"step": 13, "selected_token_id": 4418, "selected_logit": 19.361865997314453, "runner_up_logit": 15.430952072143555, "argmax_margin": 3.9309139251708984},
+      {"step": 14, "selected_token_id": 2253, "selected_logit": 20.797449111938477, "runner_up_logit": 16.452037811279297, "argmax_margin": 4.34541130065918},
+      {"step": 15, "selected_token_id": 29889, "selected_logit": 12.737127304077148, "runner_up_logit": 8.119827270507812, "argmax_margin": 4.617300033569336},
+      {"step": 16, "selected_token_id": 2, "selected_logit": 14.41650676727295, "runner_up_logit": 6.016315460205078, "argmax_margin": 8.400191307067871}
+    ]
+  },
+  "scope": "Independent hosted CPU reference only. Exact Unity token parity, Android IL2CPP behavior, and Quest 3 performance remain separate gates."
+}
