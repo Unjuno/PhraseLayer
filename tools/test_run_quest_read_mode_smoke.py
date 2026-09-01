@@ -50,6 +50,7 @@ def main() -> None:
     assert empty == {
         "ocr_smoke_passed": False,
         "read_mode_smoke_passed": False,
+        "mruk_environment_raycast_observed": False,
         "read_mode_timeout": False,
         "read_mode_exception": False,
         "fatal_exception": False,
@@ -58,10 +59,18 @@ def main() -> None:
     passed = module.readiness_from_logcat(
         "PhraseLayer Quest OCR smoke test PASS\n"
         "PhraseLayer Quest Read Mode smoke test PASS\n"
+        "surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true\n"
     )
     assert passed["ocr_smoke_passed"] is True
     assert passed["read_mode_smoke_passed"] is True
+    assert passed["mruk_environment_raycast_observed"] is True
     assert passed["fatal_exception"] is False
+
+    incomplete = module.readiness_from_logcat(
+        "PhraseLayer Quest OCR smoke test PASS\n"
+        "PhraseLayer Quest Read Mode smoke test PASS\n"
+    )
+    assert incomplete["mruk_environment_raycast_observed"] is False
 
     failed = module.readiness_from_logcat(
         "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT\nFATAL EXCEPTION\n"
@@ -69,7 +78,7 @@ def main() -> None:
     assert failed["read_mode_timeout"] is True
     assert failed["fatal_exception"] is True
 
-    print("PASS: Quest Read Mode device smoke parsing and anti-false-positive contracts")
+    print("PASS: Quest Read Mode device smoke parsing, Quest identity, and MRUK anti-false-positive contracts")
 
 
 if __name__ == "__main__":
