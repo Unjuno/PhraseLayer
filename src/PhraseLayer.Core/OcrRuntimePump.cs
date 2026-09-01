@@ -42,8 +42,6 @@ namespace PhraseLayer.Core.Inputs
     /// The pump itself is single-flight so an overlapping caller cannot start another camera capture
     /// while the current frame is still being captured or inferred.
     /// Await points preserve the caller synchronization context so Unity-bound adapters remain on their owner thread.
-    /// A native payload may retain immutable capture metadata after its image resource is released so downstream
-    /// Read Mode geometry can still use the exact capture pose/timestamp without keeping a GPU frame alive.
     /// </summary>
     public sealed class OcrRuntimePump
     {
@@ -76,10 +74,9 @@ namespace PhraseLayer.Core.Inputs
                     false);
             }
 
-            ImageFrame? frame = null;
             try
             {
-                frame = await camera.CaptureAsync(cancellationToken);
+                var frame = await camera.CaptureAsync(cancellationToken);
                 if (frame == null)
                 {
                     return new OcrPumpResult(
@@ -111,15 +108,8 @@ namespace PhraseLayer.Core.Inputs
             }
             finally
             {
-                ReleaseNativeImageResource(frame);
                 singleFlight.Release();
             }
-        }
-
-        private static void ReleaseNativeImageResource(ImageFrame? frame)
-        {
-            if (frame?.NativePayload is IReleasableImageFramePayload releasable)
-                releasable.ReleaseImageResource();
         }
 
         private static OcrPumpStatus MapSkippedStatus(OcrScheduleStatus status)
