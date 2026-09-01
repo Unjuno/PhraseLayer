@@ -17,5 +17,6 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineOnnxContractProbe.cs" Link="UnityRuntime/UnityMoonshineOnnxContractProbe.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineV1GenerationBackend.cs" Link="UnityRuntime/UnityMoonshineV1GenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineAsrBootstrapBehaviour.cs" Link="UnityRuntime/UnityMoonshineAsrBootstrapBehaviour.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMoonshineParityProbe.cs" Link="UnityRuntime/UnityMoonshineParityProbe.cs" />
   </ItemGroup>
 </Project>
