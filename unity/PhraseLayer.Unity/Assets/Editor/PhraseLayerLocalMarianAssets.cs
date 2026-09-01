@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using PhraseLayer.Core.Assistance;
+using PhraseLayer.Core.Learning;
+using PhraseLayer.Core.Pipeline;
+using PhraseLayer.Core.Semantics;
 using PhraseLayer.Core.Translation;
 using UnityEditor;
 using UnityEngine;
@@ -14,7 +18,8 @@ namespace PhraseLayer.Unity.Editor
     /// Real-Unity pre-device gate for the locally staged, revision-pinned Marian product translation stack.
     /// It validates imported model graph contracts, exact managed SentencePiece source token IDs, exact greedy
     /// generated token IDs, and final decoded text against an offline Transformers reference fixture.
-    /// Both the CPU-clone baseline and device-resident cache backend must match before hardware testing.
+    /// Both the CPU-clone baseline and device-resident cache backend must match before hardware testing, then the
+    /// same model-backed engine is injected through LanguagePipeline to prove semantic-span replacement end-to-end.
     /// </summary>
     public static class PhraseLayerLocalMarianAssets
     {
@@ -86,11 +91,13 @@ namespace PhraseLayer.Unity.Editor
                     assets.Decoder,
                     assets.DecoderWithPast,
                     BackendType.GPUCompute));
+            ValidateLanguagePipelineIntegration(tokenizer, assets);
 
             Debug.Log(
                 "PhraseLayer Marian translation parity PASS: revision=" + assets.Manifest.revision +
                 "; samples=" + assets.Reference.samples.Length +
                 "; source_tokens=exact; generated_tokens=exact; decoded_text=exact; " +
+                "language_pipeline_semantic_replacement=pass; " +
                 "backends=cpu-clone-baseline,device-resident-cache");
 #else
             throw new InvalidOperationException(
@@ -263,6 +270,60 @@ namespace PhraseLayer.Unity.Editor
                     }
                 }
             }
+        }
+
+        private static void ValidateLanguagePipelineIntegration(
+            ITranslationTokenizer tokenizer,
+            LocalAssets assets)
+        {
+            var sample = FindSample(assets.Reference, "keep off");
+            var backend = new UnityMarianDeviceResidentGenerationBackend(
+                assets.Encoder,
+                assets.Decoder,
+                assets.DecoderWithPast,
+                BackendType.GPUCompute);
+            using (backend)
+            {
+                var model = OpusMtEnJaGenerationPolicy.CreateGreedyModel(backend);
+                var options = OpusMtEnJaGenerationPolicy.CreateGreedyParityOptions(
+                    assets.Reference.generation.maximum_source_tokens,
+                    assets.Reference.generation.maximum_target_tokens);
+                var runtime = new OfflineSeq2SeqTranslationRuntime(tokenizer, model, options);
+                var engine = new OfflineTranslationEngine(runtime);
+                var learner = new InMemoryLearnerModel(0.95);
+                learner.SetUnderstanding("keep off", 0.0);
+                var pipeline = new LanguagePipeline(
+                    new RuleBasedSemanticSegmenter(new[] { "keep off" }),
+                    learner,
+                    new AssistancePlanner(),
+                    engine);
+
+                var plan = pipeline.PlanAsync(
+                    "keep off",
+                    AssistancePolicy.ForMode(AssistanceMode.Balanced),
+                    "keep off").GetAwaiter().GetResult();
+                if (plan.Assistance.Decisions.Count != 1)
+                    throw new InvalidOperationException("Marian LanguagePipeline parity expected exactly one assisted semantic unit.");
+                if (plan.Segments.Count != 1 || !plan.Segments[0].IsAssisted)
+                    throw new InvalidOperationException("Marian LanguagePipeline parity did not produce one assisted replacement segment.");
+                if (!string.Equals(plan.Segments[0].SourceText, "keep off", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Marian LanguagePipeline parity changed the selected semantic source span.");
+                if (!string.Equals(plan.DisplayText, sample.translated_text, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Marian LanguagePipeline parity did not emit the exact model-backed reference translation without added gloss markers.");
+                }
+            }
+        }
+
+        private static MarianReferenceSample FindSample(MarianReferenceFixture reference, string sourceText)
+        {
+            foreach (var sample in reference.samples)
+            {
+                if (string.Equals(sample.source_text, sourceText, StringComparison.Ordinal))
+                    return sample;
+            }
+            throw new InvalidOperationException("Marian reference fixture is missing required integration sample: " + sourceText);
         }
 
         private static void RequireExactTokens(
