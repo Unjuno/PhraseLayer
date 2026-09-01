@@ -34,6 +34,7 @@ jobs:
           python tools/validate_marian_lock_evidence.py
           python tools/test_generate_marian_reference_fixture.py
           python tools/validate_marian_unity_product_gate.py
+          python tools/validate_marian_android_fixture_gate.py
           python tools/test_prepare_unity_tokenizer_runtime.py
           python tools/test_prepare_unity_marian_tokenizer_assets.py
           python tools/test_export_marian_onnx.py
@@ -99,6 +100,70 @@ jobs:
           chmod +x tools/unity/verify-local-marian-translation.sh
           ./tools/unity/verify-local-marian-translation.sh
 
+      - name: Build local-only Marian Android ARM64 IL2CPP product fixture
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_PRODUCT_FIXTURE_APK_PATH: ${{ runner.temp }}/PhraseLayerMarianProductFixture.apk
+        run: |
+          chmod +x tools/unity/build-marian-product-android-fixture.sh
+          ./tools/unity/build-marian-product-android-fixture.sh
+
+      - name: Verify Marian Android packaging evidence and fingerprint local APK
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+          apk = temp / "PhraseLayerMarianProductFixture.apk"
+          evidence_path = temp / "PhraseLayer.marian-product-fixture-build-evidence.json"
+          assert apk.is_file() and apk.stat().st_size > 0
+          assert evidence_path.is_file() and evidence_path.stat().st_size > 0
+          data = json.loads(evidence_path.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-marian-product-android-fixture-build"
+          assert data["result"] == "Succeeded"
+          assert data["target"] == "Android"
+          assert data["architecture"] == "ARM64"
+          assert data["scripting_backend"] == "IL2CPP"
+          assert data["translation_runtime"] == "MarianOpusMtEnJa"
+          assert data["generation_backend"] == "UnityMarianDeviceResidentGenerationBackend"
+          assert data["tokenizer_runtime"] == "Microsoft.ML.Tokenizers"
+          assert data["model_revision"] == "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
+          assert data["product_translation_gate"] is True
+          assert data["semantic_span_pipeline"] is True
+          assert data["source_weight_copied_to_unity"] is False
+          assert data["il2cpp_reflection_preserve_required"] is True
+          assert data["redistribution_review"] == "pending"
+          assert data["apk_upload_allowed"] is False
+          assert data["quest_device_execution_performed"] is False
+          assert data["android_runtime_execution_performed"] is False
+          assert data["deterministic_single_scene_build"] is True
+          assert data["project_paths_anchored_to_application_data_path"] is True
+          assert data["apk_size_bytes"] == apk.stat().st_size
+          assert data["scenes"] == ["Assets/Scenes/PhraseLayerMarianProductFixture.unity"]
+
+          digest = hashlib.sha256()
+          with apk.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          fingerprint = {
+              "schema_version": 1,
+              "purpose": "phrase-layer-local-marian-product-apk-fingerprint",
+              "file_name": apk.name,
+              "size_bytes": apk.stat().st_size,
+              "sha256": digest.hexdigest(),
+              "uploaded": False,
+              "redistribution_review": "pending",
+              "runtime_executed": False,
+          }
+          output = temp / "marian-product-apk-fingerprint.json"
+          output.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(fingerprint, sort_keys=True))
+          PY
+
       - name: Write pre-device Marian evidence
         shell: bash
         run: |
@@ -114,11 +179,26 @@ jobs:
           tokenizer_manifest = temp / "unity-tokenizer-runtime.manifest.json"
           onnx_manifest = temp / "marian-onnx-contract.manifest.json"
           source_manifest = temp / "marian-local-inputs.manifest.json"
-          for path in (manifest, reference, tokenizer_manifest, onnx_manifest, source_manifest):
+          android_build_evidence = temp / "PhraseLayer.marian-product-fixture-build-evidence.json"
+          apk_fingerprint = temp / "marian-product-apk-fingerprint.json"
+          apk = temp / "PhraseLayerMarianProductFixture.apk"
+          for path in (
+              manifest,
+              reference,
+              tokenizer_manifest,
+              onnx_manifest,
+              source_manifest,
+              android_build_evidence,
+              apk_fingerprint,
+              apk,
+          ):
               assert path.is_file() and path.stat().st_size > 0, path
 
           staged = json.loads(manifest.read_text(encoding="utf-8"))
           ref = json.loads(reference.read_text(encoding="utf-8"))
+          tokenizer = json.loads(tokenizer_manifest.read_text(encoding="utf-8"))
+          android_build = json.loads(android_build_evidence.read_text(encoding="utf-8"))
+          apk_fp = json.loads(apk_fingerprint.read_text(encoding="utf-8"))
           assert staged["purpose"] == "phrase-layer-unity-local-marian-assets"
           assert staged["revision"] == "a863894cdd2b80f3bc1c5966734aee9ffec207d1"
           assert staged["source_weight_copied_to_unity"] is False
@@ -128,6 +208,13 @@ jobs:
           assert ref["revision"] == staged["revision"]
           assert ref["generation"]["beam_width"] == 1
           assert ref["generation"]["do_sample"] is False
+          assert tokenizer["il2cpp_reflection_preserve_required"] is True
+          assert tokenizer["linker_descriptor"]["file"] == "link.xml"
+          assert android_build["result"] == "Succeeded"
+          assert android_build["product_translation_gate"] is True
+          assert android_build["apk_upload_allowed"] is False
+          assert apk_fp["uploaded"] is False
+          assert apk_fp["sha256"] and len(apk_fp["sha256"]) == 64
 
           def sha256(path: Path) -> str:
               digest = hashlib.sha256()
@@ -136,8 +223,11 @@ jobs:
                       digest.update(chunk)
               return digest.hexdigest()
 
+          apk.unlink()
+          assert not apk.exists()
+
           evidence = {
-              "schema_version": 1,
+              "schema_version": 2,
               "purpose": "phrase-layer-marian-pre-device-unity-host-gate",
               "status": "pass",
               "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
@@ -151,21 +241,35 @@ jobs:
               "decoded_text_parity_passed": True,
               "language_pipeline_semantic_replacement_passed": True,
               "gloss_marker_injection_detected": False,
+              "il2cpp_reflection_preservation_staged": True,
+              "android_arm64_il2cpp_fixture_build_passed": True,
+              "android_runtime_execution_performed": False,
               "quest_device_execution_performed": False,
               "product_translation_gate": True,
               "uploaded_model_weights": False,
+              "apk_uploaded": False,
+              "apk_removed_before_artifact_upload": True,
+              "redistribution_review": "pending",
+              "local_apk_fingerprint": apk_fp,
               "files": {
                   "staged_manifest": {"name": manifest.name, "sha256": sha256(manifest)},
                   "reference_fixture": {"name": reference.name, "sha256": sha256(reference)},
                   "tokenizer_runtime_manifest": {"name": tokenizer_manifest.name, "sha256": sha256(tokenizer_manifest)},
                   "onnx_contract_manifest": {"name": onnx_manifest.name, "sha256": sha256(onnx_manifest)},
                   "source_input_manifest": {"name": source_manifest.name, "sha256": sha256(source_manifest)},
+                  "android_build_evidence": {"name": android_build_evidence.name, "sha256": sha256(android_build_evidence)},
+                  "apk_fingerprint": {"name": apk_fingerprint.name, "sha256": sha256(apk_fingerprint)},
               },
           }
           output = temp / "PhraseLayer.marian-unity-host-gate.json"
           output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(evidence, sort_keys=True))
           PY
+
+      - name: Remove local Marian APK before artifact phase
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/PhraseLayerMarianProductFixture.apk"
 
       - name: Upload Marian pre-device evidence only
         uses: actions/upload-artifact@v4
@@ -177,6 +281,8 @@ jobs:
             ${{ runner.temp }}/marian-onnx-contract.manifest.json
             ${{ runner.temp }}/unity-tokenizer-runtime.manifest.json
             ${{ runner.temp }}/marian-reference.json
+            ${{ runner.temp }}/PhraseLayer.marian-product-fixture-build-evidence.json
+            ${{ runner.temp }}/marian-product-apk-fingerprint.json
             ${{ runner.temp }}/PhraseLayer.marian-unity-host-gate.json
             unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/PhraseLayerMarianAssets.manifest.json
           if-no-files-found: warn
