@@ -59,6 +59,12 @@ jobs:
         run: |
           python tools/prepare_unity_ocr_assets.py
 
+      - name: Require real Unity pinned PP-OCR synthetic inference
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-local-ocr-inference.sh
+          ./tools/unity/verify-local-ocr-inference.sh
+
       - name: Require real Unity PP-OCR GPU preprocess parity
         shell: bash
         run: |
@@ -85,7 +91,11 @@ jobs:
           root = Path(os.environ["RUNNER_TEMP"])
           evidence = root / "PhraseLayer.read-mode-fixture-build-evidence.json"
           apk = root / "PhraseLayerReadModeFixture.apk"
+          visual = Path("unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json")
           assert apk.is_file() and apk.stat().st_size > 0
+          assert evidence.is_file() and evidence.stat().st_size > 0
+          assert visual.is_file() and visual.stat().st_size > 0
+
           data = json.loads(evidence.read_text(encoding="utf-8"))
           assert data["purpose"] == "phrase-layer-read-mode-quest-fixture-build"
           assert data["result"] == "Succeeded"
@@ -102,9 +112,20 @@ jobs:
           assert data["camera_timestamp_pose_binding_implemented"] is True
           assert data["camera_pixel_pose_sync_verified"] is False
           assert data["quest_read_mode_smoke_autorun"] is True
+          assert data["deterministic_single_scene_build"] is True
+          assert data["project_paths_anchored_to_application_data_path"] is True
           assert data["source_mask_shader"] == "PhraseLayer/SourceMask"
           assert data["apk_size_bytes"] == apk.stat().st_size
+          assert data["scenes"] == ["Assets/Scenes/PhraseLayerDemo.unity"]
+
+          visual_data = json.loads(visual.read_text(encoding="utf-8"))
+          assert visual_data["purpose"] == "phrase-layer-read-mode-visual-assets"
+          assert visual_data["font_staged_bytes_verified"] is True
+          assert visual_data["mask_shader"] == "PhraseLayer/SourceMask"
+          assert visual_data["mask_shader_reasserted"] is True
+          assert visual_data["quest_read_mode_smoke_autorun"] is True
           print(json.dumps(data, sort_keys=True))
+          print(json.dumps(visual_data, sort_keys=True))
           PY
 
       - name: Install, launch, and require end-to-end Quest Read Mode PASS
