@@ -2,8 +2,8 @@
 """Static wiring gate for the real-Unity Android build path.
 
 This does not pretend to compile or build Unity. It ensures the repository keeps the manual/local
-real-Unity gate pinned to the reviewed Editor version, Android ARM64, IL2CPP, and the expected batch
-entry point. The actual build result must still come from Unity 6000.0.66f2 with Android modules.
+real-Unity gate pinned to the reviewed Editor version, Android ARM64, IL2CPP, and both required offline
+model stacks. The actual build result must still come from Unity 6000.0.66f2 with Android modules.
 """
 
 from __future__ import annotations
@@ -41,7 +41,11 @@ def validate() -> dict[str, object]:
         "ScriptingImplementation.IL2CPP",
         "AndroidArchitecture.ARM64",
         "PhraseLayerEditorSetup.CreateDemoScene()",
+        "PhraseLayerLocalTranslationAssets.AssignLocalAssetsToDemo()",
         "PhraseLayerLocalAsrAssets.AssignLocalAssetsToSceneBootstrap()",
+        '"translation_runtime": \\"Marian\\"',
+        '"asr_runtime": \\"MoonshineV1\\"',
+        '"dictionary_fallback_allowed": false',
         "BuildPipeline.BuildPlayer",
         "PhraseLayer.android-build-evidence.json",
     ):
@@ -57,12 +61,18 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         "workflow_dispatch:",
+        "marian_source_dir:",
         "runs-on: [self-hosted, unity, unity-6000-0-66f2]",
-        "UsefulSensors/moonshine",
+        "tools/requirements-marian-export.txt",
+        "stage-marian-runtime.sh",
+        "moonshine-ai/moonshine",
         "390624ed33d594443aa4aa221f5b9f283b545b5a",
         "build-android-listen-mode.sh",
         'assert data["architecture"] == "ARM64"',
         'assert data["scripting_backend"] == "IL2CPP"',
+        'assert data["translation_runtime"] == "Marian"',
+        'assert data["asr_runtime"] == "MoonshineV1"',
+        'assert data["dictionary_fallback_allowed"] is False',
     ):
         require(workflow, fragment, "Android build workflow")
 
@@ -72,6 +82,9 @@ def validate() -> dict[str, object]:
         "target": "Android",
         "architecture": "ARM64",
         "scripting_backend": "IL2CPP",
+        "translation_runtime": "Marian",
+        "asr_runtime": "MoonshineV1",
+        "dictionary_fallback_allowed": False,
         "execution_scope": "real-unity-self-hosted-or-local",
     }
 
