@@ -13,7 +13,8 @@ namespace PhraseLayer.Unity.Editor
     /// <summary>
     /// Pre-device Android ARM64 IL2CPP packaging gate for the reviewed offline Marian product translation stack.
     /// The generated APK is local evidence only while redistribution review is pending and must not be uploaded.
-    /// Runtime translation parity is established separately by PhraseLayerLocalMarianAssets before this build.
+    /// Exact translation parity is established by the real-Unity host probe before this build; the fixture also embeds
+    /// an auto-running Android runtime smoke, but packaging evidence must keep runtime execution=false until adb proves it.
     /// </summary>
     public static class PhraseLayerMarianProductAndroidBuild
     {
@@ -109,7 +110,8 @@ namespace PhraseLayer.Unity.Editor
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "PhraseLayer Marian product Android packaging PASS: {0}; bytes={1}; backend=UnityMarianDeviceResidentGenerationBackend; " +
-                    "target=Android ARM64 IL2CPP; Quest execution not performed; APK redistribution/upload forbidden while review is pending.",
+                    "target=Android ARM64 IL2CPP; runtime_smoke_autorun=true; runtime not executed by packaging; " +
+                    "Quest execution not performed; APK redistribution/upload forbidden while review is pending.",
                     outputPath,
                     new FileInfo(outputPath).Length));
 #else
@@ -223,7 +225,7 @@ namespace PhraseLayer.Unity.Editor
             var sceneJson = string.Join(",", scenes.Select(scene => "\"" + EscapeJson(scene) + "\""));
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-marian-product-android-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"translation_runtime\": \"MarianOpusMtEnJa\",\n  \"generation_backend\": \"UnityMarianDeviceResidentGenerationBackend\",\n  \"tokenizer_runtime\": \"Microsoft.ML.Tokenizers\",\n  \"model_revision\": \"{2}\",\n  \"product_translation_gate\": true,\n  \"semantic_span_pipeline\": true,\n  \"source_weight_copied_to_unity\": false,\n  \"il2cpp_reflection_preserve_required\": true,\n  \"redistribution_review\": \"pending\",\n  \"apk_upload_allowed\": false,\n  \"quest_device_execution_performed\": false,\n  \"android_runtime_execution_performed\": false,\n  \"deterministic_single_scene_build\": true,\n  \"project_paths_anchored_to_application_data_path\": true,\n  \"marian_asset_manifest_file\": \"{3}\",\n  \"marian_asset_manifest_size_bytes\": {4},\n  \"reference_fixture_file\": \"{5}\",\n  \"reference_fixture_size_bytes\": {6},\n  \"linker_descriptor_file\": \"{7}\",\n  \"linker_descriptor_size_bytes\": {8},\n  \"tokenizer_adapter_size_bytes\": {9},\n  \"tokenizer_runtime_size_bytes\": {10},\n  \"protobuf_runtime_size_bytes\": {11},\n  \"result\": \"{12}\",\n  \"total_errors\": {13},\n  \"total_warnings\": {14},\n  \"total_size_bytes_reported\": {15},\n  \"apk_size_bytes\": {16},\n  \"elapsed_seconds\": {17:F6},\n  \"scenes\": [{18}]\n}}\n",
+                "{{\n  \"schema_version\": 2,\n  \"purpose\": \"phrase-layer-marian-product-android-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"translation_runtime\": \"MarianOpusMtEnJa\",\n  \"generation_backend\": \"UnityMarianDeviceResidentGenerationBackend\",\n  \"tokenizer_runtime\": \"Microsoft.ML.Tokenizers\",\n  \"model_revision\": \"{2}\",\n  \"product_translation_gate\": true,\n  \"semantic_span_pipeline\": true,\n  \"source_weight_copied_to_unity\": false,\n  \"il2cpp_reflection_preserve_required\": true,\n  \"redistribution_review\": \"pending\",\n  \"apk_upload_allowed\": false,\n  \"android_runtime_smoke_autorun\": true,\n  \"android_runtime_smoke_fixture_source\": \"keep off\",\n  \"android_runtime_smoke_reference_resource\": \"LocalTranslationAssets/marian-reference\",\n  \"android_runtime_smoke_exact_reference_match_required\": true,\n  \"quest_device_execution_performed\": false,\n  \"android_runtime_execution_performed\": false,\n  \"deterministic_single_scene_build\": true,\n  \"project_paths_anchored_to_application_data_path\": true,\n  \"marian_asset_manifest_file\": \"{3}\",\n  \"marian_asset_manifest_size_bytes\": {4},\n  \"reference_fixture_file\": \"{5}\",\n  \"reference_fixture_size_bytes\": {6},\n  \"linker_descriptor_file\": \"{7}\",\n  \"linker_descriptor_size_bytes\": {8},\n  \"tokenizer_adapter_size_bytes\": {9},\n  \"tokenizer_runtime_size_bytes\": {10},\n  \"protobuf_runtime_size_bytes\": {11},\n  \"result\": \"{12}\",\n  \"total_errors\": {13},\n  \"total_warnings\": {14},\n  \"total_size_bytes_reported\": {15},\n  \"apk_size_bytes\": {16},\n  \"elapsed_seconds\": {17:F6},\n  \"scenes\": [{18}]\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Android)),
                 EscapeJson(PhraseLayerLocalMarianAssets.ExpectedRevision),
