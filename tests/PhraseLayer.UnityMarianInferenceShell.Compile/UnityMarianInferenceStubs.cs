@@ -35,7 +35,6 @@ namespace UnityEngine
 namespace UnityEditor
 {
     using System;
-    using UnityEngine;
 
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class MenuItem : Attribute
@@ -46,8 +45,8 @@ namespace UnityEditor
     public static class AssetDatabase
     {
         public static void Refresh() { }
-        public static T LoadAssetAtPath<T>(string path) where T : Object => null;
-        public static Object LoadMainAssetAtPath(string path) => null;
+        public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object => null;
+        public static UnityEngine.Object LoadMainAssetAtPath(string path) => null;
     }
 
     public static class EditorApplication
