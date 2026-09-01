@@ -8,16 +8,51 @@ namespace UnityEngine
     public class Component : Object { }
     public class Behaviour : Component { public bool enabled { get; set; } = true; }
     public class MonoBehaviour : Behaviour { }
+    public sealed class TextAsset : Object
+    {
+        public string text { get; set; } = string.Empty;
+        public byte[] bytes { get; set; } = Array.Empty<byte>();
+    }
 
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class SerializeField : Attribute { }
+
+    public static class JsonUtility
+    {
+        public static T FromJson<T>(string json) where T : class => null;
+    }
 
     public static class Debug
     {
         public static void Log(object message) { }
         public static void Log(object message, Object context) { }
         public static void LogError(object message, Object context) { }
+        public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
+    }
+}
+
+namespace UnityEditor
+{
+    using System;
+    using UnityEngine;
+
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class MenuItem : Attribute
+    {
+        public MenuItem(string path) { }
+    }
+
+    public static class AssetDatabase
+    {
+        public static void Refresh() { }
+        public static T LoadAssetAtPath<T>(string path) where T : Object => null;
+        public static Object LoadMainAssetAtPath(string path) => null;
+    }
+
+    public static class EditorApplication
+    {
+        public static void Exit(int code) { }
     }
 }
 
