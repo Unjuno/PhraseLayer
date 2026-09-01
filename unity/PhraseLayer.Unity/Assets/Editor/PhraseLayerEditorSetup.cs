@@ -30,6 +30,7 @@ namespace PhraseLayer.Unity.Editor
             var worldTextSourceMask = root.AddComponent<UnityWorldTextSourceMaskBehaviour>();
             var worldTextRenderer = root.AddComponent<UnityWorldTextRendererBehaviour>();
             var liveReadMode = root.AddComponent<UnityLiveReadModeBehaviour>();
+            var questReadModeSmoke = root.AddComponent<QuestReadModeSmokeTestBehaviour>();
             var metaCamera = AddMetaPassthroughCameraAccess(root);
 
             // SetPassthroughCameraAccess validates the installed Meta API surface immediately. If the pinned
@@ -43,6 +44,7 @@ namespace PhraseLayer.Unity.Editor
             worldTextTracking.SetSourceMask(worldTextSourceMask);
             worldTextTracking.SetRenderer(worldTextRenderer);
             liveReadMode.SetSceneReferences(presenter, worldTextTracking);
+            questReadModeSmoke.SetSceneReferences(questOcrSmoke, liveReadMode, worldTextTracking);
             demo.SetLiveReadMode(liveReadMode);
 
             Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
@@ -52,7 +54,7 @@ namespace PhraseLayer.Unity.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(DemoScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log(
-                "PhraseLayer demo scene created with Meta camera → real-device OCR smoke harness → one-pass OCR → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
+                "PhraseLayer demo scene created with Meta camera → real-device OCR smoke → latest-only adaptive Read Mode → semantic geometry → four-corner surface fit → temporal tracking → confidence-gated source mask → font-injected world text renderer → end-to-end Quest Read Mode smoke wiring. The demo language pipeline remains dictionary-based. Assign both a reviewed opaque source-mask Material and a reviewed Japanese-capable Font before claiming complete in-place replacement: " +
                 DemoScenePath);
         }
 
