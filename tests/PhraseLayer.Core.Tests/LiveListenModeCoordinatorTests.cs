@@ -28,6 +28,9 @@ namespace PhraseLayer.Core.Tests
             Assert.Equal("Please keep", result.Observation.Text);
             Assert.False(result.Observation.IsFinal);
             Assert.Null(result.LanguagePlan);
+            Assert.True(result.Timings.AsrMilliseconds >= 0.0);
+            Assert.Equal(0.0, result.Timings.LanguagePlanMilliseconds);
+            Assert.True(result.Timings.TotalMilliseconds >= result.Timings.AsrMilliseconds);
         }
 
         [Fact]
@@ -44,6 +47,29 @@ namespace PhraseLayer.Core.Tests
             Assert.True(result.Observation.IsFinal);
             Assert.NotNull(result.LanguagePlan);
             Assert.Equal("Please 立ち入らない the grass.", result.LanguagePlan!.DisplayText);
+            Assert.True(result.Timings.AsrMilliseconds >= 0.0);
+            Assert.True(result.Timings.LanguagePlanMilliseconds >= 0.0);
+            Assert.True(result.Timings.TotalMilliseconds >= result.Timings.AsrMilliseconds);
+            Assert.True(result.Timings.TotalMilliseconds >= result.Timings.LanguagePlanMilliseconds);
+        }
+
+        [Fact]
+        public async Task TimingsSeparateAsrAndAdaptiveLanguagePlanning()
+        {
+            var processor = new ListenModeObservationProcessor(
+                new DelayedAsrEngine("Please keep off the grass.", 15),
+                BuildLanguage(new DelayedTranslationEngine(15)));
+
+            var result = await processor.ProcessAsync(
+                new AudioChunk(new float[160], 16000, 1),
+                AssistancePolicy.ForMode(AssistanceMode.Balanced));
+
+            Assert.NotNull(result.LanguagePlan);
+            Assert.True(result.Timings.AsrMilliseconds >= 5.0);
+            Assert.True(result.Timings.LanguagePlanMilliseconds >= 5.0);
+            Assert.True(
+                result.Timings.TotalMilliseconds + 1.0 >=
+                result.Timings.AsrMilliseconds + result.Timings.LanguagePlanMilliseconds);
         }
 
         [Fact]
@@ -61,6 +87,7 @@ namespace PhraseLayer.Core.Tests
             Assert.NotNull(result.LanguagePlan);
             Assert.Equal(result.Observation.Text, result.LanguagePlan!.SourceText);
             Assert.Equal("Please keep off", result.LanguagePlan.SourceText);
+            Assert.True(result.Timings.LanguagePlanMilliseconds >= 0.0);
         }
 
         [Fact]
@@ -105,7 +132,7 @@ namespace PhraseLayer.Core.Tests
             Assert.Equal("Please 立ち入らない the grass.", newer.Output!.LanguagePlan!.DisplayText);
         }
 
-        private static LanguagePipeline BuildLanguage()
+        private static LanguagePipeline BuildLanguage(ITranslationEngine? translation = null)
         {
             var learner = new InMemoryLearnerModel(0.95);
             learner.SetUnderstanding("keep off", 0.10);
@@ -113,10 +140,51 @@ namespace PhraseLayer.Core.Tests
                 new RuleBasedSemanticSegmenter(new[] { "keep off" }),
                 learner,
                 new AssistancePlanner(),
-                new DictionaryTranslationEngine(new Dictionary<string, string>
+                translation ?? new DictionaryTranslationEngine(new Dictionary<string, string>
                 {
                     ["keep off"] = "立ち入らない"
                 }));
+        }
+
+        private sealed class DelayedAsrEngine : IAsrEngine
+        {
+            private readonly string text;
+            private readonly int delayMilliseconds;
+
+            public DelayedAsrEngine(string text, int delayMilliseconds)
+            {
+                this.text = text;
+                this.delayMilliseconds = delayMilliseconds;
+            }
+
+            public async Task<AsrObservation> TranscribeAsync(
+                AudioChunk audio,
+                CancellationToken cancellationToken = default(CancellationToken))
+            {
+                await Task.Delay(delayMilliseconds, cancellationToken);
+                return new AsrObservation(text, true);
+            }
+        }
+
+        private sealed class DelayedTranslationEngine : ITranslationEngine
+        {
+            private readonly int delayMilliseconds;
+
+            public DelayedTranslationEngine(int delayMilliseconds)
+            {
+                this.delayMilliseconds = delayMilliseconds;
+            }
+
+            public async Task<string> TranslateAsync(
+                string sourceText,
+                string context,
+                CancellationToken cancellationToken = default(CancellationToken))
+            {
+                await Task.Delay(delayMilliseconds, cancellationToken);
+                return string.Equals(sourceText, "keep off", StringComparison.OrdinalIgnoreCase)
+                    ? "立ち入らない"
+                    : sourceText;
+            }
         }
 
         private sealed class FirstCallBlocksUntilCancelledAsrEngine : IAsrEngine
