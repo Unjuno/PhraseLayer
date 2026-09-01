@@ -35,11 +35,7 @@ namespace PhraseLayer.Unity.Editor
                     "Unity Android Build Support is unavailable. Install Android Build Support plus the pinned editor SDK/NDK/OpenJDK modules before running PhraseLayer host gates.");
             }
 
-#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
-            const bool inferenceCompileGateActive = true;
-#else
-            const bool inferenceCompileGateActive = false;
-#endif
+            var inferenceCompileGateActive = IsInferenceCompileGateActive();
             if (!inferenceCompileGateActive)
             {
                 throw new InvalidOperationException(
@@ -84,6 +80,15 @@ namespace PhraseLayer.Unity.Editor
                 Debug.LogException(exception);
                 EditorApplication.Exit(1);
             }
+        }
+
+        private static bool IsInferenceCompileGateActive()
+        {
+#if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            return true;
+#else
+            return false;
+#endif
         }
 
         private static string ProjectRoot()
