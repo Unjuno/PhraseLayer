@@ -16,6 +16,11 @@ on:
       - "src/PhraseLayer.Core/MoonshineOnnxGraphContract.cs"
       - "src/PhraseLayer.Core/MoonshineGreedyAsrRuntime.cs"
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 concurrency:
   group: moonshine-v1-onnx-reference-probe-${{ github.ref_name }}
   cancel-in-progress: true
@@ -89,14 +94,39 @@ jobs:
         run: |
           python tools/validate_moonshine_v1_reference_trace.py \
             --actual-trace "$RUNNER_TEMP/beckett.reference-trace.json"
-      - uses: actions/upload-artifact@v4
+      - name: Upload reference fixture and parity evidence
+        id: upload-parity
+        uses: actions/upload-artifact@v4
         with:
           name: moonshine-v1-reference-parity
           path: |
             ${{ runner.temp }}/moonshine-v1-reference-abi.json
+            ${{ runner.temp }}/beckett.wav
             ${{ runner.temp }}/beckett.fixture.json
             ${{ runner.temp }}/beckett.reference-trace.json
             ${{ runner.temp }}/beckett.reference-tokens.txt
             ${{ runner.temp }}/beckett.reference-transcript.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Publish artifact link to the open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.upload-parity.outputs.artifact-url }}
+        run: |
+          PR_NUMBER="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}" \
+            -f state=open \
+            --jq '.[0].number // empty')"
+
+          if [ -z "$PR_NUMBER" ]; then
+            {
+              echo "### Moonshine reference artifact"
+              echo
+              echo "Artifact: $ARTIFACT_URL"
+              echo
+              echo "Includes the pinned beckett.wav fixture and parity evidence."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh pr comment "$PR_NUMBER" --body "@${GITHUB_ACTOR} Moonshine reference fixture is ready. The artifact now includes \`beckett.wav\` plus the parity evidence. Download: ${ARTIFACT_URL}"
