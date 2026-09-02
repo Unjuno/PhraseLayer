@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +80,7 @@ def validate() -> dict[str, object]:
 
     for fragment in (
         "public bool UsesGpuRecognizerCtcReduction => recognizer.UsesGpuCtcReduction",
+        "public bool RetainsFullRecognizerOutputWorker => recognizer.RetainsFullOutputWorker",
         "var recognizerOutput = recognizer.ExecuteReduced(",
         "PaddleOcrRuntimeContract.ValidateRecognizerReduced(",
         "recognizerOutput.ClassIndices",
@@ -128,7 +130,8 @@ def validate() -> dict[str, object]:
         "full-matrix versus GPU ArgMax/ReduceMax CTC reduction parity",
     ):
         require(shell, fragment, "recognizer GPU reduction parity shell")
-    if " -nographics" in shell or "\n  -nographics" in shell:
+    # Comments deliberately say "no -nographics". Reject only a real shell argument line.
+    if re.search(r"(?m)^\s*-nographics(?:\s|\\|$)", shell):
         raise GateError("recognizer GPU reduction parity shell must use a real graphics device")
 
     for fragment in (
