@@ -34,4 +34,9 @@ done
   -executeMethod PhraseLayer.Unity.Editor.PhraseLayerLocalOcrAssets.RunLocalInferenceProbeBatch \
   -logFile -
 
-printf 'PASS: real Unity pinned PP-OCR detector+recognizer synthetic GPU inference gate\n'
+# Production recognition does not download the full [time,class] probability matrix. Before any host/device build may
+# rely on that optimization, require a separate real-Unity process to prove GPU ArgMax/ReduceMax gives exactly the
+# same greedy CTC result as the retained full-matrix oracle for the pinned recognizer.
+bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"
+
+printf 'PASS: real Unity pinned PP-OCR detector+recognizer synthetic GPU inference plus recognizer GPU CTC reduction parity\n'
