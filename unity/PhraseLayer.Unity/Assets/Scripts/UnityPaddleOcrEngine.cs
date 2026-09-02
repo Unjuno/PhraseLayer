@@ -16,12 +16,13 @@ namespace PhraseLayer.Unity
     /// Correctness-first end-to-end PP-OCR engine for PhraseLayer.
     ///
     /// Pipeline:
-    /// Unity Texture -> detector Worker -> DB quad decoder -> Paddle reading-order sort ->
-    /// GPU perspective crop -> recognizer Worker -> CTC decode -> OcrObservation/OcrRegion.
+    /// Unity Texture -> detector Worker -> CPU DB quad decoder -> Paddle reading-order sort ->
+    /// GPU perspective crop -> recognizer Worker -> GPU ArgMax/ReduceMax -> CPU CTC decode -> OcrObservation/OcrRegion.
     ///
-    /// The model assets and character dictionary are injected deliberately. No recognizer dictionary is bundled
-    /// until its pinned redistribution/source contract is reviewed. Runtime calls are synchronous and must remain
-    /// on the Unity thread because the reference detector/recognizer/crop paths use Unity graphics APIs.
+    /// Detector and recognizer image preprocessing stay GPU-side. Detector probability maps still return to CPU for DB
+    /// post-processing. Recognizer probability matrices stay GPU-side in the live path: only one class index and maximum
+    /// score per timestep are read back for CTC decoding. The full recognizer matrix path remains available only for the
+    /// real-Unity contract/parity gate that must precede packaging/device execution.
     /// </summary>
     public sealed class UnityPaddleOcrEngine : IOcrEngine, IDisposable
     {
@@ -84,6 +85,7 @@ namespace PhraseLayer.Unity
         public int RecognizerModelWidth => recognizerModelWidth;
         public PaddleDetectorRuntimeContract LatestDetectorContract => latestDetectorContract;
         public PaddleRecognizerRuntimeContract LatestRecognizerContract => latestRecognizerContract;
+        public bool UsesGpuRecognizerCtcReduction => recognizer.UsesGpuCtcReduction;
         public string RuntimeContractReport => PaddleOcrRuntimeContract.BuildReport(
             latestDetectorContract,
             latestRecognizerContract,
@@ -138,18 +140,19 @@ namespace PhraseLayer.Unity
                 var detection = detections[index];
                 using (var crop = cropRectifier.Rectify(texture, detection.ImageBounds))
                 {
-                    var recognizerOutput = recognizer.Execute(
+                    var recognizerOutput = recognizer.ExecuteReduced(
                         crop.Texture,
                         recognizerModelWidth);
-                    latestRecognizerContract = PaddleOcrRuntimeContract.ValidateRecognizer(
+                    latestRecognizerContract = PaddleOcrRuntimeContract.ValidateRecognizerReduced(
                         recognizerOutput.OutputShape,
-                        recognizerOutput.OutputValues,
+                        recognizerOutput.ClassIndices,
+                        recognizerOutput.MaxScores,
                         characterDictionary.Length);
                     var decoded = recognizerOutput.Decode(characterDictionary);
 
                     // OcrObservation/OcrRegion confidence is explicitly constrained to [0,1]. Do not clamp
-                    // unverified logits into that domain; fail until the imported recognizer output proves a
-                    // probability contract (the expected Paddle path applies softmax before CTC decoding).
+                    // unverified logits into that domain; fail until the pinned imported recognizer output proves the
+                    // probability contract in the real-Unity full-output parity gate.
                     ValidateRecognizerConfidence(decoded.Confidence);
 
                     recognized.Add(new PaddleOcrRecognizedCandidate(
@@ -199,7 +202,7 @@ namespace PhraseLayer.Unity
             if (Thread.CurrentThread.ManagedThreadId != ownerThreadId)
             {
                 throw new InvalidOperationException(
-                    "UnityPaddleOcrEngine must run on the same Unity thread on which it was created; its reference texture preprocessing and crop path uses main-thread Unity graphics APIs.");
+                    "UnityPaddleOcrEngine must run on the same Unity thread on which it was created; its texture preprocessing and crop path uses main-thread Unity graphics APIs.");
             }
         }
 
