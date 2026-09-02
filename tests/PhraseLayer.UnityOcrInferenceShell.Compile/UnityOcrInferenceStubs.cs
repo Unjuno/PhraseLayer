@@ -299,7 +299,7 @@ namespace PhraseLayer.Unity
     using PhraseLayer.Core.Inputs;
     using UnityEngine;
 
-    public sealed class UnityTextureFramePayload
+    public sealed class UnityTextureFramePayload : IImageFramePayload
     {
         public UnityTextureFramePayload(Texture texture) { Texture = texture; }
         public Texture Texture { get; }
