@@ -7,12 +7,13 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Unity-facing owner for temporal world-text stabilization. It consumes only layout-ready surfaces produced by
-    /// UnitySpatialProjectionBehaviour and keeps tracking policy in platform-neutral Core.
+    /// UnitySpatialProjectionBehaviour and keeps tracking/mask eligibility policy in platform-neutral Core.
     /// </summary>
     public sealed class UnityWorldTextTrackingBehaviour : MonoBehaviour
     {
         [SerializeField] private UnitySpatialProjectionBehaviour projection = default(UnitySpatialProjectionBehaviour);
         [SerializeField] private UnityWorldTextRendererBehaviour renderer = default(UnityWorldTextRendererBehaviour);
+        [SerializeField] private UnityWorldTextSourceMaskBehaviour sourceMask = default(UnityWorldTextSourceMaskBehaviour);
         [SerializeField] private float maximumAssociationDistanceMeters = 0.15f;
         [SerializeField] private float retentionSeconds = 0.60f;
         [SerializeField] private float smoothingTimeConstantSeconds = 0.12f;
@@ -22,7 +23,9 @@ namespace PhraseLayer.Unity
         public WorldTextTrackingPlan LastPlan { get; private set; }
         public UnitySpatialProjectionBehaviour Projection => projection;
         public UnityWorldTextRendererBehaviour Renderer => renderer;
+        public UnityWorldTextSourceMaskBehaviour SourceMask => sourceMask;
         public bool LastRenderSucceeded { get; private set; }
+        public bool LastMaskSucceeded { get; private set; }
 
         public void SetProjection(UnitySpatialProjectionBehaviour spatialProjection)
         {
@@ -34,6 +37,12 @@ namespace PhraseLayer.Unity
         {
             renderer = worldTextRenderer ?? throw new ArgumentNullException(nameof(worldTextRenderer));
             LastRenderSucceeded = false;
+        }
+
+        public void SetSourceMask(UnityWorldTextSourceMaskBehaviour worldTextSourceMask)
+        {
+            sourceMask = worldTextSourceMask ?? throw new ArgumentNullException(nameof(worldTextSourceMask));
+            LastMaskSucceeded = false;
         }
 
         public WorldTextTrackingPlan ProjectFitAndTrack(
@@ -67,6 +76,8 @@ namespace PhraseLayer.Unity
             stabilizer = null;
             LastPlan = null;
             LastRenderSucceeded = false;
+            LastMaskSucceeded = false;
+            sourceMask?.Clear();
             renderer?.Clear();
         }
 
@@ -76,10 +87,14 @@ namespace PhraseLayer.Unity
             stabilizer = null;
             LastPlan = null;
             LastRenderSucceeded = false;
+            LastMaskSucceeded = false;
         }
 
         private void PresentIfConfigured()
         {
+            // The physical source cover is deliberately updated before translated text. They are independent:
+            // unconfigured masking must not prevent non-destructive debug/reference text rendering.
+            LastMaskSucceeded = sourceMask != null && sourceMask.TryPresent(LastPlan);
             LastRenderSucceeded = renderer != null && renderer.TryPresent(LastPlan);
         }
 

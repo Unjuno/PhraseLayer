@@ -24,11 +24,32 @@ jobs:
       - run: python tools/validate_learner_persistence.py
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
+      - run: python tools/validate_ppocr_gpu_preprocess_gate.py
+      - run: python tools/validate_ppocr_gpu_ctc_reduction_gate.py
+      - run: python tools/validate_read_mode_mask_gate.py
+      - run: python tools/validate_mruk_environment_raycast_gate.py
+      - run: python tools/validate_quest_project_setup_gate.py
+      - run: python tools/validate_passthrough_camera_frame_sync.py
+      - run: python tools/validate_quest_read_mode_smoke_harness.py
+      - run: python tools/validate_quest_recognizer_reduction_evidence.py
+      - run: python tools/validate_read_mode_visual_asset_staging.py
+      - run: python tools/validate_read_mode_unity_host_gate.py
+      - run: python tools/validate_unity_host_preflight.py
+      - run: python tools/validate_quest_read_mode_device_gate.py
+      - run: python tools/test_run_quest_read_mode_smoke.py
       - run: python tools/stage_models.py --purpose-prefix ocr- --include-support --list
       - run: python tools/test_extract_ppocr_dictionary.py
       - run: python tools/test_prepare_unity_ocr_assets.py
       - run: python tools/test_prepare_unity_tokenizer_runtime.py
       - run: python tools/test_prepare_unity_marian_tokenizer_assets.py
+      - run: python tools/test_generate_marian_reference_fixture.py
+      - run: python tools/validate_marian_unity_product_gate.py
+      - run: python tools/validate_marian_android_fixture_gate.py
+      - run: python tools/validate_marian_android_runtime_device_gate.py
+      - run: python tools/validate_read_mode_marian_product_gate.py
+      - run: python tools/validate_marian_read_mode_parity_gate.py
+      - run: python tools/test_run_marian_android_runtime_smoke.py
+      - run: python tools/test_inspect_android_apk_structure.py
       - run: python tools/test_validate_marian_snapshot_contract.py
       - run: python tools/test_fetch_marian_snapshot_metadata.py
       - run: python tools/test_validate_marian_lock_evidence.py
@@ -48,5 +69,7 @@ jobs:
             --destination "$RUNNER_TEMP/LocalTokenizerRuntime" \
             --manifest "$RUNNER_TEMP/unity-tokenizer-runtime.manifest.json"
       - run: dotnet build tests/PhraseLayer.UnityShell.Compile/PhraseLayer.UnityShell.Compile.csproj -c Release
+      - name: Compile guarded PP-OCR Unity inference path
+        run: dotnet build tests/PhraseLayer.UnityOcrInferenceShell.Compile/PhraseLayer.UnityOcrInferenceShell.Compile.csproj -c Release
       - name: Compile guarded Marian Unity inference path
         run: dotnet build tests/PhraseLayer.UnityMarianInferenceShell.Compile/PhraseLayer.UnityMarianInferenceShell.Compile.csproj -c Release
