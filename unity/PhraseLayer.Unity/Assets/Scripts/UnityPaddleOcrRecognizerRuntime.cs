@@ -80,7 +80,9 @@ namespace PhraseLayer.Unity
     /// Input preprocessing remains GPU-side: the shader performs aspect-preserving resize, right padding and
     /// PaddleOCR normalization, then TextureConverter writes BGR NCHW directly into the recognizer input tensor.
     /// Production CTC preparation is also GPU-side: ArgMax(selectLastIndex=false) and ReduceMax run along the class
-    /// axis and CPU reads back only one class index plus one score per timestep.
+    /// axis. The integer ArgMax result is exactly representable as float for the reviewed PP-OCR class count, then
+    /// index + score are packed into one [1,time,2] float tensor so live recognition performs one synchronous output
+    /// readback per crop rather than one readback for indices and another for scores.
     ///
     /// The full [1,time,class] Execute path is retained strictly as a correctness oracle. It creates a temporary full
     /// worker on demand and disposes it before returning; the long-lived production runtime retains only the reduced
@@ -89,6 +91,8 @@ namespace PhraseLayer.Unity
     public sealed class UnityPaddleOcrRecognizerRuntime : IDisposable
     {
         public const string PreprocessShaderResourceName = "PaddleOcrRecognizerPreprocess";
+        public const int ReducedValuesPerTimestep = 2;
+        public const int ReducedReadbackOperationsPerCrop = 1;
 
         private readonly ModelAsset modelAsset;
         private readonly Worker reducedOutputWorker;
@@ -141,6 +145,7 @@ namespace PhraseLayer.Unity
         public bool UsesGpuTexturePreprocessing => true;
         public bool UsesGpuCtcReduction => true;
         public bool RetainsFullOutputWorker => false;
+        public int CtcReadbackOperationsPerCrop => ReducedReadbackOperationsPerCrop;
 
         public static TextureTransform CreateReviewedTextureTransform(bool flipReadbackRows = true)
         {
@@ -273,9 +278,9 @@ namespace PhraseLayer.Unity
         }
 
         /// <summary>
-        /// Production path. The wrapped model emits class indices and maximum scores for each timestep, plus the
-        /// original probability tensor only as a GPU-resident shape witness. No [time,class] values are downloaded.
-        /// Functional.ArgMax uses selectLastIndex=false, matching NumPy/Paddle's first-index-on-ties greedy behavior.
+        /// Production path. The wrapped model emits a packed [1,time,2] float tensor containing class index then max
+        /// score for each timestep, plus the original probability tensor only as a GPU-resident shape witness. The
+        /// packed tensor is the only recognizer output downloaded by live OCR.
         /// </summary>
         public PaddleRecognizerReducedOutput ExecuteReduced(
             Texture rectifiedCrop,
@@ -295,36 +300,26 @@ namespace PhraseLayer.Unity
                     flipReadbackRows);
                 reducedOutputWorker.Schedule(inputTensor);
 
-                var indexTensor = reducedOutputWorker.PeekOutput(0) as Tensor<int>;
-                var scoreTensor = reducedOutputWorker.PeekOutput(1) as Tensor<float>;
-                var probabilityTensor = reducedOutputWorker.PeekOutput(2) as Tensor<float>;
-                if (indexTensor == null || scoreTensor == null || probabilityTensor == null)
+                var packedTensor = reducedOutputWorker.PeekOutput(0) as Tensor<float>;
+                var probabilityTensor = reducedOutputWorker.PeekOutput(1) as Tensor<float>;
+                if (packedTensor == null || probabilityTensor == null)
                 {
                     throw new InvalidOperationException(
-                        "PP-OCR recognizer reduced outputs must be int class indices, float max scores, and a float probability shape witness.");
+                        "PP-OCR recognizer reduced outputs must be a packed float [1,time,2] tensor plus a float probability shape witness.");
                 }
 
                 var outputShape = CopyShape(probabilityTensor.shape);
-                var indexCpu = indexTensor.ReadbackAndClone();
+                var packedCpu = packedTensor.ReadbackAndClone();
                 try
                 {
-                    var scoreCpu = scoreTensor.ReadbackAndClone();
-                    try
-                    {
-                        return new PaddleRecognizerReducedOutput(
-                            resizeTransform,
-                            outputShape,
-                            indexCpu.DownloadToArray(),
-                            scoreCpu.DownloadToArray());
-                    }
-                    finally
-                    {
-                        scoreCpu.Dispose();
-                    }
+                    return UnpackReducedOutput(
+                        resizeTransform,
+                        outputShape,
+                        packedCpu.DownloadToArray());
                 }
                 finally
                 {
-                    indexCpu.Dispose();
+                    packedCpu.Dispose();
                 }
             }
             finally
@@ -364,8 +359,72 @@ namespace PhraseLayer.Unity
             var probabilities = outputs[0];
             var classIndices = Functional.ArgMax(probabilities, dim: -1, keepdim: false);
             var maxScores = Functional.ReduceMax(probabilities, dim: -1, keepdim: false);
-            graph.AddOutputs(classIndices, maxScores, probabilities);
+            var packed = Functional.Concat(
+                new[]
+                {
+                    classIndices.Float().Unsqueeze(-1),
+                    maxScores.Unsqueeze(-1)
+                },
+                dim: -1);
+            graph.AddOutputs(packed, probabilities);
             return graph.Compile();
+        }
+
+        private static PaddleRecognizerReducedOutput UnpackReducedOutput(
+            PaddleRecResizeTransform resizeTransform,
+            int[] outputShape,
+            float[] packedValues)
+        {
+            if (outputShape == null) throw new ArgumentNullException(nameof(outputShape));
+            if (packedValues == null) throw new ArgumentNullException(nameof(packedValues));
+            if (outputShape.Length != 3 || outputShape[0] != 1 || outputShape[1] <= 0 || outputShape[2] <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Recognizer probability shape witness must remain [1,time,class] before unpacking GPU CTC reduction.");
+            }
+
+            var timeSteps = outputShape[1];
+            var expectedValues = checked(timeSteps * ReducedValuesPerTimestep);
+            if (packedValues.Length != expectedValues)
+            {
+                throw new InvalidOperationException(
+                    "Packed recognizer reduction must contain exactly two values per timestep. Observed " +
+                    packedValues.Length + ", expected " + expectedValues + ".");
+            }
+
+            var classIndices = new int[timeSteps];
+            var maxScores = new float[timeSteps];
+            for (var time = 0; time < timeSteps; time++)
+            {
+                var classValue = packedValues[time * ReducedValuesPerTimestep];
+                var score = packedValues[time * ReducedValuesPerTimestep + 1];
+                if (float.IsNaN(classValue) || float.IsInfinity(classValue) || classValue < 0f || classValue > int.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        "Packed recognizer class index must be a finite non-negative Int32-representable value at timestep " + time + ".");
+                }
+
+                var classIndex = (int)classValue;
+                if (classValue != classIndex)
+                {
+                    throw new InvalidOperationException(
+                        "Packed recognizer class index lost integer identity at timestep " + time + ": " + classValue + ".");
+                }
+                if (float.IsNaN(score) || float.IsInfinity(score))
+                {
+                    throw new InvalidOperationException(
+                        "Packed recognizer max score must be finite at timestep " + time + ".");
+                }
+
+                classIndices[time] = classIndex;
+                maxScores[time] = score;
+            }
+
+            return new PaddleRecognizerReducedOutput(
+                resizeTransform,
+                outputShape,
+                classIndices,
+                maxScores);
         }
 
         private static PaddleRecResizeTransform CreateResizeTransform(Texture rectifiedCrop, int modelWidth)
