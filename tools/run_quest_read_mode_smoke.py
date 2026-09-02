@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Install and verify the instrumented PhraseLayer Read Mode fixture on a real Quest 3.
 
-This gate intentionally validates the hardware/visual vertical slice only. The APK uses the explicit
-DemoDictionaryFixture translation path, while the device run must prove real passthrough OCR, captured-pose
-projection, and the full camera -> OCR -> adaptive plan -> MRUK live-depth fit -> source mask -> Japanese
-world-text marker. Raw adb serials and raw process logcat are never written to uploaded evidence.
+This gate validates the hardware/visual vertical slice only. The APK uses DemoDictionaryFixture translation, while
+real passthrough OCR, captured-pose projection, MRUK live-depth fit, source masking, Japanese world text, and the
+production recognizer GPU-reduction runtime must all be observed. Raw adb serials, raw stderr and raw process logcat
+are never written to uploaded evidence.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ READ_MODE_TIMEOUT_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT"
 READ_MODE_EXCEPTION_MARKER = "PhraseLayer Quest Read Mode smoke test FAIL_EXCEPTION"
 SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"
 CAPTURED_POSE_MARKER = "captured_pose_projection=true"
+RECOGNIZER_GPU_REDUCTION_MARKER = "recognizer_gpu_ctc_reduction=true full_output_worker_retained=false"
 FATAL_MARKER = "FATAL EXCEPTION"
 DIAGNOSTIC_FILE_NAME = "quest-read-mode-diagnostics.txt"
 DIAGNOSTIC_START_MARKERS = (
@@ -37,6 +38,7 @@ DIAGNOSTIC_START_MARKERS = (
     "attempts=",
     "camera_state=",
     "regions=",
+    "recognizer_gpu_ctc_reduction=",
     "PhraseLayer Quest Read Mode smoke test ",
     "elapsed_ms=",
     "camera_timestamp_source=",
@@ -55,6 +57,7 @@ SAFE_DIAGNOSTIC_PATTERNS = tuple(
         rf"^attempts=[0-9]+ total_ms={_NUM} last_attempt_ms={_NUM}$",
         rf"^camera_state={_TOKEN} schedule_status={_TOKEN} presented=(?:true|false) frame_timestamp_us=(?:[0-9]+|unobserved)$",
         rf"^regions=[0-9]+ overall_confidence={_NUM} text_length=[0-9]+$",
+        r"^recognizer_gpu_ctc_reduction=(?:true|false|unobserved) full_output_worker_retained=(?:true|false|unobserved)$",
         r"^PhraseLayer Quest Read Mode smoke test (?:PASS|FAIL_TIMEOUT|FAIL_EXCEPTION)$",
         rf"^elapsed_ms={_NUM} read_processed=[0-9]+ read_superseded=[0-9]+ read_stale=[0-9]+$",
         r"^camera_timestamp_source=MetaPassthroughCameraAccess\.Timestamp captured_pose_projection=(?:true|false) captured_pose_rays=[0-9]+ stable_capture_metadata=[0-9]+ unstable_capture_metadata=[0-9]+ pixel_pose_sync_verified=false$",
@@ -130,6 +133,7 @@ def readiness_from_logcat(logcat: str) -> Dict[str, bool]:
         "read_mode_smoke_passed": READ_MODE_PASS_MARKER in logcat,
         "mruk_environment_raycast_observed": SURFACE_RUNTIME_MARKER in logcat,
         "captured_pose_projection_observed": CAPTURED_POSE_MARKER in logcat,
+        "recognizer_gpu_reduction_observed": RECOGNIZER_GPU_REDUCTION_MARKER in logcat,
         "read_mode_timeout": READ_MODE_TIMEOUT_MARKER in logcat,
         "read_mode_exception": READ_MODE_EXCEPTION_MARKER in logcat,
         "fatal_exception": FATAL_MARKER in logcat,
@@ -191,9 +195,9 @@ def _run(args: Sequence[str], timeout_seconds: float = 30.0) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        raise SmokeError(
-            "command failed: " + " ".join(args) + "\n" + completed.stderr.strip()
-        )
+        # Do not serialize command arguments or stderr into failure evidence. Either can contain a raw adb serial,
+        # platform details, or future app/runtime text. The detailed failure remains local to the runner process only.
+        raise SmokeError(f"external command failed with exit code {completed.returncode}")
     return completed.stdout
 
 
@@ -254,6 +258,7 @@ def wait_for_read_mode_pass(
             and last_readiness["read_mode_smoke_passed"]
             and last_readiness["mruk_environment_raycast_observed"]
             and last_readiness["captured_pose_projection_observed"]
+            and last_readiness["recognizer_gpu_reduction_observed"]
         ):
             return last_log, last_readiness
         time.sleep(1.0)
@@ -292,7 +297,7 @@ def build_evidence(
                 device[key] = "unobserved"
 
     evidence: Dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "purpose": "phrase-layer-quest-read-mode-hardware-visual-smoke",
         "status": status,
         "started_at_utc": started.isoformat(),
@@ -307,20 +312,21 @@ def build_evidence(
             "sha256": sha256_file(args.apk) if args.apk.is_file() else None,
         },
         "permissions": {
-            CAMERA_PERMISSION: {
-                "declared": camera_declared,
-                "granted": camera_permission,
-            },
-            HEADSET_CAMERA_PERMISSION: {
-                "declared": headset_camera_declared,
-                "granted": headset_camera_permission,
-            },
+            CAMERA_PERMISSION: {"declared": camera_declared, "granted": camera_permission},
+            HEADSET_CAMERA_PERMISSION: {"declared": headset_camera_declared, "granted": headset_camera_permission},
         },
         "readiness": readiness,
         "ocr_runtime": "PaddleOCR",
         "detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization",
         "detector_input_layout": "NCHW/BGR/TopLeft",
         "detector_input_cpu_image_readback": False,
+        "recognizer_input_preprocess": "GPUShader+TextureConverter",
+        "recognizer_input_layout": "NCHW/BGR/TopLeft",
+        "recognizer_input_cpu_image_readback": False,
+        "recognizer_ctc_reduction": "GPUArgMax+ReduceMax",
+        "recognizer_full_probability_matrix_cpu_readback": False,
+        "recognizer_full_output_worker_retained": False,
+        "recognizer_cpu_values_per_timestep": 2,
         "surface_runtime": "MRUKEnvironmentRaycast",
         "translation_runtime": "DemoDictionaryFixture",
         "product_translation_gate": False,
@@ -334,6 +340,8 @@ def build_evidence(
         "log_privacy": {
             "raw_process_logcat_written_to_disk": False,
             "raw_process_logcat_uploaded": False,
+            "raw_command_stderr_serialized": False,
+            "raw_command_arguments_serialized_on_failure": False,
             "sanitized_diagnostics_allowlist": True,
             "diagnostic_lines_require_full_grammar_match": True,
             "recognized_text_allowed_in_diagnostics": False,
@@ -341,13 +349,14 @@ def build_evidence(
         },
         "files": {"sanitized_diagnostics": DIAGNOSTIC_FILE_NAME},
         "scope": (
-            "Real Quest camera/OCR + captured camera-pose projection + MRUK live-depth surface fit/tracking + "
-            "source mask + Japanese world-text vertical slice. Translation remains the explicit demo dictionary fixture. "
-            "PP-OCR detector input uses GPU TextureConverter plus functional mean/std normalization without CPU image "
-            "readback. Exact end-to-end camera pixel/pose synchronization remains unverified until calibrated Quest "
-            "exposure/timing evidence is captured. Raw process logcat remains runner-memory-only; uploaded diagnostics "
-            "must fully match reviewed counter/status grammars. Marian product translation, visual quality, stereo comfort, "
-            "endurance, thermal and performance remain separate gates."
+            "Real Quest camera/OCR + captured camera-pose projection + MRUK live-depth surface fit/tracking + source mask + "
+            "Japanese world-text vertical slice. Translation remains the explicit demo dictionary fixture. Detector and "
+            "recognizer image preprocessing are GPU-side; live recognizer CTC preparation uses GPU ArgMax/ReduceMax and "
+            "downloads only class index + max score per timestep, with no retained full-output parity worker. Exact "
+            "end-to-end camera pixel/pose synchronization remains unverified until calibrated Quest exposure/timing "
+            "evidence is captured. Raw process logcat, raw command stderr and raw adb serials are excluded from uploaded "
+            "evidence. Marian product translation, visual quality, stereo comfort, endurance, thermal and performance "
+            "remain separate gates."
         ),
     }
     if error is not None:
@@ -434,6 +443,7 @@ def main() -> None:
             "read_mode_smoke_passed",
             "mruk_environment_raycast_observed",
             "captured_pose_projection_observed",
+            "recognizer_gpu_reduction_observed",
         )
         if not all(readiness[name] for name in required):
             missing = [name for name in required if not readiness[name]]
