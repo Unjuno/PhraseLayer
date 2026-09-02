@@ -35,12 +35,14 @@ mkdir -p "$(dirname "$PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH")"
 
 # A clean checkout does not commit generated Meta XR project settings. Apply the pinned Meta SDK's Required Android
 # fixes in a dedicated Unity process, then build from a fresh second process after those settings are persisted.
+unset PHRASELAYER_META_PROJECT_SETUP_APPLIED
 "$UNITY_EDITOR" \
   -batchmode \
   -nographics \
   -projectPath "$PROJECT_PATH" \
   -executeMethod PhraseLayer.Unity.Editor.PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch \
   -logFile -
+export PHRASELAYER_META_PROJECT_SETUP_APPLIED=1
 
 # Packaging-only process. Real PP-OCR GPU inference/preprocess parity and real Marian exact-token/Read-Mode parity
 # must run as separate host gates before this build. -nographics is intentional because this process performs no
