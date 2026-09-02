@@ -25,6 +25,7 @@ jobs:
       - run: python tools/validate_ppocr_dictionary_manifest_wiring.py
       - run: python tools/validate_local_ocr_asset_staging.py
       - run: python tools/validate_ppocr_gpu_preprocess_gate.py
+      - run: python tools/validate_ppocr_gpu_ctc_reduction_gate.py
       - run: python tools/validate_read_mode_mask_gate.py
       - run: python tools/validate_mruk_environment_raycast_gate.py
       - run: python tools/validate_quest_project_setup_gate.py
