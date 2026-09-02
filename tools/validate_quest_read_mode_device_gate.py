@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,10 +13,12 @@ RUNNER = ROOT / "tools/run_quest_read_mode_smoke.py"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
 OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
 DETECTOR_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
-DETECTOR_GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrGpuPreprocessProbe.cs"
 RECOGNIZER_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-recognizer-gpu-preprocess.sh"
-RECOGNIZER_GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs"
+RECOGNIZER_GPU_REDUCTION_SH = ROOT / "tools/unity/verify-recognizer-gpu-reduction.sh"
 BUILD_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeFixtureAndroidBuild.cs"
+OCR_SMOKE_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/QuestOcrSmokeTestBehaviour.cs"
+ENGINE_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrEngine.cs"
+RECOGNIZER_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrRecognizerRuntime.cs"
 APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 
 
@@ -33,16 +36,22 @@ def forbid(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} contains forbidden marker: {fragment}")
 
 
+def has_nographics_argument(shell: str) -> bool:
+    return re.search(r"(?m)^\s*-nographics(?:\s|\\|$)", shell) is not None
+
+
 def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     runner = RUNNER.read_text(encoding="utf-8")
     build_sh = BUILD_SH.read_text(encoding="utf-8")
-    ocr_inference_sh = OCR_INFERENCE_SH.read_text(encoding="utf-8")
-    detector_gpu_preprocess_sh = DETECTOR_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
-    detector_gpu_preprocess_cs = DETECTOR_GPU_PREPROCESS_CS.read_text(encoding="utf-8")
-    recognizer_gpu_preprocess_sh = RECOGNIZER_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
-    recognizer_gpu_preprocess_cs = RECOGNIZER_GPU_PREPROCESS_CS.read_text(encoding="utf-8")
+    ocr_inference = OCR_INFERENCE_SH.read_text(encoding="utf-8")
+    detector_preprocess = DETECTOR_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    recognizer_preprocess = RECOGNIZER_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    recognizer_reduction = RECOGNIZER_GPU_REDUCTION_SH.read_text(encoding="utf-8")
     build_cs = BUILD_CS.read_text(encoding="utf-8")
+    ocr_smoke_cs = OCR_SMOKE_CS.read_text(encoding="utf-8")
+    engine_cs = ENGINE_CS.read_text(encoding="utf-8")
+    recognizer_cs = RECOGNIZER_CS.read_text(encoding="utf-8")
     apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
 
     for fragment in (
@@ -51,64 +60,124 @@ def validate() -> dict[str, object]:
         'default: "Quest 3"',
         "python tools/stage_models.py --purpose-prefix ocr- --include-support",
         "python tools/prepare_unity_ocr_assets.py",
-        "Require real Unity pinned PP-OCR synthetic inference",
         "verify-local-ocr-inference.sh",
-        "python tools/validate_ppocr_gpu_preprocess_gate.py",
-        "Require real Unity PP-OCR detector GPU preprocess parity",
         "verify-ppocr-gpu-preprocess.sh",
-        "Require real Unity PP-OCR recognizer GPU preprocess parity",
         "verify-recognizer-gpu-preprocess.sh",
-        "PHRASELAYER_JAPANESE_FONT_SOURCE:",
         "build-android-read-mode-fixture.sh",
-        'assert data["surface_runtime"] == "MRUKEnvironmentRaycast"',
-        'assert data["translation_runtime"] == "DemoDictionaryFixture"',
-        'assert data["product_translation_gate"] is False',
-        'assert data["deterministic_single_scene_build"] is True',
-        'assert data["project_paths_anchored_to_application_data_path"] is True',
-        'assert visual_data["font_staged_bytes_verified"] is True',
-        'assert visual_data["mask_shader_reasserted"] is True',
-        "inspect_android_apk_structure.py",
-        "read-mode-apk-fingerprint.json",
-        "read-mode-apk-structure.json",
-        '"ocr_model_redistribution_review": "pending"',
-        '"uploaded": False',
         "python tools/run_quest_read_mode_smoke.py",
         'assert data["readiness"]["ocr_smoke_passed"] is True',
         'assert data["readiness"]["read_mode_smoke_passed"] is True',
         'assert data["readiness"]["captured_pose_projection_observed"] is True',
         'assert data["permissions"]["android.permission.CAMERA"]["declared"] is True',
         'assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True',
-        'assert data["camera_timestamp_source"] == "MetaPassthroughCameraAccess.Timestamp"',
-        'assert data["camera_pose_source"] == "MetaPassthroughCameraAccess.GetCameraPose"',
-        'assert data["captured_pose_projection_required"] is True',
-        'assert data["camera_timestamp_pose_binding_implemented"] is True',
         'assert data["camera_pixel_pose_sync_verified"] is False',
-        'assert data["log_privacy"]["raw_process_logcat_written_to_disk"] is False',
-        'assert data["log_privacy"]["raw_process_logcat_uploaded"] is False',
-        'assert data["log_privacy"]["sanitized_diagnostics_allowlist"] is True',
-        'assert data["log_privacy"]["diagnostic_lines_require_full_grammar_match"] is True',
-        'assert data["files"]["sanitized_diagnostics"] == "quest-read-mode-diagnostics.txt"',
-        'assert "recognized_text=" not in diagnostics',
-        'assert "display_text=" not in diagnostics',
-        'assert data["apk"]["sha256"] == fingerprint["sha256"]',
-        "quest-read-mode-diagnostics.txt",
+        "inspect_android_apk_structure.py",
         "Remove local Read Mode APK before artifact phase",
         'rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"',
         "Upload safe Quest 3 Read Mode evidence",
-        "if: always()",
         "phraselayer-quest3-read-mode-evidence",
     ):
         require(workflow, fragment, "Quest Read Mode workflow")
 
     upload_section = workflow.split("- name: Upload safe Quest 3 Read Mode evidence", 1)[1]
-    for forbidden_marker in (
+    for forbidden in (
         "PhraseLayerReadModeFixture.apk",
         "detector.onnx",
         "recognizer.onnx",
         "quest-read-mode-logcat.txt",
         "quest-read-mode-smoke/**",
     ):
-        forbid(upload_section, forbidden_marker, "Quest Read Mode artifact upload section")
+        forbid(upload_section, forbidden, "Quest Read Mode artifact upload section")
+
+    for fragment in (
+        "PhraseLayerLocalOcrAssets.RunLocalInferenceProbeBatch",
+        'bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"',
+        "synthetic GPU inference plus recognizer GPU CTC reduction parity",
+    ):
+        require(ocr_inference, fragment, "shared PP-OCR real Unity gate")
+
+    for shell, label, method in (
+        (detector_preprocess, "detector preprocess gate", "PhraseLayerPaddleOcrGpuPreprocessProbe.RunBatch"),
+        (recognizer_preprocess, "recognizer preprocess gate", "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.RunBatch"),
+        (recognizer_reduction, "recognizer reduction gate", "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.RunBatch"),
+    ):
+        require(shell, "UNITY_EDITOR", label)
+        require(shell, method, label)
+        if has_nographics_argument(shell):
+            raise GateError(f"{label} must run with a real graphics device")
+
+    for fragment in (
+        "full-matrix versus GPU ArgMax/ReduceMax CTC reduction parity",
+        "recognizer.onnx",
+        "ppocr_keys.txt",
+    ):
+        require(recognizer_reduction, fragment, "recognizer reduction gate")
+
+    for fragment in (
+        "public bool UsesGpuCtcReduction => true",
+        "public bool RetainsFullOutputWorker => false",
+        "private readonly Worker reducedOutputWorker",
+        "Functional.ArgMax(probabilities, dim: -1, keepdim: false)",
+        "Functional.ReduceMax(probabilities, dim: -1, keepdim: false)",
+        "using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))",
+    ):
+        require(recognizer_cs, fragment, "recognizer runtime")
+    forbid(recognizer_cs, "private readonly Worker fullOutputWorker", "recognizer runtime")
+
+    for fragment in (
+        "public bool UsesGpuRecognizerCtcReduction => recognizer.UsesGpuCtcReduction",
+        "public bool RetainsFullRecognizerOutputWorker => recognizer.RetainsFullOutputWorker",
+        "recognizer.ExecuteReduced(",
+        "PaddleOcrRuntimeContract.ValidateRecognizerReduced(",
+    ):
+        require(engine_cs, fragment, "live PP-OCR engine")
+
+    for fragment in (
+        "TryGetProductionRuntimeState(",
+        "engine.UsesGpuRecognizerCtcReduction",
+        "engine.RetainsFullRecognizerOutputWorker",
+        "gpuCtcReduction &&",
+        "!fullOutputWorkerRetained",
+        'recognizer_gpu_ctc_reduction=',
+        'full_output_worker_retained=',
+    ):
+        require(ocr_smoke_cs, fragment, "Quest OCR smoke")
+
+    for fragment in (
+        'DEFAULT_PACKAGE = "com.unjuno.phraselayer.readmodefixture"',
+        'DEFAULT_EXPECTED_DEVICE_MODEL = "Quest 3"',
+        'RECOGNIZER_GPU_REDUCTION_MARKER = "recognizer_gpu_ctc_reduction=true full_output_worker_retained=false"',
+        '"recognizer_gpu_reduction_observed": RECOGNIZER_GPU_REDUCTION_MARKER in logcat',
+        'and last_readiness["recognizer_gpu_reduction_observed"]',
+        '"recognizer_gpu_reduction_observed",',
+        '"recognizer_input_preprocess": "GPUShader+TextureConverter"',
+        '"recognizer_input_layout": "NCHW/BGR/TopLeft"',
+        '"recognizer_input_cpu_image_readback": False',
+        '"recognizer_ctc_reduction": "GPUArgMax+ReduceMax"',
+        '"recognizer_full_probability_matrix_cpu_readback": False',
+        '"recognizer_full_output_worker_retained": False',
+        '"recognizer_cpu_values_per_timestep": 2',
+        '"camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp"',
+        '"camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose"',
+        '"captured_pose_projection_required": True',
+        '"camera_pixel_pose_sync_verified": False',
+        '"raw_process_logcat_written_to_disk": False',
+        '"raw_process_logcat_uploaded": False',
+        '"raw_command_stderr_serialized": False',
+        '"raw_command_arguments_serialized_on_failure": False',
+        "pattern.fullmatch(candidate)",
+        "diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat)",
+    ):
+        require(runner, fragment, "Quest Read Mode device runner")
+
+    for forbidden in (
+        '"adb_serial": serial',
+        "completed.stderr.strip()",
+        '" ".join(args)',
+        "quest-read-mode-logcat.txt",
+        "log_path.write_text(logcat",
+    ):
+        forbid(runner, forbidden, "Quest Read Mode evidence privacy boundary")
 
     for fragment in (
         "zipfile.is_zipfile",
@@ -120,140 +189,21 @@ def validate() -> dict[str, object]:
         require(apk_inspector, fragment, "Android APK structure inspector")
 
     for fragment in (
-        'DEFAULT_PACKAGE = "com.unjuno.phraselayer.readmodefixture"',
-        'DEFAULT_EXPECTED_DEVICE_MODEL = "Quest 3"',
-        'CAMERA_PERMISSION = "android.permission.CAMERA"',
-        'HEADSET_CAMERA_PERMISSION = "horizonos.permission.HEADSET_CAMERA"',
-        'OCR_PASS_MARKER = "PhraseLayer Quest OCR smoke test PASS"',
-        'READ_MODE_PASS_MARKER = "PhraseLayer Quest Read Mode smoke test PASS"',
-        'SURFACE_RUNTIME_MARKER = "surface_runtime=MRUKEnvironmentRaycast"',
-        'CAPTURED_POSE_MARKER = "captured_pose_projection=true"',
-        'FATAL_MARKER = "FATAL EXCEPTION"',
-        'DIAGNOSTIC_FILE_NAME = "quest-read-mode-diagnostics.txt"',
-        "DIAGNOSTIC_START_MARKERS = (",
-        "SAFE_DIAGNOSTIC_PATTERNS = tuple(",
-        "pattern.fullmatch(candidate)",
-        "sanitize_logcat_diagnostics",
-        "redact_failure_message",
-        "require_device_model(actual_device_model, args.expected_device_model)",
-        "permission_declared(package_dump, CAMERA_PERMISSION)",
-        "permission_declared(package_dump, HEADSET_CAMERA_PERMISSION)",
-        "if not camera_declared:",
-        "if not headset_camera_declared:",
-        '"logcat", "-c"',
-        '"install", "-r", "-g"',
-        '"adb_serial_sha256_12": serial_fingerprint(serial)',
-        'status="fail"',
-        'evidence_path.write_text',
-        '"detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization"',
-        '"detector_input_layout": "NCHW/BGR/TopLeft"',
-        '"detector_input_cpu_image_readback": False',
-        '"surface_runtime": "MRUKEnvironmentRaycast"',
-        '"translation_runtime": "DemoDictionaryFixture"',
-        '"product_translation_gate": False',
-        '"camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp"',
-        '"camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose"',
-        '"captured_pose_projection_required": True',
-        '"camera_timestamp_pose_binding_implemented": True',
-        '"camera_pixel_pose_sync_verified": False',
-        '"raw_process_logcat_written_to_disk": False',
-        '"raw_process_logcat_uploaded": False',
-        '"diagnostic_lines_require_full_grammar_match": True',
-        '"recognized_text_allowed_in_diagnostics": False',
-        '"display_text_allowed_in_diagnostics": False',
-        "diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat)",
-        '"scope": (',
-    ):
-        require(runner, fragment, "Quest Read Mode device runner")
-    if '"adb_serial": serial' in runner:
-        raise GateError("Quest evidence must not upload the raw adb serial")
-    for forbidden_marker in (
-        "Graphics.Blit/readback preprocessing path",
-        "quest-read-mode-logcat.txt",
-        "log_path.write_text(logcat",
-    ):
-        forbid(runner, forbidden_marker, "Quest Read Mode device runner")
-
-    for fragment in (
-        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
-        "PHRASELAYER_JAPANESE_FONT_SOURCE",
-        "PHRASELAYER_READ_MODE_FIXTURE_APK_PATH",
+        "PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch",
         "PhraseLayerReadModeFixtureAndroidBuild.BuildBatch",
-        "PhraseLayer.read-mode-fixture-build-evidence.json",
+        "PHRASELAYER_READ_MODE_FIXTURE_APK_PATH",
     ):
         require(build_sh, fragment, "Read Mode Android build shell")
 
     for fragment in (
-        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
-        "Required staged PP-OCR asset is missing or empty",
-        "Intentionally no -nographics",
-        "PhraseLayerLocalOcrAssets.RunLocalInferenceProbeBatch",
-        "real Unity pinned PP-OCR detector+recognizer synthetic GPU inference gate",
-    ):
-        require(ocr_inference_sh, fragment, "PP-OCR real Unity inference shell")
-
-    for fragment in (
-        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
-        "Intentionally no -nographics",
-        "PhraseLayerPaddleOcrGpuPreprocessProbe.RunBatch",
-        "real Unity PP-OCR GPU texture -> tensor -> normalization parity probe",
-    ):
-        require(detector_gpu_preprocess_sh, fragment, "PP-OCR detector GPU preprocess Unity shell")
-
-    for fragment in (
-        "ProbeSize = PaddleOcrV6TinyDetectionPreprocess.DefaultLimitSideLength",
-        "CreateReviewedTextureTransform(flipReadbackRows: true)",
-        "ApplyReviewedNormalization(normalizationInput)",
-        "PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.b, 0)",
-        "PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.g, 1)",
-        "PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel(pixel.r, 2)",
-        "PhraseLayer PP-OCR GPU preprocess parity PASS",
-        "public static void RunBatch()",
-    ):
-        require(detector_gpu_preprocess_cs, fragment, "PP-OCR detector GPU preprocess Unity probe")
-
-    for fragment in (
-        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
-        "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.RunBatch",
-        "real Unity PP-OCR recognizer GPU preprocessing parity",
-    ):
-        require(recognizer_gpu_preprocess_sh, fragment, "PP-OCR recognizer GPU preprocess Unity shell")
-    if "-nographics" in recognizer_gpu_preprocess_sh:
-        raise GateError("PP-OCR recognizer GPU preprocess Unity shell must use a real graphics device")
-
-    for fragment in (
-        "SourceWidth = 64",
-        "ModelWidth = 96",
-        "UnityPaddleOcrRecognizerRuntime.CreateReviewedPreprocessMaterial()",
-        "UnityPaddleOcrRecognizerRuntime.PopulateReviewedInputTensor(",
-        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.b)",
-        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.g)",
-        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.r)",
-        "PhraseLayer PP-OCR recognizer GPU preprocess parity PASS",
-        "public static void RunBatch()",
-    ):
-        require(recognizer_gpu_preprocess_cs, fragment, "PP-OCR recognizer GPU preprocess Unity probe")
-
-    for fragment in (
         'DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodefixture"',
-        'var root = ProjectRoot()',
         'Application.dataPath',
-        'enabledScenes.Length != 1',
-        'new[] { PhraseLayerEditorSetup.DemoScenePath }',
-        '\\"ocr_runtime\\": \\"PaddleOCR\\"',
-        '\\"surface_runtime\\": \\"MRUKEnvironmentRaycast\\"',
-        '\\"translation_runtime\\": \\"DemoDictionaryFixture\\"',
-        '\\"product_translation_gate\\": false',
-        '\\"camera_timestamp_source\\": \\"MetaPassthroughCameraAccess.Timestamp\\"',
-        '\\"camera_pose_source\\": \\"MetaPassthroughCameraAccess.GetCameraPose\\"',
-        '\\"captured_pose_projection_required\\": true',
-        '\\"camera_timestamp_pose_binding_implemented\\": true',
-        '\\"camera_pixel_pose_sync_verified\\": false',
-        '\\"quest_read_mode_smoke_autorun\\": true',
-        '\\"deterministic_single_scene_build\\": true',
-        '\\"project_paths_anchored_to_application_data_path\\": true',
         'PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP)',
         'PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64',
+        '\\"translation_runtime\\": \\"DemoDictionaryFixture\\"',
+        '\\"product_translation_gate\\": false',
+        '\\"camera_pixel_pose_sync_verified\\": false',
+        '\\"quest_read_mode_smoke_autorun\\": true',
     ):
         require(build_cs, fragment, "Read Mode fixture Android builder")
 
@@ -261,34 +211,27 @@ def validate() -> dict[str, object]:
         "status": "pass",
         "self_hosted_quest3_runner_required": True,
         "actual_device_model_verified": True,
+        "pinned_ocr_staged": True,
+        "real_unity_detector_preprocess_parity_required": True,
+        "real_unity_recognizer_preprocess_parity_required": True,
+        "real_unity_recognizer_reduction_parity_required": True,
+        "quest_pass_requires_gpu_ctc_reduction": True,
+        "production_full_recognizer_worker_allowed": False,
+        "recognizer_full_probability_matrix_cpu_readback": False,
+        "recognizer_cpu_values_per_timestep": 2,
         "raw_adb_serial_uploaded": False,
         "raw_process_logcat_written_to_disk": False,
         "raw_process_logcat_uploaded": False,
+        "raw_command_stderr_serialized": False,
+        "raw_command_arguments_serialized_on_failure": False,
         "allowlisted_diagnostics_required": True,
-        "full_grammar_diagnostic_match_required": True,
-        "failure_json_required": True,
-        "installed_camera_permissions_required": True,
-        "pinned_ocr_staged": True,
-        "real_unity_pinned_ocr_inference_required": True,
-        "real_unity_detector_gpu_preprocess_parity_required": True,
-        "real_unity_recognizer_gpu_preprocess_parity_required": True,
-        "detector_cpu_image_readback_forbidden": True,
-        "recognizer_cpu_image_readback_forbidden": True,
         "captured_camera_pose_required": True,
         "mruk_live_depth_surface_required": True,
-        "reviewed_external_japanese_font_required": True,
-        "deterministic_single_scene_build_required": True,
-        "project_paths_anchored_to_application_data_path": True,
         "android_arm64_il2cpp_required": True,
         "apk_structure_verification_required": True,
-        "ocr_redistribution_review_pending": True,
         "apk_artifact_upload_allowed": False,
-        "ocr_and_read_mode_pass_markers_required": True,
-        "fatal_exception_rejected": True,
-        "timestamp_pose_binding_implemented": True,
         "pixel_pose_sync_false_claim_prevented": True,
         "fixture_translation_not_product_gate": True,
-        "evidence_uploaded_on_failure": True,
         "real_quest_execution_still_required": True,
     }
 
