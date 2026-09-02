@@ -190,7 +190,7 @@ jobs:
           assert data["product_translation_gate"] is True and data["semantic_span_pipeline"] is True
           assert data["combined_single_scene_packaging"] is True
           assert data["source_weight_copied_to_unity"] is False and data["il2cpp_reflection_preserve_required"] is True
-          assert data["meta_project_setup_applied"] is True and data["meta_project_setup_separate_unity_process_required"] is True
+          assert data["meta_project_setup_applied_before_build"] is True and data["meta_project_setup_separate_unity_process_required"] is True
           assert data["quest_read_mode_smoke_autorun"] is False
           assert data["quest_device_execution_performed"] is False and data["android_runtime_execution_performed"] is False
           assert data["camera_pixel_pose_sync_verified"] is False
