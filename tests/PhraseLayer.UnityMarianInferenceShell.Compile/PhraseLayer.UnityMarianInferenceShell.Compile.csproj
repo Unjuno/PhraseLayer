@@ -20,5 +20,7 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs" Link="UnityEditor/PhraseLayerMarianParityEvidence.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerMarianProductFixtureSetup.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerMarianProductAndroidBuild.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerReadModeMarianProductFixtureSetup.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerReadModeMarianProductAndroidBuild.cs" />
   </ItemGroup>
 </Project>
