@@ -82,11 +82,17 @@ jobs:
           chmod +x tools/unity/verify-local-ocr-inference.sh
           ./tools/unity/verify-local-ocr-inference.sh
 
-      - name: Require real Unity PP-OCR GPU preprocess parity
+      - name: Require real Unity PP-OCR detector GPU preprocess parity
         shell: bash
         run: |
           chmod +x tools/unity/verify-ppocr-gpu-preprocess.sh
           ./tools/unity/verify-ppocr-gpu-preprocess.sh
+
+      - name: Require real Unity PP-OCR recognizer GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-recognizer-gpu-preprocess.sh
+          ./tools/unity/verify-recognizer-gpu-preprocess.sh
 
       - name: Build deterministic Read Mode Android ARM64 IL2CPP fixture
         shell: bash
@@ -166,7 +172,7 @@ jobs:
                   for chunk in iter(lambda: stream.read(1024*1024), b""): digest.update(chunk)
               return digest.hexdigest()
           apk.unlink(); assert not apk.exists()
-          manifest={"schema_version":3,"purpose":"phrase-layer-read-mode-pre-device-unity-host-gate","status":"pass","git_sha":os.environ.get("GITHUB_SHA","unobserved"),"unity_host_preflight_passed":True,"real_unity_pinned_ocr_inference_passed":True,"real_unity_gpu_preprocess_parity_passed":True,"android_arm64_il2cpp_fixture_built":True,"apk_structure_verified":True,"apk_arm64_only_verified":True,"apk_il2cpp_library_verified":True,"quest_device_execution_performed":False,"product_translation_gate":False,"ocr_model_redistribution_review":"pending","apk_uploaded":False,"apk_removed_before_artifact_upload":True,"local_apk_fingerprint":fp,"files":{"unity_host_preflight":{"name":preflight.name,"sha256":sha256(preflight)},"build_evidence":{"name":build_evidence.name,"sha256":sha256(build_evidence)},"visual_evidence":{"name":visual_evidence.name,"sha256":sha256(visual_evidence)},"ocr_manifest":{"name":ocr_manifest.name,"sha256":sha256(ocr_manifest)},"apk_fingerprint":{"name":apk_fingerprint.name,"sha256":sha256(apk_fingerprint)},"apk_structure":{"name":apk_structure.name,"sha256":sha256(apk_structure)}}}
+          manifest={"schema_version":4,"purpose":"phrase-layer-read-mode-pre-device-unity-host-gate","status":"pass","git_sha":os.environ.get("GITHUB_SHA","unobserved"),"unity_host_preflight_passed":True,"real_unity_pinned_ocr_inference_passed":True,"real_unity_detector_gpu_preprocess_parity_passed":True,"real_unity_recognizer_gpu_preprocess_parity_passed":True,"android_arm64_il2cpp_fixture_built":True,"apk_structure_verified":True,"apk_arm64_only_verified":True,"apk_il2cpp_library_verified":True,"quest_device_execution_performed":False,"product_translation_gate":False,"ocr_model_redistribution_review":"pending","apk_uploaded":False,"apk_removed_before_artifact_upload":True,"local_apk_fingerprint":fp,"files":{"unity_host_preflight":{"name":preflight.name,"sha256":sha256(preflight)},"build_evidence":{"name":build_evidence.name,"sha256":sha256(build_evidence)},"visual_evidence":{"name":visual_evidence.name,"sha256":sha256(visual_evidence)},"ocr_manifest":{"name":ocr_manifest.name,"sha256":sha256(ocr_manifest)},"apk_fingerprint":{"name":apk_fingerprint.name,"sha256":sha256(apk_fingerprint)},"apk_structure":{"name":apk_structure.name,"sha256":sha256(apk_structure)}}}
           output=temp / "PhraseLayer.read-mode-unity-host-gate.json"; output.write_text(json.dumps(manifest,indent=2,sort_keys=True)+"\n",encoding="utf-8"); print(json.dumps(manifest,sort_keys=True))
           PY
 
