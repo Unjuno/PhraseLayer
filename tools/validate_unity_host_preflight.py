@@ -11,6 +11,7 @@ EDITOR = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerUnityHostPrefl
 SHELL = ROOT / "tools/unity/run-host-preflight.sh"
 READ_WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 MARIAN_WORKFLOW = ROOT / ".github/workflows/marian-unity-host-gate.yml"
+READ_MARIAN_WORKFLOW = ROOT / ".github/workflows/read-mode-marian-unity-host-gate.yml"
 MARIAN_ANDROID_WORKFLOW = ROOT / ".github/workflows/marian-android-runtime-smoke.yml"
 QUEST_WORKFLOW = ROOT / ".github/workflows/quest3-read-mode-smoke.yml"
 
@@ -38,6 +39,7 @@ def validate() -> dict[str, object]:
     shell = SHELL.read_text(encoding="utf-8")
     read_workflow = READ_WORKFLOW.read_text(encoding="utf-8")
     marian_workflow = MARIAN_WORKFLOW.read_text(encoding="utf-8")
+    read_marian_workflow = READ_MARIAN_WORKFLOW.read_text(encoding="utf-8")
     marian_android_workflow = MARIAN_ANDROID_WORKFLOW.read_text(encoding="utf-8")
     quest_workflow = QUEST_WORKFLOW.read_text(encoding="utf-8")
 
@@ -87,19 +89,27 @@ def validate() -> dict[str, object]:
         'data["exact_unity_version_match"] is True',
         'data["android_build_support_available"] is True',
         'data["inference_engine_compile_gate_active"] is True',
-        'data["local_asset_paths_serialized"] is False',
         'data["adb_required"] is False',
         'data["quest_device_execution_performed"] is False',
     )
     for workflow, label in (
         (read_workflow, "Read Mode host workflow"),
         (marian_workflow, "Marian host workflow"),
+        (read_marian_workflow, "combined Read Mode Marian host workflow"),
         (marian_android_workflow, "Marian Android runtime workflow"),
         (quest_workflow, "Quest Read Mode workflow"),
     ):
         compact_workflow = compact(workflow)
         for fragment in workflow_markers:
             require(compact_workflow, compact(fragment), label)
+
+    # The combined gate also checks the path-redaction field explicitly. Keep the common requirement optional here
+    # only because the older device workflows already have their own no-local-path evidence contracts.
+    require(
+        compact(read_marian_workflow),
+        compact('data["local_asset_paths_serialized"] is False'),
+        "combined Read Mode Marian host workflow",
+    )
 
     return {
         "status": "pass",
@@ -109,7 +119,7 @@ def validate() -> dict[str, object]:
         "android_build_support_required": True,
         "inference_compile_gate_required": True,
         "local_paths_redacted": True,
-        "host_workflows_covered": 4,
+        "host_workflows_covered": 5,
         "adb_dependency": False,
         "quest_execution": False,
     }
