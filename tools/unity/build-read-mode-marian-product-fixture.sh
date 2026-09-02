@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_PATH="${PHRASELAYER_UNITY_PROJECT_PATH:-$ROOT/unity/PhraseLayer.Unity}"
+
 : "${UNITY_EDITOR:?UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.}"
 : "${PHRASELAYER_JAPANESE_FONT_SOURCE:?PHRASELAYER_JAPANESE_FONT_SOURCE must point to a locally reviewed Japanese-capable font.}"
 : "${PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH:?PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH must name a local APK output path.}"
 
-PROJECT_PATH="${PHRASELAYER_UNITY_PROJECT_PATH:-unity/PhraseLayer.Unity}"
+[[ -x "$UNITY_EDITOR" ]] || { echo "UNITY_EDITOR is not executable: $UNITY_EDITOR" >&2; exit 2; }
+[[ -d "$PROJECT_PATH/Assets" ]] || { echo "Unity project Assets directory is missing: $PROJECT_PATH/Assets" >&2; exit 2; }
 
 for required in \
   "$PROJECT_PATH/Assets/LocalOcrAssets/PaddleOCR/detection.onnx" \
@@ -23,24 +27,33 @@ for required in \
   "$PROJECT_PATH/Assets/LocalTokenizerRuntime/Microsoft.ML.Tokenizers.dll" \
   "$PROJECT_PATH/Assets/LocalTokenizerRuntime/Google.Protobuf.dll" \
   "$PROJECT_PATH/Assets/LocalTokenizerRuntime/link.xml"; do
-  test -s "$required" || { echo "Required combined Read Mode + Marian fixture asset is missing or empty: $required" >&2; exit 2; }
+  [[ -s "$required" ]] || { echo "Required combined Read Mode + Marian fixture asset is missing or empty: $required" >&2; exit 2; }
 done
 
-test -s "$PHRASELAYER_JAPANESE_FONT_SOURCE" || { echo "Reviewed Japanese font source is missing or empty." >&2; exit 2; }
+[[ -s "$PHRASELAYER_JAPANESE_FONT_SOURCE" ]] || { echo "Reviewed Japanese font source is missing or empty." >&2; exit 2; }
 mkdir -p "$(dirname "$PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH")"
 
-# Packaging-only process. Real PP-OCR GPU inference/preprocess parity and real Marian exact-token parity must run as
-# separate host gates before this build. -nographics is intentional because this process performs no model inference.
+# A clean checkout does not commit generated Meta XR project settings. Apply the pinned Meta SDK's Required Android
+# fixes in a dedicated Unity process, then build from a fresh second process after those settings are persisted.
+"$UNITY_EDITOR" \
+  -batchmode \
+  -nographics \
+  -projectPath "$PROJECT_PATH" \
+  -executeMethod PhraseLayer.Unity.Editor.PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch \
+  -logFile -
+
+# Packaging-only process. Real PP-OCR GPU inference/preprocess parity and real Marian exact-token/Read-Mode parity
+# must run as separate host gates before this build. -nographics is intentional because this process performs no
+# model inference and no camera, MRUK, Android runtime, or Quest execution.
 "$UNITY_EDITOR" \
   -batchmode \
   -nographics \
   -projectPath "$PROJECT_PATH" \
   -executeMethod PhraseLayer.Unity.Editor.PhraseLayerReadModeMarianProductAndroidBuild.BuildBatch \
-  -quit \
   -logFile -
 
 EVIDENCE="$(dirname "$PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH")/PhraseLayer.read-mode-marian-product-build-evidence.json"
-test -s "$PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH" || { echo "Combined Read Mode + Marian product APK was not produced." >&2; exit 3; }
-test -s "$EVIDENCE" || { echo "Combined Read Mode + Marian product build evidence was not produced: $EVIDENCE" >&2; exit 4; }
+[[ -s "$PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH" ]] || { echo "Combined Read Mode + Marian product APK was not produced." >&2; exit 3; }
+[[ -s "$EVIDENCE" ]] || { echo "Combined Read Mode + Marian product build evidence was not produced: $EVIDENCE" >&2; exit 4; }
 
-echo "PASS: built local-only combined Read Mode + Marian Android ARM64 IL2CPP packaging fixture; no Quest/runtime PASS is implied."
+echo "PASS: Meta Quest project setup + local-only combined Read Mode + Marian Android ARM64 IL2CPP packaging fixture; no Quest/runtime PASS is implied."
