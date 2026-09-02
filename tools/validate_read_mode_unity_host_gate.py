@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,7 @@ WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
 DETECTOR_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
 RECOGNIZER_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-recognizer-gpu-preprocess.sh"
+RECOGNIZER_GPU_REDUCTION_SH = ROOT / "tools/unity/verify-recognizer-gpu-reduction.sh"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
 APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 
@@ -29,11 +31,16 @@ def forbid(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} contains forbidden marker: {fragment}")
 
 
+def has_nographics_argument(shell: str) -> bool:
+    return re.search(r"(?m)^\s*-nographics(?:\s|\\|$)", shell) is not None
+
+
 def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     ocr_inference = OCR_INFERENCE_SH.read_text(encoding="utf-8")
     detector_gpu_preprocess = DETECTOR_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
     recognizer_gpu_preprocess = RECOGNIZER_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    recognizer_gpu_reduction = RECOGNIZER_GPU_REDUCTION_SH.read_text(encoding="utf-8")
     build = BUILD_SH.read_text(encoding="utf-8")
     apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
 
@@ -104,7 +111,8 @@ def validate() -> dict[str, object]:
     for fragment in (
         "Intentionally no -nographics",
         "PhraseLayerLocalOcrAssets.RunLocalInferenceProbeBatch",
-        "real Unity pinned PP-OCR detector+recognizer synthetic GPU inference gate",
+        'bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"',
+        "synthetic GPU inference plus recognizer GPU CTC reduction parity",
     ):
         require(ocr_inference, fragment, "real Unity OCR inference shell")
 
@@ -121,8 +129,17 @@ def validate() -> dict[str, object]:
         "real Unity PP-OCR recognizer GPU preprocessing parity",
     ):
         require(recognizer_gpu_preprocess, fragment, "recognizer GPU preprocess shell")
-    if "-nographics" in recognizer_gpu_preprocess:
+    if has_nographics_argument(recognizer_gpu_preprocess):
         raise GateError("recognizer GPU preprocess shell must require a real graphics device")
+
+    for fragment in (
+        "UNITY_EDITOR",
+        "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.RunBatch",
+        "full-matrix versus GPU ArgMax/ReduceMax CTC reduction parity",
+    ):
+        require(recognizer_gpu_reduction, fragment, "recognizer GPU reduction shell")
+    if has_nographics_argument(recognizer_gpu_reduction):
+        raise GateError("recognizer GPU reduction shell must require a real graphics device")
 
     for fragment in (
         "PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch",
@@ -137,6 +154,8 @@ def validate() -> dict[str, object]:
         "real_unity_pinned_ocr_inference_required": True,
         "real_unity_detector_gpu_preprocess_parity_required": True,
         "real_unity_recognizer_gpu_preprocess_parity_required": True,
+        "real_unity_recognizer_gpu_reduction_parity_required": True,
+        "production_full_recognizer_worker_allowed": False,
         "android_arm64_il2cpp_build_required": True,
         "reviewed_font_and_mask_evidence_required": True,
         "deterministic_single_scene_required": True,
