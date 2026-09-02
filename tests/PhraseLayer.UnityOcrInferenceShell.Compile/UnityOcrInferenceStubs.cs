@@ -292,3 +292,35 @@ namespace Unity.InferenceEngine
         public void Dispose() { }
     }
 }
+
+namespace PhraseLayer.Unity
+{
+    using System.Collections.Generic;
+    using PhraseLayer.Core.Inputs;
+    using UnityEngine;
+
+    public sealed class UnityTextureFramePayload
+    {
+        public UnityTextureFramePayload(Texture texture) { Texture = texture; }
+        public Texture Texture { get; }
+    }
+
+    public sealed class PaddleOcrRectifiedCrop : IDisposable
+    {
+        public Texture Texture { get; set; }
+        public void Dispose() { }
+    }
+
+    public sealed class UnityPaddleOcrCropRectifier : IDisposable
+    {
+        public PaddleOcrRectifiedCrop Rectify(Texture source, ImageQuad sourceQuad) => new PaddleOcrRectifiedCrop { Texture = source };
+        public void Dispose() { }
+    }
+
+    public static class PaddleDetectorRawOutputExtensions
+    {
+        public static IReadOnlyList<PaddleDbQuadDetection> DecodeV6TinyQuads(
+            this PaddleDetectorRawOutput output,
+            PaddleDbPostprocessSpec spec = null) => Array.Empty<PaddleDbQuadDetection>();
+    }
+}
