@@ -13,5 +13,6 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrDetectorRuntime.cs" Link="UnityRuntime/UnityPaddleOcrDetectorRuntime.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrRecognizerRuntime.cs" Link="UnityRuntime/UnityPaddleOcrRecognizerRuntime.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs" Link="UnityEditor/PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs" Link="UnityEditor/PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs" />
   </ItemGroup>
 </Project>
