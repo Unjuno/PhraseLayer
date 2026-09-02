@@ -72,10 +72,17 @@ def validate() -> dict[str, object]:
     for fragment in (
         'DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodemarianfixture"',
         'BuildPathEnvironment = "PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH"',
+        'MetaProjectSetupEnvironment = "PHRASELAYER_META_PROJECT_SETUP_APPLIED"',
+        "RequireMetaProjectSetupHandshake()",
+        'Environment.GetEnvironmentVariable(MetaProjectSetupEnvironment)',
+        '"1"',
         "PhraseLayerReadModeMarianProductFixtureSetup.CreateScene()",
         "PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP)",
         "PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64",
+        '\\"schema_version\\": 2',
         '\\"purpose\\": \\"phrase-layer-read-mode-marian-product-android-fixture-build',
+        '\\"meta_project_setup_applied_before_build\\": true',
+        '\\"meta_project_setup_separate_unity_process_required\\": true',
         '\\"ocr_runtime\\": \\"PaddleOCR\\"',
         '\\"surface_runtime\\": \\"MRUKEnvironmentRaycast\\"',
         '\\"translation_runtime\\": \\"MarianOpusMtEnJa\\"',
@@ -104,11 +111,21 @@ def validate() -> dict[str, object]:
         "Assets/LocalOcrAssets/PaddleOCR/detection.onnx",
         "Assets/LocalTranslationAssets/Marian/encoder_model.onnx",
         "Assets/LocalTokenizerRuntime/link.xml",
+        "unset PHRASELAYER_META_PROJECT_SETUP_APPLIED",
+        "PhraseLayer.Unity.Editor.PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch",
+        "export PHRASELAYER_META_PROJECT_SETUP_APPLIED=1",
+        "dedicated Unity process",
         "-nographics",
         "PhraseLayer.Unity.Editor.PhraseLayerReadModeMarianProductAndroidBuild.BuildBatch",
         "no Quest/runtime PASS is implied",
     ):
         require(script, fragment, "combined Unity build runner")
+
+    setup_index = script.index("PhraseLayer.Unity.Editor.PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch")
+    handshake_index = script.index("export PHRASELAYER_META_PROJECT_SETUP_APPLIED=1")
+    build_index = script.index("PhraseLayer.Unity.Editor.PhraseLayerReadModeMarianProductAndroidBuild.BuildBatch")
+    if not setup_index < handshake_index < build_index:
+        raise GateError("combined Unity build runner must apply Meta setup, set the success handshake, then start a fresh build process")
 
     for fragment in (
         "workflow_dispatch:",
@@ -161,6 +178,8 @@ def validate() -> dict[str, object]:
         "combined_single_scene_packaging_required": True,
         "pinned_ppocr_real_unity_parity_required": True,
         "pinned_marian_real_unity_parity_required": True,
+        "meta_project_setup_separate_process_required": True,
+        "meta_project_setup_success_handshake_required": True,
         "android_arm64_il2cpp_required": True,
         "product_translation_gate": True,
         "quest_read_mode_smoke_autorun": False,
