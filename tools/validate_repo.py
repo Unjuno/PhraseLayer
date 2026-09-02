@@ -150,6 +150,9 @@ required_files = [
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDictionaryManifest.cs",
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrBootstrapBehaviour.cs",
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
+    UNITY / "Assets" / "Resources" / "PaddleOcrRecognizerPreprocess.shader",
+    UNITY / "Assets" / "Editor" / "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs",
+    UNITY / "Assets" / "Editor" / "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs",
     UNITY / "Assets" / "Editor" / "PhraseLayerEditorVerification.cs",
 ]
 for path in required_files:
@@ -179,6 +182,7 @@ validate_markers(
         "PaddleDbProbabilityMap.FromTensor(outputShape, outputValues)",
         "Recognizer output must be [1,time,class]",
         "dictionary token count + 1 CTC blank",
+        "ValidateRecognizerReduced(",
         "BuildReport(",
     ),
 )
@@ -213,11 +217,13 @@ validate_markers(
     (
         "PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform",
         "PaddleCtcGreedyDecoder.DecodeFromPredictions",
-        "fullOutputWorker.Schedule(inputTensor)",
         "reducedOutputWorker.Schedule(inputTensor)",
+        "using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))",
+        "parityWorker.Schedule(inputTensor)",
         "Functional.ArgMax(probabilities, dim: -1, keepdim: false)",
         "Functional.ReduceMax(probabilities, dim: -1, keepdim: false)",
         "UsesGpuCtcReduction => true",
+        "RetainsFullOutputWorker => false",
         "ReadbackAndClone()",
     ),
 )
@@ -235,7 +241,8 @@ validate_markers(
         "DecodeV6TinyQuads(dbSpec)",
         "PaddleOcrReadingOrder.Sort",
         "cropRectifier.Rectify(texture, detection.ImageBounds)",
-        "PaddleOcrRuntimeContract.ValidateRecognizer",
+        "recognizer.ExecuteReduced(",
+        "PaddleOcrRuntimeContract.ValidateRecognizerReduced(",
         "recognizerOutput.Decode(characterDictionary)",
         "RuntimeContractReport",
         "PaddleOcrObservationAssembler.Assemble",
@@ -264,6 +271,11 @@ validate_markers(
     UNITY / "Assets" / "Resources" / "PaddleOcrPerspectiveCrop.shader",
     "Unity PP-OCR crop shader",
     ("_RotateCCW90", "preRotationTop = float2(1.0 - outputTop.y, outputTop.x)", "sourceUv = saturate(sourceUv)", "tex2D(_MainTex, sourceUv)"),
+)
+validate_markers(
+    UNITY / "Assets" / "Resources" / "PaddleOcrRecognizerPreprocess.shader",
+    "Unity PP-OCR recognizer preprocess shader",
+    ("_ValidRatio", "LinearToGammaSpace", "(encoded - 0.5) / 0.5", "return float4(0.0, 0.0, 0.0, 1.0)"),
 )
 
 core_package = json.loads((CORE / "package.json").read_text(encoding="utf-8"))
@@ -304,5 +316,5 @@ if violations:
 
 print(
     f"PASS: {len(list(CORE.rglob('*.cs')))} core files; Core/Unity boundaries, fully pinned OCR artifacts, "
-    "measured PP-OCR YAML dictionary contract, Meta/Unity package pins, and end-to-end OCR runtime markers validated"
+    "measured PP-OCR YAML dictionary contract, Meta/Unity package pins, and GPU-reduced end-to-end OCR runtime markers validated"
 )
