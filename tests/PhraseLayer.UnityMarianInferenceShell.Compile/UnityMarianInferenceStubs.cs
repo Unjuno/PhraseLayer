@@ -330,3 +330,28 @@ namespace PhraseLayer.Unity
         }
     }
 }
+
+namespace PhraseLayer.Unity.Editor
+{
+    using System;
+    using UnityEngine;
+
+    public static class PhraseLayerEditorSetup
+    {
+        public const string DemoScenePath = "Assets/Scenes/PhraseLayerDemo.unity";
+    }
+
+    public static class PhraseLayerLocalReadModeVisualAssets
+    {
+        public static void StageAndCreateDemoScene(
+            bool autoRunQuestReadModeSmoke,
+            Action<GameObject, PhraseLayerDemoBehaviour> configureRoot)
+        {
+        }
+    }
+
+    public static class PhraseLayerLocalOcrAssets
+    {
+        public static void AssignLocalAssetsToSceneBootstrap() { }
+    }
+}
