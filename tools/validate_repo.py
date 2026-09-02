@@ -210,7 +210,16 @@ validate_markers(
 validate_markers(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrRecognizerRuntime.cs",
     "Unity PP-OCR recognizer runtime",
-    ("PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform", "PaddleCtcGreedyDecoder.DecodeFromPredictions", "worker.Schedule(inputTensor)", "ReadbackAndClone()"),
+    (
+        "PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform",
+        "PaddleCtcGreedyDecoder.DecodeFromPredictions",
+        "fullOutputWorker.Schedule(inputTensor)",
+        "reducedOutputWorker.Schedule(inputTensor)",
+        "Functional.ArgMax(probabilities, dim: -1, keepdim: false)",
+        "Functional.ReduceMax(probabilities, dim: -1, keepdim: false)",
+        "UsesGpuCtcReduction => true",
+        "ReadbackAndClone()",
+    ),
 )
 validate_markers(
     UNITY / "Assets" / "Scripts" / "UnityPaddleOcrCropRectifier.cs",
