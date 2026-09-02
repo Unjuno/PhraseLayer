@@ -9,10 +9,8 @@ namespace PhraseLayer.Unity
 {
     /// <summary>
     /// Quest-device smoke test for the real passthrough camera -> OCR path.
-    ///
-    /// PASS requires at least one presented OCR region from a real camera frame. The presenter synthetic fixture
-    /// is disabled/cleared before the run, and the normal auto-run loop is temporarily paused so only this harness
-    /// drives the OCR pump. Recognized text is omitted from diagnostics by default.
+    /// PASS requires at least one presented OCR region from a real camera frame, an observed recognizer contract, and
+    /// the production GPU CTC-reduction runtime with no retained full-output parity worker. Recognized text is redacted.
     /// </summary>
     public sealed class QuestOcrSmokeTestBehaviour : MonoBehaviour
     {
@@ -186,8 +184,13 @@ namespace PhraseLayer.Unity
                             bootstrap.RuntimeContractReport.IndexOf(
                                 "recognizer=unobserved",
                                 StringComparison.Ordinal) < 0;
+                        var productionRuntimeReady = TryGetProductionRuntimeState(
+                            out var gpuCtcReduction,
+                            out var fullOutputWorkerRetained) &&
+                            gpuCtcReduction &&
+                            !fullOutputWorkerRetained;
 
-                        if (enoughRegions && recognizerObserved)
+                        if (enoughRegions && recognizerObserved && productionRuntimeReady)
                         {
                             var totalMilliseconds = (Time.realtimeSinceStartupAsDouble - startedAt) * 1000.0;
                             lastPassed = true;
@@ -265,6 +268,20 @@ namespace PhraseLayer.Unity
                 .Append(" overall_confidence=").Append(presenter.LastConfidence.ToString("F6"))
                 .Append(" text_length=").Append(presenter.LastText.Length)
                 .AppendLine();
+
+            if (TryGetProductionRuntimeState(out var gpuCtcReduction, out var fullOutputWorkerRetained))
+            {
+                builder.Append("recognizer_gpu_ctc_reduction=")
+                    .Append(gpuCtcReduction ? "true" : "false")
+                    .Append(" full_output_worker_retained=")
+                    .Append(fullOutputWorkerRetained ? "true" : "false")
+                    .AppendLine();
+            }
+            else
+            {
+                builder.AppendLine("recognizer_gpu_ctc_reduction=unobserved full_output_worker_retained=unobserved");
+            }
+
             builder.AppendLine("dictionary_manifest=" + bootstrap.DictionaryManifestReport);
             builder.AppendLine("runtime_contract=" + bootstrap.RuntimeContractReport);
 
@@ -274,6 +291,23 @@ namespace PhraseLayer.Unity
                 builder.AppendLine("recognized_text=<redacted; enable includeRecognizedTextInReport explicitly>");
 
             return builder.ToString().TrimEnd();
+        }
+
+        private bool TryGetProductionRuntimeState(
+            out bool gpuCtcReduction,
+            out bool fullOutputWorkerRetained)
+        {
+            var engine = bootstrap.Engine as UnityPaddleOcrEngine;
+            if (engine == null)
+            {
+                gpuCtcReduction = false;
+                fullOutputWorkerRetained = false;
+                return false;
+            }
+
+            gpuCtcReduction = engine.UsesGpuRecognizerCtcReduction;
+            fullOutputWorkerRetained = engine.RetainsFullRecognizerOutputWorker;
+            return true;
         }
 
         private void ValidateSettings()
