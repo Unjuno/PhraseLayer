@@ -266,6 +266,8 @@ namespace Unity.InferenceEngine
     {
         public static FunctionalTensor Constant(TensorShape shape, float[] values) => new FunctionalTensor();
         public static FunctionalTensor[] Forward(Model model, params FunctionalTensor[] inputs) => Array.Empty<FunctionalTensor>();
+        public static FunctionalTensor ArgMax(FunctionalTensor input, int dim = 0, bool keepdim = false) => new FunctionalTensor();
+        public static FunctionalTensor ReduceMax(FunctionalTensor input, int dim, bool keepdim = false) => new FunctionalTensor();
     }
 
     public sealed class Worker : IDisposable
@@ -273,6 +275,7 @@ namespace Unity.InferenceEngine
         public Worker(Model model, BackendType backendType) { }
         public void Schedule(Tensor input) { }
         public Tensor PeekOutput() => null;
+        public Tensor PeekOutput(int index) => null;
         public void Dispose() { }
     }
 }
