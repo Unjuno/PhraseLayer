@@ -2,8 +2,8 @@
 """Static safety/diagnostic contract for the real Quest Read Mode smoke harness.
 
 The actual PASS still requires a headset. This gate prevents host-side changes from reintroducing synthetic OCR
-false positives, allowing OCR-only/Physics-only/current-pose success to masquerade as Read Mode success, or leaking
-recognized text in the end-to-end report.
+false positives, allowing OCR-only/Physics-only/current-pose success to masquerade as Read Mode success, retaining a
+parity-only recognizer worker in production, or leaking recognized text in the end-to-end report.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ READ = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/QuestReadModeSmokeTestBeha
 RUNTIME = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/OcrDebugRuntimeBehaviour.cs"
 PRESENTER = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/OcrViewportDebugBehaviour.cs"
 SETUP = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerEditorSetup.cs"
+ENGINE = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrEngine.cs"
+RECOGNIZER = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrRecognizerRuntime.cs"
 
 
 class GateError(ValueError):
@@ -28,12 +30,19 @@ def require(text: str, fragment: str, label: str) -> None:
         raise GateError(f"{label} is missing required marker: {fragment}")
 
 
+def forbid(text: str, fragment: str, label: str) -> None:
+    if fragment in text:
+        raise GateError(f"{label} contains forbidden marker: {fragment}")
+
+
 def validate() -> dict[str, object]:
     ocr = OCR.read_text(encoding="utf-8")
     read = READ.read_text(encoding="utf-8")
     runtime = RUNTIME.read_text(encoding="utf-8")
     presenter = PRESENTER.read_text(encoding="utf-8")
     setup = SETUP.read_text(encoding="utf-8")
+    engine = ENGINE.read_text(encoding="utf-8")
+    recognizer = RECOGNIZER.read_text(encoding="utf-8")
 
     for fragment in (
         "presenter.LoadSyntheticFixtureOnStart = false",
@@ -42,6 +51,13 @@ def validate() -> dict[str, object]:
         "runtimeDriver.AutoRun = false",
         "presenter.Regions.Count >= minimumRecognizedRegions",
         '"recognizer=unobserved"',
+        "TryGetProductionRuntimeState(",
+        "engine.UsesGpuRecognizerCtcReduction",
+        "engine.RetainsFullRecognizerOutputWorker",
+        "gpuCtcReduction &&",
+        "!fullOutputWorkerRetained",
+        'recognizer_gpu_ctc_reduction=',
+        'full_output_worker_retained=',
         'recognized_text=<redacted; enable includeRecognizedTextInReport explicitly>',
         "timeoutCancellation.CancelAfter",
     ):
@@ -49,6 +65,23 @@ def validate() -> dict[str, object]:
 
     require(runtime, "public bool AutoRun", "OCR runtime")
     require(presenter, "public bool LoadSyntheticFixtureOnStart", "OCR presenter")
+
+    for fragment in (
+        "public bool UsesGpuRecognizerCtcReduction => recognizer.UsesGpuCtcReduction",
+        "public bool RetainsFullRecognizerOutputWorker => recognizer.RetainsFullOutputWorker",
+        "recognizer.ExecuteReduced(",
+        "PaddleOcrRuntimeContract.ValidateRecognizerReduced(",
+    ):
+        require(engine, fragment, "Unity PP-OCR engine")
+
+    for fragment in (
+        "public bool UsesGpuCtcReduction => true",
+        "public bool RetainsFullOutputWorker => false",
+        "private readonly Worker reducedOutputWorker",
+        "using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))",
+    ):
+        require(recognizer, fragment, "Unity PP-OCR recognizer runtime")
+    forbid(recognizer, "private readonly Worker fullOutputWorker", "Unity PP-OCR recognizer runtime")
 
     for fragment in (
         "await ocrSmoke.RunSmokeTestAsync(runToken)",
@@ -93,6 +126,8 @@ def validate() -> dict[str, object]:
         "synthetic_ocr_can_pass": False,
         "ocr_region_required": True,
         "recognizer_runtime_observation_required": True,
+        "recognizer_gpu_ctc_reduction_required": True,
+        "recognizer_full_output_worker_retained_allowed": False,
         "captured_camera_pose_required": True,
         "current_camera_pose_only_can_pass": False,
         "mruk_live_depth_surface_required": True,
