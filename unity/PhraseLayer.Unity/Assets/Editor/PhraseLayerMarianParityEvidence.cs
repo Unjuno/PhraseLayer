@@ -7,9 +7,10 @@ using UnityEngine;
 namespace PhraseLayer.Unity.Editor
 {
     /// <summary>
-    /// Evidence-producing wrapper around the real Unity Marian parity gate. The wrapped probe throws on any graph,
-    /// tokenizer, generated-token, decoded-text or semantic-span mismatch; evidence is written only after it returns.
-    /// This prevents CI from converting a mere process exit code into unsupported product-parity claims.
+    /// Evidence-producing wrapper around the real Unity Marian parity gate. The wrapped probes throw on any graph,
+    /// tokenizer, generated-token, decoded-text, semantic-span or Read Mode observation/alignment mismatch; evidence
+    /// is written only after both return. This prevents CI from converting a mere process exit code into unsupported
+    /// product-parity claims.
     /// </summary>
     public static class PhraseLayerMarianParityEvidence
     {
@@ -20,6 +21,7 @@ namespace PhraseLayer.Unity.Editor
         public static void Run()
         {
             PhraseLayerLocalMarianAssets.RunTranslationParityProbe();
+            PhraseLayerMarianReadModeParityProbe.Validate();
             var evidencePath = ResolveEvidencePath();
             var parent = Path.GetDirectoryName(evidencePath);
             if (string.IsNullOrWhiteSpace(parent))
@@ -28,14 +30,14 @@ namespace PhraseLayer.Unity.Editor
 
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-real-unity-marian-parity\",\n  \"unity_version\": \"{0}\",\n  \"model_revision\": \"{1}\",\n  \"real_unity_execution\": true,\n  \"model_graph_contract_passed\": true,\n  \"managed_tokenizer_source_token_parity_passed\": true,\n  \"cpu_clone_backend_generated_token_parity_passed\": true,\n  \"device_resident_backend_generated_token_parity_passed\": true,\n  \"decoded_text_parity_passed\": true,\n  \"language_pipeline_semantic_replacement_passed\": true,\n  \"gloss_marker_injection_detected\": false,\n  \"minimum_reference_samples\": 3,\n  \"quest_device_execution_performed\": false\n}}\n",
+                "{{\n  \"schema_version\": 2,\n  \"purpose\": \"phrase-layer-real-unity-marian-parity\",\n  \"unity_version\": \"{0}\",\n  \"model_revision\": \"{1}\",\n  \"real_unity_execution\": true,\n  \"model_graph_contract_passed\": true,\n  \"managed_tokenizer_source_token_parity_passed\": true,\n  \"cpu_clone_backend_generated_token_parity_passed\": true,\n  \"device_resident_backend_generated_token_parity_passed\": true,\n  \"decoded_text_parity_passed\": true,\n  \"language_pipeline_semantic_replacement_passed\": true,\n  \"read_mode_observation_processor_integration_passed\": true,\n  \"read_mode_exact_ocr_geometry_alignment_passed\": true,\n  \"gloss_marker_injection_detected\": false,\n  \"minimum_reference_samples\": 3,\n  \"camera_execution_performed\": false,\n  \"quest_device_execution_performed\": false\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PhraseLayerLocalMarianAssets.ExpectedRevision));
             File.WriteAllText(evidencePath, json);
             if (!File.Exists(evidencePath) || new FileInfo(evidencePath).Length <= 0)
                 throw new IOException("Marian parity evidence file was not written: " + evidencePath);
 
-            Debug.Log("PhraseLayer real Unity Marian parity evidence PASS: " + evidencePath);
+            Debug.Log("PhraseLayer real Unity Marian + Read Mode parity evidence PASS: " + evidencePath);
         }
 
         public static void RunBatch()
