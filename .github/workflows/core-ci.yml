@@ -45,6 +45,7 @@ jobs:
       - run: python tools/validate_marian_android_fixture_gate.py
       - run: python tools/validate_marian_android_runtime_device_gate.py
       - run: python tools/validate_read_mode_marian_product_gate.py
+      - run: python tools/validate_marian_read_mode_parity_gate.py
       - run: python tools/test_run_marian_android_runtime_smoke.py
       - run: python tools/test_inspect_android_apk_structure.py
       - run: python tools/test_validate_marian_snapshot_contract.py
