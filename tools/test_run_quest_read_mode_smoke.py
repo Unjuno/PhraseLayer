@@ -60,7 +60,7 @@ def main() -> None:
     assert module.serial_fingerprint(None) is None
 
     redacted_failure = module.redact_failure_message(
-        module.SmokeError("command failed: adb -s 1WMHH000000000 shell pidof app"),
+        module.SmokeError("device 1WMHH000000000 failed"),
         "1WMHH000000000",
     )
     assert "1WMHH000000000" not in redacted_failure
@@ -72,6 +72,7 @@ def main() -> None:
         "read_mode_smoke_passed": False,
         "mruk_environment_raycast_observed": False,
         "captured_pose_projection_observed": False,
+        "recognizer_gpu_reduction_observed": False,
         "read_mode_timeout": False,
         "read_mode_exception": False,
         "fatal_exception": False,
@@ -79,6 +80,7 @@ def main() -> None:
 
     passed = module.readiness_from_logcat(
         "PhraseLayer Quest OCR smoke test PASS\n"
+        "recognizer_gpu_ctc_reduction=true full_output_worker_retained=false\n"
         "PhraseLayer Quest Read Mode smoke test PASS\n"
         "camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp captured_pose_projection=true captured_pose_rays=5\n"
         "surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true\n"
@@ -87,6 +89,7 @@ def main() -> None:
     assert passed["read_mode_smoke_passed"] is True
     assert passed["mruk_environment_raycast_observed"] is True
     assert passed["captured_pose_projection_observed"] is True
+    assert passed["recognizer_gpu_reduction_observed"] is True
     assert passed["fatal_exception"] is False
 
     incomplete = module.readiness_from_logcat(
@@ -96,6 +99,7 @@ def main() -> None:
     )
     assert incomplete["mruk_environment_raycast_observed"] is True
     assert incomplete["captured_pose_projection_observed"] is False
+    assert incomplete["recognizer_gpu_reduction_observed"] is False
 
     failed = module.readiness_from_logcat(
         "PhraseLayer Quest Read Mode smoke test FAIL_TIMEOUT\nFATAL EXCEPTION\n"
@@ -106,23 +110,26 @@ def main() -> None:
     raw_log = (
         "09-02 10:00:00.000 123 123 I Unity : PhraseLayer Quest OCR smoke test PASS\n"
         "09-02 10:00:00.001 123 123 I Unity : regions=1 overall_confidence=0.990000 text_length=14\n"
-        "09-02 10:00:00.002 123 123 I Unity : recognized_text=PRIVATE STREET SIGN\n"
-        "09-02 10:00:00.003 123 123 I Unity : display_text=秘密の表示\n"
-        "09-02 10:00:00.004 123 123 I Other : arbitrary user content SECRET-123\n"
-        "09-02 10:00:00.005 123 123 I Unity : camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp captured_pose_projection=true captured_pose_rays=5 stable_capture_metadata=2 unstable_capture_metadata=0 pixel_pose_sync_verified=false\n"
-        "09-02 10:00:00.006 123 123 I Unity : surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true last_environment_status=Success last_normal_confidence=0.9500\n"
-        "09-02 10:00:00.007 123 123 I Unity : layout_ready=1 layout_failed=0 tracks_observed=1 tracks_retained=0\n"
-        "09-02 10:00:00.008 123 123 I Unity : mask_render_success=true masks_active=1 masks_eligible=1 masks_suppressed=0\n"
-        "09-02 10:00:00.009 123 123 I Unity : text_render_success=true rendered_views=1 max_observed_planarity_error_m=0.002500\n"
-        "09-02 10:00:00.010 123 123 I Unity : ocr_stage=PASS\n"
-        "09-02 10:00:00.011 123 123 I Unity : regions=1 overall_confidence=0.990000 text_length=14 recognized_text=PREFIX-LEAK\n"
-        "09-02 10:00:00.012 123 123 I Unity : surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true last_environment_status=Success last_normal_confidence=0.9500 secret=SUFFIX-LEAK\n"
-        "09-02 10:00:00.013 123 123 E AndroidRuntime : FATAL EXCEPTION: main private-stack-text\n"
+        "09-02 10:00:00.002 123 123 I Unity : recognizer_gpu_ctc_reduction=true full_output_worker_retained=false\n"
+        "09-02 10:00:00.003 123 123 I Unity : recognized_text=PRIVATE STREET SIGN\n"
+        "09-02 10:00:00.004 123 123 I Unity : display_text=秘密の表示\n"
+        "09-02 10:00:00.005 123 123 I Other : arbitrary user content SECRET-123\n"
+        "09-02 10:00:00.006 123 123 I Unity : camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp captured_pose_projection=true captured_pose_rays=5 stable_capture_metadata=2 unstable_capture_metadata=0 pixel_pose_sync_verified=false\n"
+        "09-02 10:00:00.007 123 123 I Unity : surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true last_environment_status=Success last_normal_confidence=0.9500\n"
+        "09-02 10:00:00.008 123 123 I Unity : layout_ready=1 layout_failed=0 tracks_observed=1 tracks_retained=0\n"
+        "09-02 10:00:00.009 123 123 I Unity : mask_render_success=true masks_active=1 masks_eligible=1 masks_suppressed=0\n"
+        "09-02 10:00:00.010 123 123 I Unity : text_render_success=true rendered_views=1 max_observed_planarity_error_m=0.002500\n"
+        "09-02 10:00:00.011 123 123 I Unity : ocr_stage=PASS\n"
+        "09-02 10:00:00.012 123 123 I Unity : regions=1 overall_confidence=0.990000 text_length=14 recognized_text=PREFIX-LEAK\n"
+        "09-02 10:00:00.013 123 123 I Unity : recognizer_gpu_ctc_reduction=true full_output_worker_retained=false secret=SUFFIX-LEAK\n"
+        "09-02 10:00:00.014 123 123 I Unity : surface_runtime=MRUKEnvironmentRaycast environment_abi_validated=true last_environment_status=Success last_normal_confidence=0.9500 secret=SUFFIX-LEAK\n"
+        "09-02 10:00:00.015 123 123 E AndroidRuntime : FATAL EXCEPTION: main private-stack-text\n"
     )
     sanitized = module.sanitize_logcat_diagnostics(raw_log)
     safe_lines = sanitized.splitlines()
     assert "PhraseLayer Quest OCR smoke test PASS" in safe_lines
     assert "regions=1 overall_confidence=0.990000 text_length=14" in safe_lines
+    assert "recognizer_gpu_ctc_reduction=true full_output_worker_retained=false" in safe_lines
     assert any(line.startswith("camera_timestamp_source=MetaPassthroughCameraAccess.Timestamp") for line in safe_lines)
     assert any(line.startswith("surface_runtime=MRUKEnvironmentRaycast") for line in safe_lines)
     assert "layout_ready=1 layout_failed=0 tracks_observed=1 tracks_retained=0" in safe_lines
@@ -130,7 +137,7 @@ def main() -> None:
     assert "text_render_success=true rendered_views=1 max_observed_planarity_error_m=0.002500" in safe_lines
     assert "ocr_stage=PASS" in safe_lines
     assert "FATAL EXCEPTION" in safe_lines
-    assert len(safe_lines) == 9
+    assert len(safe_lines) == 10
     assert "PRIVATE STREET SIGN" not in sanitized
     assert "秘密の表示" not in sanitized
     assert "SECRET-123" not in sanitized
@@ -147,6 +154,13 @@ def main() -> None:
     assert '"detector_input_preprocess": "GPUTextureConverter+FunctionalNormalization"' in source
     assert '"detector_input_layout": "NCHW/BGR/TopLeft"' in source
     assert '"detector_input_cpu_image_readback": False' in source
+    assert '"recognizer_input_preprocess": "GPUShader+TextureConverter"' in source
+    assert '"recognizer_input_layout": "NCHW/BGR/TopLeft"' in source
+    assert '"recognizer_input_cpu_image_readback": False' in source
+    assert '"recognizer_ctc_reduction": "GPUArgMax+ReduceMax"' in source
+    assert '"recognizer_full_probability_matrix_cpu_readback": False' in source
+    assert '"recognizer_full_output_worker_retained": False' in source
+    assert '"recognizer_cpu_values_per_timestep": 2' in source
     assert 'Graphics.Blit/readback preprocessing path' not in source
     assert '"camera_timestamp_source": "MetaPassthroughCameraAccess.Timestamp"' in source
     assert '"camera_pose_source": "MetaPassthroughCameraAccess.GetCameraPose"' in source
@@ -157,14 +171,18 @@ def main() -> None:
     assert 'pattern.fullmatch(candidate)' in source
     assert '"raw_process_logcat_written_to_disk": False' in source
     assert '"raw_process_logcat_uploaded": False' in source
+    assert '"raw_command_stderr_serialized": False' in source
+    assert '"raw_command_arguments_serialized_on_failure": False' in source
     assert '"diagnostic_lines_require_full_grammar_match": True' in source
     assert '"recognized_text_allowed_in_diagnostics": False' in source
     assert 'diagnostics_path.write_text(sanitize_logcat_diagnostics(logcat)' in source
+    assert 'completed.stderr.strip()' not in source
+    assert '" ".join(args)' not in source
     assert 'quest-read-mode-logcat.txt' not in source
 
     print(
-        "PASS: Quest Read Mode device smoke parsing, permission declaration, redacted device identity/failures, "
-        "full-grammar diagnostics, malicious suffix rejection, GPU OCR preprocessing evidence, captured camera-pose requirement, "
+        "PASS: Quest Read Mode device smoke parsing, permissions, redacted device/failure evidence, full-grammar diagnostics, "
+        "malicious suffix rejection, detector+recognizer GPU preprocessing, GPU CTC reduction, captured camera-pose requirement, "
         "and MRUK anti-false-positive contracts"
     )
 
