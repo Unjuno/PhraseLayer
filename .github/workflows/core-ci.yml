@@ -31,6 +31,7 @@ jobs:
       - run: python tools/validate_quest_project_setup_gate.py
       - run: python tools/validate_passthrough_camera_frame_sync.py
       - run: python tools/validate_quest_read_mode_smoke_harness.py
+      - run: python tools/validate_quest_recognizer_reduction_evidence.py
       - run: python tools/validate_read_mode_visual_asset_staging.py
       - run: python tools/validate_read_mode_unity_host_gate.py
       - run: python tools/validate_unity_host_preflight.py
