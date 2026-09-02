@@ -21,8 +21,8 @@ namespace PhraseLayer.Unity
     ///
     /// Detector and recognizer image preprocessing stay GPU-side. Detector probability maps still return to CPU for DB
     /// post-processing. Recognizer probability matrices stay GPU-side in the live path: only one class index and maximum
-    /// score per timestep are read back for CTC decoding. The full recognizer matrix path remains available only for the
-    /// real-Unity contract/parity gate that must precede packaging/device execution.
+    /// score per timestep are read back for CTC decoding. The full recognizer matrix path remains available only through
+    /// a temporary parity worker and is never retained by the production engine.
     /// </summary>
     public sealed class UnityPaddleOcrEngine : IOcrEngine, IDisposable
     {
@@ -86,15 +86,12 @@ namespace PhraseLayer.Unity
         public PaddleDetectorRuntimeContract LatestDetectorContract => latestDetectorContract;
         public PaddleRecognizerRuntimeContract LatestRecognizerContract => latestRecognizerContract;
         public bool UsesGpuRecognizerCtcReduction => recognizer.UsesGpuCtcReduction;
+        public bool RetainsFullRecognizerOutputWorker => recognizer.RetainsFullOutputWorker;
         public string RuntimeContractReport => PaddleOcrRuntimeContract.BuildReport(
             latestDetectorContract,
             latestRecognizerContract,
             characterDictionary.Length);
 
-        /// <summary>
-        /// Executes synchronously and returns an already-completed Task to satisfy the platform-neutral IOcrEngine contract.
-        /// Do not wrap this method in Task.Run: the reference Unity graphics path is main-thread bound.
-        /// </summary>
         public Task<OcrObservation> RecognizeAsync(
             ImageFrame frame,
             CancellationToken cancellationToken = default(CancellationToken))
@@ -221,12 +218,11 @@ namespace PhraseLayer.Unity
         }
     }
 #else
-    /// <summary>
-    /// Host-CI fallback. The real end-to-end engine is compiled only with the reviewed Inference Engine 2.2.x gate.
-    /// </summary>
     public sealed class UnityPaddleOcrEngine : IOcrEngine, IDisposable
     {
         public bool IsSupported => false;
+        public bool UsesGpuRecognizerCtcReduction => false;
+        public bool RetainsFullRecognizerOutputWorker => false;
         public string RuntimeContractReport =>
             "PP-OCR runtime contract unavailable: reviewed com.unity.ai.inference 2.2.x API gate is not active.";
 
