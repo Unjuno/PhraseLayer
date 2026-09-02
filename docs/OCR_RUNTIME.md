@@ -60,9 +60,9 @@ The reviewed normalization contract remains the Core PP-OCR contract:
 
 `UnityPaddleOcrDetectorRuntime.CreateReviewedTextureTransform` and `ApplyReviewedNormalization` are shared with the real-Unity parity probe so the verification path cannot silently use a different channel/origin/normalization contract.
 
-## PP-OCR recognizer input path
+## PP-OCR recognizer input and CTC path
 
-The detector quad remains on the GPU while the crop and recognizer input are prepared:
+The detector quad remains on the GPU while the crop and recognizer input are prepared. The live path is:
 
 ```text
 Camera texture + detected quad
@@ -84,16 +84,24 @@ TextureConverter.ToTensor
         ↓
 PP-OCR recognizer Worker
         ↓
-[1,time,class] probability tensor
+[1,time,class] probability tensor on GPU
+        ↓
+Functional.ArgMax(class axis)
+Functional.ReduceMax(class axis)
+        ↓
+[time] class indices + [time] max scores
         ↓
 ReadbackAndClone
+  2 values per timestep
         ↓
-CPU CTC greedy decode
+CPU CTC duplicate/blank filtering + string assembly
 ```
 
-`UnityPaddleOcrRecognizerRuntime` must not call `Texture2D.ReadPixels`, `GetPixels32`, or use `RenderTexture.active` for input preprocessing. `Graphics.Blit` is still used deliberately for the GPU perspective crop and recognizer preprocessing shader; that is GPU-to-GPU work and is not an image readback.
+`UnityPaddleOcrRecognizerRuntime` must not call `Texture2D.ReadPixels`, `GetPixels32`, or use `RenderTexture.active` for input preprocessing. `Graphics.Blit` is deliberately retained for the GPU perspective crop and recognizer preprocessing shader; that is GPU-to-GPU work and is not an image readback.
 
-The recognizer contract remains the Core `PaddleOcrV6TinyRecognitionPreprocess` contract:
+The production runtime retains only the GPU-reduced recognizer worker. It does **not** retain a second full-output worker. `Execute()` exists only as a correctness oracle: when explicitly called by a parity/model probe it creates a temporary full-output worker, downloads the `[1,time,class]` matrix, and disposes that worker before returning. Live OCR calls `ExecuteReduced()` instead.
+
+The recognizer preprocessing contract remains the Core `PaddleOcrV6TinyRecognitionPreprocess` contract:
 
 - tensor layout: NCHW;
 - channel order: BGR;
@@ -104,7 +112,16 @@ The recognizer contract remains the Core `PaddleOcrV6TinyRecognitionPreprocess` 
 - normalized image value: `(byte / 255 - 0.5) / 0.5`;
 - unused right columns are **normalized zero**, matching PaddleOCR's zero-initialized tensor.
 
-`UnityPaddleOcrRecognizerRuntime.CreateReviewedPreprocessMaterial`, `CreateReviewedTextureTransform`, and `PopulateReviewedInputTensor` are production helpers reused by the real-Unity parity probe. This prevents the probe from validating a parallel implementation that the runtime does not execute.
+The live CTC reduction contract is:
+
+- model output remains `[1,time,class]`;
+- `class == dictionary token count + 1` for the CTC blank;
+- GPU ArgMax uses `selectLastIndex=false`, matching NumPy/Paddle's first-index-on-ties behavior;
+- CPU receives exactly one class index and one maximum score per timestep;
+- class indices are range-checked and scores must be finite before Core CTC decoding;
+- the full probability matrix is not read back in the live path.
+
+`UnityPaddleOcrRecognizerRuntime.CreateReviewedPreprocessMaterial`, `CreateReviewedTextureTransform`, and `PopulateReviewedInputTensor` are production helpers reused by the real-Unity preprocessing parity probe. The GPU CTC reduction is separately compared against the retained full-output oracle.
 
 ## Real-Unity GPU preprocessing parity gates
 
@@ -117,9 +134,9 @@ The detector probe verifies sampled values for:
 3. raw texture-to-tensor values;
 4. the GPU FunctionalGraph mean/std result against `PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel`.
 
-Recognizer parity uses `PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe`. Its fixture is 64×48 into a 96×48 model tensor. Height already matches the recognizer model, so `ResizedWidth` is exactly 64: the left 64 columns are one-to-one pixel-center samples and the right 32 columns are padding. This intentionally removes resize interpolation from the numerical comparison.
+Recognizer preprocessing parity uses `PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe`. Its fixture is 64×48 into a 96×48 model tensor. Height already matches the recognizer model, so `ResizedWidth` is exactly 64: the left 64 columns are one-to-one pixel-center samples and the right 32 columns are padding. This intentionally removes resize interpolation from the numerical comparison.
 
-The recognizer probe verifies:
+The recognizer preprocessing probe verifies:
 
 1. top-left row orientation;
 2. BGR channel order;
@@ -127,32 +144,51 @@ The recognizer probe verifies:
 4. exact normalized-zero values in sampled right-padding columns;
 5. the same production shader/material and `PopulateReviewedInputTensor` helper used by runtime inference.
 
-Self-hosted Read Mode gates run both preprocessing probes with a real graphics device before packaging. Neither parity runner may use `-nographics`.
+## Real-Unity recognizer CTC reduction parity
 
-These gates prove the reviewed preprocessing math and Unity texture/tensor semantics on that runner. They do **not** by themselves prove that a Meta passthrough texture and its cached camera pose refer to the exact same physical exposure on Quest 3.
+`PhraseLayerPaddleOcrRecognizerGpuReductionProbe` is the correctness gate for the reduced output path. It runs the pinned recognizer twice on the same deterministic input:
+
+1. the parity-only full-output path downloads `[1,time,class]` and serves as the oracle;
+2. the production reduced path keeps that tensor GPU-side and downloads only ArgMax indices plus ReduceMax scores.
+
+The gate requires:
+
+- identical `[1,time,class]` shape metadata;
+- the full oracle to contain finite values in `[0,1]`;
+- exact winning class index equality at every timestep;
+- maximum-score error at or below `1e-6` at every timestep;
+- exact decoded text;
+- exact emitted-token count;
+- CTC confidence parity.
+
+The CPU oracle uses a strict `>` update, so ties retain the first class index. Unity Inference Engine 2.2.1's functional ArgMax is bound to `selectLastIndex=false`, matching that rule.
+
+`tools/unity/verify-local-ocr-inference.sh` chains this reduction parity gate after the pinned detector/recognizer synthetic inference probe. As a result, self-hosted Read Mode workflows that use the shared OCR host gate cannot package or install an APK unless full-vs-reduced parity has first passed in real Unity. This is still a host graphics gate, not Quest evidence.
+
+These gates prove the reviewed preprocessing/reduction math and Unity tensor semantics on that runner. They do **not** by themselves prove that a Meta passthrough texture and its cached camera pose refer to the exact same physical exposure on Quest 3.
 
 ## Camera timestamp / pose claim boundary
 
 The Meta camera bridge retains a stable `PassthroughCameraAccess.Timestamp` + `GetCameraPose()` pair with each accepted `ImageFrame`, and spatial projection reuses that captured pose for center and corner rays.
 
-Removing detector and recognizer input CPU image readback closes known avoidable stalls between camera capture, detector submission, crop preparation, and recognition submission. However, the Meta texture producer and GPU command execution remain asynchronous. Therefore device evidence must continue to report:
+Removing detector and recognizer input CPU image readback closes known avoidable stalls between camera capture, detector submission, crop preparation, and recognition submission. Reducing recognizer output also avoids downloading the full class matrix. However, the Meta texture producer, GPU command execution, detector output readback, and reduced recognizer readback remain asynchronous/synchronizing boundaries. Therefore device evidence must continue to report:
 
 ```text
 camera_timestamp_pose_binding_implemented=true
 camera_pixel_pose_sync_verified=false
 ```
 
-until a real Quest 3 timing/visual gate demonstrates the stronger pixel↔pose synchronization claim. Do not infer that claim from Hosted CI or from either preprocessing parity probe.
+until a real Quest 3 timing/visual gate demonstrates the stronger pixel↔pose synchronization claim. Do not infer that claim from Hosted CI or from any real-Unity preprocessing/reduction parity probe.
 
 ## GPU-residency claim boundary
 
-The OCR image path no longer performs CPU image readback between camera texture, detector input, perspective crop, and recognizer input. This does **not** mean the entire OCR algorithm is GPU-resident:
+The OCR image path no longer performs CPU image readback between camera texture, detector input, perspective crop, and recognizer input. The live recognizer also no longer downloads its full probability matrix. This still does **not** mean the entire OCR algorithm is GPU-resident:
 
 - detector probability maps are copied to CPU for DB post-processing and quad generation;
-- recognizer probability matrices are copied to CPU for CTC greedy decoding;
+- recognizer class indices and maximum scores are copied to CPU for CTC duplicate/blank filtering and string assembly;
 - OCR observation assembly and semantic alignment remain CPU/Core work.
 
-Accordingly, documentation and evidence may say **detector and recognizer image preprocessing are GPU-side**. They must not claim end-to-end GPU-resident OCR unless DB post-processing/CTC decoding are redesigned and separately validated.
+Accordingly, documentation and evidence may say **detector/recognizer image preprocessing and recognizer CTC reduction are GPU-side**. They must not claim end-to-end GPU-resident OCR. Physical performance, synchronization cost, thermals, and sustainable OCR frequency remain Quest 3 measurement questions.
 
 ## Scheduling / backpressure
 
@@ -189,16 +225,18 @@ A failed OCR inference does not advance the last-processed timestamp, so a later
 
 The device smoke runner uses process-scoped logcat only as an in-memory readiness source. Raw process logcat is not written to disk and is not uploaded as a workflow artifact. This is deliberate because real-world OCR may contain private text even when the current smoke behaviours redact their own recognized/display strings.
 
-The only persisted text diagnostic is `quest-read-mode-diagnostics.txt`. Each candidate line must fully match one of the reviewed counter/status grammars in `SAFE_DIAGNOSTIC_PATTERNS`; matching a safe prefix is insufficient. A future change such as appending `recognized_text=...` to an otherwise valid counters line therefore causes that whole line to be discarded rather than partially preserved.
+The only persisted text diagnostic is `quest-read-mode-diagnostics.txt`. Each candidate line must fully match one of the reviewed counter/status grammars in `SAFE_DIAGNOSTIC_PATTERNS`; matching a safe prefix is insufficient. The recognizer runtime line is limited to `recognizer_gpu_ctc_reduction=<state> full_output_worker_retained=<state>`. Appending recognized text or another suffix causes the whole line to be discarded.
 
-The persisted diagnostics are limited to smoke state, timings, counts, captured-pose counters, MRUK status/confidence, layout/mask/render counters, compact OCR stage, and the literal `FATAL EXCEPTION` marker. Fatal stack/message content is discarded. `recognized_text=` and `display_text=` are not valid diagnostic grammars.
+The persisted diagnostics are limited to smoke state, timings, counts, recognizer runtime booleans, captured-pose counters, MRUK status/confidence, layout/mask/render counters, compact OCR stage, and the literal `FATAL EXCEPTION` marker. Fatal stack/message content is discarded. `recognized_text=` and `display_text=` are not valid diagnostic grammars.
 
-ADB serials are also excluded from evidence. The JSON stores only a truncated SHA-256 fingerprint, and failure messages are scrubbed of the selected raw serial before serialization. The Quest workflow uploads explicit safe evidence files rather than a wildcard device-output directory.
+ADB serials are excluded from evidence. The JSON stores only a truncated SHA-256 fingerprint. Failed external commands serialize only their exit code: raw command arguments and raw stderr are deliberately excluded because they can contain device identifiers, platform details, or future app/runtime text. The Quest workflow uploads explicit safe evidence files rather than a wildcard device-output directory.
 
-This privacy boundary is part of the device gate contract, not a logging convention. Reintroducing raw logcat persistence, wildcard Quest output upload, or recognized/display text in the diagnostic grammar must fail Hosted validation before a device gate can be considered valid.
+This privacy boundary is part of the device gate contract, not a logging convention. Reintroducing raw logcat persistence, raw stderr/command serialization, wildcard Quest output upload, or recognized/display text in the diagnostic grammar must fail Hosted validation before a device gate can be considered valid.
 
 ## Production status
 
-PP-OCRv6 Tiny detection + recognition is no longer only an abstract candidate: the Unity adapter has a pinned Inference Engine 2.2.1 detector/recognizer implementation, local asset staging, model/dictionary contract probes, guarded Hosted compile coverage for the detector and recognizer GPU preprocessing paths, and separate real-Unity numerical parity gates for detector and recognizer preprocessing.
+PP-OCRv6 Tiny detection + recognition is no longer only an abstract candidate. The Unity adapter has a pinned Inference Engine 2.2.1 detector/recognizer implementation, local asset staging, model/dictionary contract probes, guarded Hosted compile coverage, detector/recognizer preprocessing parity probes, and a full-vs-reduced recognizer CTC parity gate.
 
-Remaining production gates include real Quest 3 execution, imported-model parity on the target runtime, pixel↔pose timing evidence, visual quality/stereo comfort, and measured performance/thermal behavior. Model revisions/files/licenses remain pinned and reviewed separately; Core must not acquire Unity-specific tensor or graphics dependencies.
+The live runtime now keeps detector/recognizer image preparation on the GPU and retains only the reduced recognizer worker. It downloads the detector DB map plus two recognizer values per timestep. Actual real-Unity parity execution and real Quest 3 execution remain self-hosted gates and must not be inferred from Hosted compile/static validation.
+
+Remaining production gates include real Unity execution with the pinned local assets, real Quest 3 execution, pixel↔pose timing evidence, visual quality/stereo comfort, and measured performance/thermal behavior. Model revisions/files/licenses remain pinned and reviewed separately; Core must not acquire Unity-specific tensor or graphics dependencies.
