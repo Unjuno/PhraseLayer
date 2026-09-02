@@ -82,12 +82,13 @@ jobs:
           python tools/stage_models.py --purpose-prefix ocr- --include-support
           python tools/prepare_unity_ocr_assets.py
 
-      - name: Require real Unity pinned PP-OCR inference and GPU preprocess parity
+      - name: Require real Unity pinned PP-OCR inference and detector plus recognizer GPU preprocess parity
         shell: bash
         run: |
-          chmod +x tools/unity/verify-local-ocr-inference.sh tools/unity/verify-ppocr-gpu-preprocess.sh
+          chmod +x tools/unity/verify-local-ocr-inference.sh tools/unity/verify-ppocr-gpu-preprocess.sh tools/unity/verify-recognizer-gpu-preprocess.sh
           ./tools/unity/verify-local-ocr-inference.sh
           ./tools/unity/verify-ppocr-gpu-preprocess.sh
+          ./tools/unity/verify-recognizer-gpu-preprocess.sh
 
       - name: Validate local Marian source snapshot and ONNX bundle identity
         shell: bash
@@ -189,6 +190,7 @@ jobs:
           assert data["product_translation_gate"] is True and data["semantic_span_pipeline"] is True
           assert data["combined_single_scene_packaging"] is True
           assert data["source_weight_copied_to_unity"] is False and data["il2cpp_reflection_preserve_required"] is True
+          assert data["meta_project_setup_applied"] is True and data["meta_project_setup_separate_unity_process_required"] is True
           assert data["quest_read_mode_smoke_autorun"] is False
           assert data["quest_device_execution_performed"] is False and data["android_runtime_execution_performed"] is False
           assert data["camera_pixel_pose_sync_verified"] is False
@@ -239,12 +241,13 @@ jobs:
           apk.unlink()
           assert not apk.exists()
           manifest = {
-              "schema_version": 1,
+              "schema_version": 2,
               "purpose": "phrase-layer-read-mode-marian-pre-device-unity-host-gate",
               "status": "pass",
               "git_sha": os.environ.get("GITHUB_SHA", "unobserved"),
               "real_unity_pinned_ocr_inference_passed": True,
-              "real_unity_gpu_preprocess_parity_passed": True,
+              "real_unity_detector_gpu_preprocess_parity_passed": True,
+              "real_unity_recognizer_gpu_preprocess_parity_passed": True,
               "real_unity_marian_exact_token_parity_passed": True,
               "combined_android_arm64_il2cpp_fixture_built": True,
               "combined_single_scene_packaging_verified": True,
