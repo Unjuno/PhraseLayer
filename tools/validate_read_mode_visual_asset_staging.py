@@ -53,7 +53,11 @@ def validate() -> dict[str, object]:
         'mask_shader_reasserted',
         'PhraseLayer/SourceMask',
         'quest_read_mode_smoke_autorun',
-        'PhraseLayerEditorSetup.CreateDemoScene(font, material, autoRunQuestReadModeSmoke)',
+        'StageAndCreateDemoScene(false, null)',
+        'StageAndCreateDemoScene(autoRunQuestReadModeSmoke, null)',
+        'Action<GameObject, PhraseLayerDemoBehaviour> configureRoot',
+        'PhraseLayerEditorSetup.CreateDemoScene(',
+        'configureRoot);',
     ):
         require(stager, fragment, "visual asset stager")
 
@@ -67,7 +71,9 @@ def validate() -> dict[str, object]:
         require(shader, fragment, "source-mask shader")
 
     for fragment in (
-        "CreateDemoScene(\n            Font reviewedJapaneseFont,\n            Material reviewedSourceMaskMaterial,\n            bool autoRunQuestReadModeSmoke)",
+        "CreateDemoScene(reviewedJapaneseFont, reviewedSourceMaskMaterial, autoRunQuestReadModeSmoke, null)",
+        "Action<GameObject, PhraseLayerDemoBehaviour> configureRoot",
+        "configureRoot?.Invoke(root, demo)",
         "questReadModeSmoke.AutoRunOnStart = autoRunQuestReadModeSmoke",
         "worldTextRenderer.SetFont(reviewedJapaneseFont)",
         "worldTextSourceMask.SetMaskMaterial(reviewedSourceMaskMaterial)",
@@ -95,6 +101,7 @@ def validate() -> dict[str, object]:
         "mask_shader_double_sided": True,
         "mask_shader_reasserted_each_stage": True,
         "scene_visual_assets_injected_deterministically": True,
+        "translation_root_configurator_supported": True,
         "quest_read_mode_smoke_autorun_explicit": True,
         "real_unity_import_still_required": True,
     }
