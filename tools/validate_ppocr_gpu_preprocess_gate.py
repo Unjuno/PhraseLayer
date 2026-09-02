@@ -94,7 +94,9 @@ for marker in (
     "normalizedTexture,",
     "CreateReviewedTextureTransform(flipReadbackRows)",
     "PopulateReviewedInputTensor(",
-    "worker.Schedule(inputTensor)",
+    "reducedOutputWorker.Schedule(inputTensor)",
+    "parityWorker.Schedule(inputTensor)",
+    "RetainsFullOutputWorker => false",
     "ReadbackAndClone()",
 ):
     require(recognizer, marker, "Unity PP-OCR recognizer GPU preprocess gate")
@@ -104,6 +106,7 @@ for marker in (
     ".GetPixels32(",
     "RenderTexture.active",
     "new Texture2D(",
+    "private readonly Worker fullOutputWorker",
 ):
     forbid(recognizer, marker, "Unity PP-OCR recognizer input path")
 
@@ -152,6 +155,7 @@ for marker in (
     "UnityPaddleOcrDetectorRuntime.cs",
     "UnityPaddleOcrRecognizerRuntime.cs",
     "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs",
+    "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs",
     "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
 ):
     require(guarded, marker, "guarded PP-OCR Unity inference compile project")
@@ -184,5 +188,6 @@ if manifest.get("dependencies", {}).get("com.unity.ai.inference") != "2.2.1":
 print(
     "PASS: PP-OCR detector and recognizer image preprocessing stay GPU-side; detector uses reviewed TextureConverter "
     "BGR NCHW/top-left mean/std normalization, recognizer uses reviewed GPU resize/right-pad/(x-0.5)/0.5 preprocessing, "
-    "real-Unity numerical parity is required, and CPU image ReadPixels/GetPixels32 paths are forbidden"
+    "the production recognizer retains only its reduced-output worker, real-Unity numerical parity is required, and "
+    "CPU image ReadPixels/GetPixels32 paths are forbidden"
 )
