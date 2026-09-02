@@ -91,8 +91,8 @@ namespace PhraseLayer.Unity
     ///
     /// Production CTC preparation also stays on the GPU: a FunctionalGraph wraps the imported recognizer with
     /// ArgMax(selectLastIndex=false) and ReduceMax along the class axis. CPU reads back only [time] class indices and
-    /// [time] maximum scores. The unreduced Execute method is intentionally retained for real-Unity contract/parity
-    /// probes; production callers should use ExecuteReduced after that gate has proven equivalence for the pinned model.
+    /// [time] maximum scores. The unreduced Execute path is an explicit parity-only opt-in; production construction
+    /// creates only the reduced worker so Quest does not retain a second recognizer worker/model execution plan.
     /// </summary>
     public sealed class UnityPaddleOcrRecognizerRuntime : IDisposable
     {
@@ -106,7 +106,8 @@ namespace PhraseLayer.Unity
 
         public UnityPaddleOcrRecognizerRuntime(
             ModelAsset modelAsset,
-            BackendType backendType = BackendType.GPUCompute)
+            BackendType backendType = BackendType.GPUCompute,
+            bool retainFullOutputParityWorker = false)
         {
             if (modelAsset == null) throw new ArgumentNullException(nameof(modelAsset));
 
@@ -130,13 +131,14 @@ namespace PhraseLayer.Unity
             Worker reducedWorker = null;
             try
             {
-                fullWorker = new Worker(model, backendType);
                 reducedWorker = new Worker(reducedModel, backendType);
+                if (retainFullOutputParityWorker)
+                    fullWorker = new Worker(model, backendType);
             }
             catch
             {
-                reducedWorker?.Dispose();
                 fullWorker?.Dispose();
+                reducedWorker?.Dispose();
                 UnityEngine.Object.Destroy(material);
                 throw;
             }
@@ -151,6 +153,7 @@ namespace PhraseLayer.Unity
         public BackendType BackendType => backendType;
         public bool UsesGpuTexturePreprocessing => true;
         public bool UsesGpuCtcReduction => true;
+        public bool FullOutputParityPathAvailable => fullOutputWorker != null;
 
         /// <summary>
         /// The exact TextureConverter transform shared by production recognizer input and the real-Unity parity probe.
@@ -245,8 +248,8 @@ namespace PhraseLayer.Unity
         }
 
         /// <summary>
-        /// Correctness/parity path. Copies the full [1,time,class] matrix to CPU and must remain available for the
-        /// real-Unity model contract gate. Live OCR should prefer ExecuteReduced.
+        /// Correctness/parity path. Copies the full [1,time,class] matrix to CPU. The constructor must explicitly set
+        /// retainFullOutputParityWorker=true; production runtimes intentionally do not allocate this second worker.
         /// </summary>
         public PaddleRecognizerRawOutput Execute(
             Texture rectifiedCrop,
@@ -254,6 +257,12 @@ namespace PhraseLayer.Unity
             bool flipReadbackRows = true)
         {
             ThrowIfDisposed();
+            if (fullOutputWorker == null)
+            {
+                throw new InvalidOperationException(
+                    "Full recognizer output is parity-only. Construct UnityPaddleOcrRecognizerRuntime with retainFullOutputParityWorker=true for a reviewed real-Unity parity probe.");
+            }
+
             var resizeTransform = CreateResizeTransform(rectifiedCrop, modelWidth);
             var inputTensor = CreateInputTensor(resizeTransform);
             try
@@ -425,7 +434,7 @@ namespace PhraseLayer.Unity
             if (disposed) return;
             disposed = true;
             reducedOutputWorker.Dispose();
-            fullOutputWorker.Dispose();
+            fullOutputWorker?.Dispose();
             UnityEngine.Object.Destroy(preprocessMaterial);
         }
     }
