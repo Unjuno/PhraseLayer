@@ -26,7 +26,7 @@ A concrete backend may use Unity AI Inference, another GPU runtime, or an explic
 
 ## PP-OCR detector input path
 
-The reviewed Unity PP-OCR detector implementation is now bound to `com.unity.ai.inference@2.2.1`. Its camera-texture input path is:
+The reviewed Unity PP-OCR detector implementation is bound to `com.unity.ai.inference@2.2.1`. Its camera-texture input path is:
 
 ```text
 Meta Passthrough Camera Texture
@@ -60,37 +60,99 @@ The reviewed normalization contract remains the Core PP-OCR contract:
 
 `UnityPaddleOcrDetectorRuntime.CreateReviewedTextureTransform` and `ApplyReviewedNormalization` are shared with the real-Unity parity probe so the verification path cannot silently use a different channel/origin/normalization contract.
 
-## Real-Unity GPU preprocessing parity gate
+## PP-OCR recognizer input path
 
-`PhraseLayerPaddleOcrGpuPreprocessProbe` creates a 736×736 oriented RGB fixture and runs it through the same production texture transform and normalization helpers. Because the fixture already matches the PP-OCR detector limit side length, the parity comparison does not depend on resize interpolation.
+The detector quad remains on the GPU while the crop and recognizer input are prepared:
 
-The probe verifies sampled values for:
+```text
+Camera texture + detected quad
+        ↓
+PaddleOcrPerspectiveCrop shader
+  projective rectification on GPU
+        ↓
+rectified RenderTexture
+        ↓
+PaddleOcrRecognizerPreprocess shader
+  aspect-preserving resize to height 48
+  left-aligned valid image columns
+  right normalized-zero padding
+  encoded RGB recovery when project color space is Linear
+  (x - 0.5) / 0.5 normalization
+        ↓
+TextureConverter.ToTensor
+  NCHW / TopLeft / BGRA swizzle
+        ↓
+PP-OCR recognizer Worker
+        ↓
+[1,time,class] probability tensor
+        ↓
+ReadbackAndClone
+        ↓
+CPU CTC greedy decode
+```
+
+`UnityPaddleOcrRecognizerRuntime` must not call `Texture2D.ReadPixels`, `GetPixels32`, or use `RenderTexture.active` for input preprocessing. `Graphics.Blit` is still used deliberately for the GPU perspective crop and recognizer preprocessing shader; that is GPU-to-GPU work and is not an image readback.
+
+The recognizer contract remains the Core `PaddleOcrV6TinyRecognitionPreprocess` contract:
+
+- tensor layout: NCHW;
+- channel order: BGR;
+- row origin: top-left;
+- model height: 48;
+- default model width: 320;
+- image resize preserves aspect ratio and uses `ceil(height * sourceWidth / sourceHeight)`, capped to model width;
+- normalized image value: `(byte / 255 - 0.5) / 0.5`;
+- unused right columns are **normalized zero**, matching PaddleOCR's zero-initialized tensor.
+
+`UnityPaddleOcrRecognizerRuntime.CreateReviewedPreprocessMaterial`, `CreateReviewedTextureTransform`, and `PopulateReviewedInputTensor` are production helpers reused by the real-Unity parity probe. This prevents the probe from validating a parallel implementation that the runtime does not execute.
+
+## Real-Unity GPU preprocessing parity gates
+
+Detector parity uses `PhraseLayerPaddleOcrGpuPreprocessProbe`. It creates a 736×736 oriented RGB fixture and runs it through the same production detector texture transform and normalization helpers. Because the fixture already matches the PP-OCR detector limit side length, the comparison does not depend on resize interpolation.
+
+The detector probe verifies sampled values for:
 
 1. top-left versus bottom-left row orientation;
 2. BGR channel order;
 3. raw texture-to-tensor values;
 4. the GPU FunctionalGraph mean/std result against `PaddleOcrV6TinyDetectionPreprocess.NormalizeChannel`.
 
-The self-hosted `Quest 3 Read Mode Smoke` workflow runs this probe with a real graphics device before building the Android fixture. It intentionally does **not** pass `-nographics`.
+Recognizer parity uses `PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe`. Its fixture is 64×48 into a 96×48 model tensor. Height already matches the recognizer model, so `ResizedWidth` is exactly 64: the left 64 columns are one-to-one pixel-center samples and the right 32 columns are padding. This intentionally removes resize interpolation from the numerical comparison.
 
-This gate proves the reviewed preprocessing math and Unity texture/tensor semantics on that runner. It does **not** by itself prove that a Meta passthrough texture and its cached camera pose refer to the exact same physical exposure on Quest 3.
+The recognizer probe verifies:
+
+1. top-left row orientation;
+2. BGR channel order;
+3. `(x-0.5)/0.5` normalization against `PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel`;
+4. exact normalized-zero values in sampled right-padding columns;
+5. the same production shader/material and `PopulateReviewedInputTensor` helper used by runtime inference.
+
+Self-hosted Read Mode gates run both preprocessing probes with a real graphics device before packaging. Neither parity runner may use `-nographics`.
+
+These gates prove the reviewed preprocessing math and Unity texture/tensor semantics on that runner. They do **not** by themselves prove that a Meta passthrough texture and its cached camera pose refer to the exact same physical exposure on Quest 3.
 
 ## Camera timestamp / pose claim boundary
 
 The Meta camera bridge retains a stable `PassthroughCameraAccess.Timestamp` + `GetCameraPose()` pair with each accepted `ImageFrame`, and spatial projection reuses that captured pose for center and corner rays.
 
-Removing detector-input CPU readback closes one known source of delay between frame capture and GPU submission. However, the Meta texture producer and GPU command execution remain asynchronous. Therefore device evidence must continue to report:
+Removing detector and recognizer input CPU image readback closes known avoidable stalls between camera capture, detector submission, crop preparation, and recognition submission. However, the Meta texture producer and GPU command execution remain asynchronous. Therefore device evidence must continue to report:
 
 ```text
 camera_timestamp_pose_binding_implemented=true
 camera_pixel_pose_sync_verified=false
 ```
 
-until a real Quest 3 timing/visual gate demonstrates the stronger pixel↔pose synchronization claim. Do not infer that claim from Hosted CI or from the preprocessing parity probe.
+until a real Quest 3 timing/visual gate demonstrates the stronger pixel↔pose synchronization claim. Do not infer that claim from Hosted CI or from either preprocessing parity probe.
 
-## Recognizer path
+## GPU-residency claim boundary
 
-The current recognizer/crop path still uses Unity graphics readback where required by the correctness-first implementation. That work occurs after detector geometry has been produced and therefore is separate from the camera-frame detector-input synchronization issue. It remains a performance optimization target and must not be described as end-to-end GPU-resident OCR.
+The OCR image path no longer performs CPU image readback between camera texture, detector input, perspective crop, and recognizer input. This does **not** mean the entire OCR algorithm is GPU-resident:
+
+- detector probability maps are copied to CPU for DB post-processing and quad generation;
+- recognizer probability matrices are copied to CPU for CTC greedy decoding;
+- OCR observation assembly and semantic alignment remain CPU/Core work.
+
+Accordingly, documentation and evidence may say **detector and recognizer image preprocessing are GPU-side**. They must not claim end-to-end GPU-resident OCR unless DB post-processing/CTC decoding are redesigned and separately validated.
 
 ## Scheduling / backpressure
 
@@ -137,6 +199,6 @@ This privacy boundary is part of the device gate contract, not a logging convent
 
 ## Production status
 
-PP-OCRv6 Tiny detection + recognition is no longer only an abstract candidate: the Unity adapter has a pinned Inference Engine 2.2.1 detector/recognizer implementation, local asset staging, model/dictionary contract probes, a guarded Hosted compile shell, and the real-Unity detector preprocessing parity gate described above.
+PP-OCRv6 Tiny detection + recognition is no longer only an abstract candidate: the Unity adapter has a pinned Inference Engine 2.2.1 detector/recognizer implementation, local asset staging, model/dictionary contract probes, guarded Hosted compile coverage for the detector and recognizer GPU preprocessing paths, and separate real-Unity numerical parity gates for detector and recognizer preprocessing.
 
 Remaining production gates include real Quest 3 execution, imported-model parity on the target runtime, pixel↔pose timing evidence, visual quality/stereo comfort, and measured performance/thermal behavior. Model revisions/files/licenses remain pinned and reviewed separately; Core must not acquire Unity-specific tensor or graphics dependencies.
