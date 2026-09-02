@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/read-mode-unity-host-gate.yml"
 OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
-GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
+DETECTOR_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
+RECOGNIZER_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-recognizer-gpu-preprocess.sh"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
 APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 
@@ -31,7 +32,8 @@ def forbid(text: str, fragment: str, label: str) -> None:
 def validate() -> dict[str, object]:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     ocr_inference = OCR_INFERENCE_SH.read_text(encoding="utf-8")
-    gpu_preprocess = GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    detector_gpu_preprocess = DETECTOR_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    recognizer_gpu_preprocess = RECOGNIZER_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
     build = BUILD_SH.read_text(encoding="utf-8")
     apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
 
@@ -42,7 +44,10 @@ def validate() -> dict[str, object]:
         "python tools/stage_models.py --purpose-prefix ocr- --include-support",
         "python tools/prepare_unity_ocr_assets.py",
         "verify-local-ocr-inference.sh",
+        "Require real Unity PP-OCR detector GPU preprocess parity",
         "verify-ppocr-gpu-preprocess.sh",
+        "Require real Unity PP-OCR recognizer GPU preprocess parity",
+        "verify-recognizer-gpu-preprocess.sh",
         "build-android-read-mode-fixture.sh",
         'build["architecture"] == "ARM64"',
         'build["scripting_backend"] == "IL2CPP"',
@@ -58,7 +63,8 @@ def validate() -> dict[str, object]:
         '"apk_removed_before_artifact_upload":True',
         '"apk_structure_verified":True',
         '"real_unity_pinned_ocr_inference_passed":True',
-        '"real_unity_gpu_preprocess_parity_passed":True',
+        '"real_unity_detector_gpu_preprocess_parity_passed":True',
+        '"real_unity_recognizer_gpu_preprocess_parity_passed":True',
         '"android_arm64_il2cpp_fixture_built":True',
         '"quest_device_execution_performed":False',
         '"product_translation_gate":False',
@@ -107,7 +113,16 @@ def validate() -> dict[str, object]:
         "PhraseLayerPaddleOcrGpuPreprocessProbe.RunBatch",
         "real Unity PP-OCR GPU texture -> tensor -> normalization parity probe",
     ):
-        require(gpu_preprocess, fragment, "GPU preprocess shell")
+        require(detector_gpu_preprocess, fragment, "detector GPU preprocess shell")
+
+    for fragment in (
+        "UNITY_EDITOR",
+        "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.RunBatch",
+        "real Unity PP-OCR recognizer GPU preprocessing parity",
+    ):
+        require(recognizer_gpu_preprocess, fragment, "recognizer GPU preprocess shell")
+    if "-nographics" in recognizer_gpu_preprocess:
+        raise GateError("recognizer GPU preprocess shell must require a real graphics device")
 
     for fragment in (
         "PhraseLayerQuestProjectSetup.ApplyAndroidRequiredFixesBatch",
@@ -120,7 +135,8 @@ def validate() -> dict[str, object]:
         "status": "pass",
         "quest_or_adb_dependency": False,
         "real_unity_pinned_ocr_inference_required": True,
-        "real_unity_gpu_preprocess_parity_required": True,
+        "real_unity_detector_gpu_preprocess_parity_required": True,
+        "real_unity_recognizer_gpu_preprocess_parity_required": True,
         "android_arm64_il2cpp_build_required": True,
         "reviewed_font_and_mask_evidence_required": True,
         "deterministic_single_scene_required": True,
