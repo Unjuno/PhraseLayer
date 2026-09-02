@@ -71,6 +71,7 @@ jobs:
           assert data["actual_unity_version"] == "6000.0.66f2"
           assert data["android_build_support_available"] is True
           assert data["inference_engine_compile_gate_active"] is True
+          assert data["local_asset_paths_serialized"] is False
           assert data["adb_required"] is False
           assert data["quest_device_execution_performed"] is False
           PY
