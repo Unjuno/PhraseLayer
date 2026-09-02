@@ -46,9 +46,10 @@ def validate() -> dict[str, object]:
         "public int[] ClassIndices { get; }",
         "public float[] MaxScores { get; }",
         "PaddleCtcGreedyDecoder.DecodeFromIndices(ClassIndices, MaxScores, characterDictionary)",
-        "private readonly Worker fullOutputWorker",
+        "private readonly ModelAsset modelAsset",
         "private readonly Worker reducedOutputWorker",
         "public bool UsesGpuCtcReduction => true",
+        "public bool RetainsFullOutputWorker => false",
         "BuildGpuReducedOutputModel(model)",
         "var outputs = Functional.Forward(sourceModel, input)",
         "Functional.ArgMax(probabilities, dim: -1, keepdim: false)",
@@ -63,6 +64,8 @@ def validate() -> dict[str, object]:
         "var scoreCpu = scoreTensor.ReadbackAndClone()",
         "indexCpu.DownloadToArray()",
         "scoreCpu.DownloadToArray()",
+        "using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))",
+        "parityWorker.Schedule(inputTensor)",
         "selectLastIndex=false",
     ):
         require(runtime, fragment, "recognizer GPU CTC reduction runtime")
@@ -70,6 +73,7 @@ def validate() -> dict[str, object]:
     for forbidden in (
         "probabilityTensor.ReadbackAndClone()",
         "probabilityTensor.DownloadToArray()",
+        "private readonly Worker fullOutputWorker",
     ):
         forbid(runtime, forbidden, "live recognizer reduced output path")
 
@@ -149,6 +153,8 @@ def validate() -> dict[str, object]:
         "status": "pass",
         "inference_engine_version": "2.2.1",
         "full_matrix_path_retained_for_parity": True,
+        "production_full_output_worker_retained": False,
+        "parity_full_output_worker_temporary": True,
         "live_full_probability_matrix_cpu_readback": False,
         "live_argmax_gpu_reduction_required": True,
         "live_reduce_max_gpu_reduction_required": True,
