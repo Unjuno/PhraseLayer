@@ -11,8 +11,10 @@ WORKFLOW = ROOT / ".github/workflows/quest3-read-mode-smoke.yml"
 RUNNER = ROOT / "tools/run_quest_read_mode_smoke.py"
 BUILD_SH = ROOT / "tools/unity/build-android-read-mode-fixture.sh"
 OCR_INFERENCE_SH = ROOT / "tools/unity/verify-local-ocr-inference.sh"
-GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
-GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrGpuPreprocessProbe.cs"
+DETECTOR_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-ppocr-gpu-preprocess.sh"
+DETECTOR_GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrGpuPreprocessProbe.cs"
+RECOGNIZER_GPU_PREPROCESS_SH = ROOT / "tools/unity/verify-recognizer-gpu-preprocess.sh"
+RECOGNIZER_GPU_PREPROCESS_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.cs"
 BUILD_CS = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeFixtureAndroidBuild.cs"
 APK_INSPECTOR = ROOT / "tools/inspect_android_apk_structure.py"
 
@@ -36,8 +38,10 @@ def validate() -> dict[str, object]:
     runner = RUNNER.read_text(encoding="utf-8")
     build_sh = BUILD_SH.read_text(encoding="utf-8")
     ocr_inference_sh = OCR_INFERENCE_SH.read_text(encoding="utf-8")
-    gpu_preprocess_sh = GPU_PREPROCESS_SH.read_text(encoding="utf-8")
-    gpu_preprocess_cs = GPU_PREPROCESS_CS.read_text(encoding="utf-8")
+    detector_gpu_preprocess_sh = DETECTOR_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    detector_gpu_preprocess_cs = DETECTOR_GPU_PREPROCESS_CS.read_text(encoding="utf-8")
+    recognizer_gpu_preprocess_sh = RECOGNIZER_GPU_PREPROCESS_SH.read_text(encoding="utf-8")
+    recognizer_gpu_preprocess_cs = RECOGNIZER_GPU_PREPROCESS_CS.read_text(encoding="utf-8")
     build_cs = BUILD_CS.read_text(encoding="utf-8")
     apk_inspector = APK_INSPECTOR.read_text(encoding="utf-8")
 
@@ -50,8 +54,10 @@ def validate() -> dict[str, object]:
         "Require real Unity pinned PP-OCR synthetic inference",
         "verify-local-ocr-inference.sh",
         "python tools/validate_ppocr_gpu_preprocess_gate.py",
-        "Require real Unity PP-OCR GPU preprocess parity",
+        "Require real Unity PP-OCR detector GPU preprocess parity",
         "verify-ppocr-gpu-preprocess.sh",
+        "Require real Unity PP-OCR recognizer GPU preprocess parity",
+        "verify-recognizer-gpu-preprocess.sh",
         "PHRASELAYER_JAPANESE_FONT_SOURCE:",
         "build-android-read-mode-fixture.sh",
         'assert data["surface_runtime"] == "MRUKEnvironmentRaycast"',
@@ -192,7 +198,7 @@ def validate() -> dict[str, object]:
         "PhraseLayerPaddleOcrGpuPreprocessProbe.RunBatch",
         "real Unity PP-OCR GPU texture -> tensor -> normalization parity probe",
     ):
-        require(gpu_preprocess_sh, fragment, "PP-OCR GPU preprocess Unity shell")
+        require(detector_gpu_preprocess_sh, fragment, "PP-OCR detector GPU preprocess Unity shell")
 
     for fragment in (
         "ProbeSize = PaddleOcrV6TinyDetectionPreprocess.DefaultLimitSideLength",
@@ -204,7 +210,29 @@ def validate() -> dict[str, object]:
         "PhraseLayer PP-OCR GPU preprocess parity PASS",
         "public static void RunBatch()",
     ):
-        require(gpu_preprocess_cs, fragment, "PP-OCR GPU preprocess Unity probe")
+        require(detector_gpu_preprocess_cs, fragment, "PP-OCR detector GPU preprocess Unity probe")
+
+    for fragment in (
+        "UNITY_EDITOR must point to the Unity 6000.0.66f2 Editor executable.",
+        "PhraseLayerPaddleOcrRecognizerGpuPreprocessProbe.RunBatch",
+        "real Unity PP-OCR recognizer GPU preprocessing parity",
+    ):
+        require(recognizer_gpu_preprocess_sh, fragment, "PP-OCR recognizer GPU preprocess Unity shell")
+    if "-nographics" in recognizer_gpu_preprocess_sh:
+        raise GateError("PP-OCR recognizer GPU preprocess Unity shell must use a real graphics device")
+
+    for fragment in (
+        "SourceWidth = 64",
+        "ModelWidth = 96",
+        "UnityPaddleOcrRecognizerRuntime.CreateReviewedPreprocessMaterial()",
+        "UnityPaddleOcrRecognizerRuntime.PopulateReviewedInputTensor(",
+        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.b)",
+        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.g)",
+        "PaddleOcrV6TinyRecognitionPreprocess.NormalizeChannel(pixel.r)",
+        "PhraseLayer PP-OCR recognizer GPU preprocess parity PASS",
+        "public static void RunBatch()",
+    ):
+        require(recognizer_gpu_preprocess_cs, fragment, "PP-OCR recognizer GPU preprocess Unity probe")
 
     for fragment in (
         'DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodefixture"',
@@ -242,8 +270,10 @@ def validate() -> dict[str, object]:
         "installed_camera_permissions_required": True,
         "pinned_ocr_staged": True,
         "real_unity_pinned_ocr_inference_required": True,
-        "real_unity_gpu_preprocess_parity_required": True,
+        "real_unity_detector_gpu_preprocess_parity_required": True,
+        "real_unity_recognizer_gpu_preprocess_parity_required": True,
         "detector_cpu_image_readback_forbidden": True,
+        "recognizer_cpu_image_readback_forbidden": True,
         "captured_camera_pose_required": True,
         "mruk_live_depth_surface_required": True,
         "reviewed_external_japanese_font_required": True,
