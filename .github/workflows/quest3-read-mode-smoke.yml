@@ -98,11 +98,17 @@ jobs:
           chmod +x tools/unity/verify-local-ocr-inference.sh
           ./tools/unity/verify-local-ocr-inference.sh
 
-      - name: Require real Unity PP-OCR GPU preprocess parity
+      - name: Require real Unity PP-OCR detector GPU preprocess parity
         shell: bash
         run: |
           chmod +x tools/unity/verify-ppocr-gpu-preprocess.sh
           ./tools/unity/verify-ppocr-gpu-preprocess.sh
+
+      - name: Require real Unity PP-OCR recognizer GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-recognizer-gpu-preprocess.sh
+          ./tools/unity/verify-recognizer-gpu-preprocess.sh
 
       - name: Build instrumented Read Mode Android ARM64 IL2CPP fixture
         shell: bash
