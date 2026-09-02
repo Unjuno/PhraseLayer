@@ -75,7 +75,7 @@ def validate() -> dict[str, object]:
         "PhraseLayerReadModeMarianProductFixtureSetup.CreateScene()",
         "PlayerSettings.SetScriptingBackend(namedTarget, ScriptingImplementation.IL2CPP)",
         "PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64",
-        '"purpose\\": \\"phrase-layer-read-mode-marian-product-android-fixture-build',
+        '\\"purpose\\": \\"phrase-layer-read-mode-marian-product-android-fixture-build',
         '\\"ocr_runtime\\": \\"PaddleOCR\\"',
         '\\"surface_runtime\\": \\"MRUKEnvironmentRaycast\\"',
         '\\"translation_runtime\\": \\"MarianOpusMtEnJa\\"',
