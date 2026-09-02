@@ -12,6 +12,7 @@ ENGINE = ROOT / "unity/PhraseLayer.Unity/Assets/Scripts/UnityPaddleOcrEngine.cs"
 CORE_CONTRACT = ROOT / "src/PhraseLayer.Core/PaddleOcrRuntimeContract.cs"
 PROBE = ROOT / "unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs"
 SHELL = ROOT / "tools/unity/verify-recognizer-gpu-reduction.sh"
+COMMON_OCR_SHELL = ROOT / "tools/unity/verify-local-ocr-inference.sh"
 GUARDED_CSPROJ = ROOT / "tests/PhraseLayer.UnityOcrInferenceShell.Compile/PhraseLayer.UnityOcrInferenceShell.Compile.csproj"
 MANIFEST = ROOT / "unity/PhraseLayer.Unity/Packages/manifest.json"
 
@@ -36,6 +37,7 @@ def validate() -> dict[str, object]:
     core = CORE_CONTRACT.read_text(encoding="utf-8")
     probe = PROBE.read_text(encoding="utf-8")
     shell = SHELL.read_text(encoding="utf-8")
+    common_ocr_shell = COMMON_OCR_SHELL.read_text(encoding="utf-8")
     guarded = GUARDED_CSPROJ.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
@@ -126,6 +128,13 @@ def validate() -> dict[str, object]:
         raise GateError("recognizer GPU reduction parity shell must use a real graphics device")
 
     for fragment in (
+        'bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"',
+        "Production recognition does not download the full [time,class] probability matrix",
+        "recognizer GPU CTC reduction parity",
+    ):
+        require(common_ocr_shell, fragment, "shared real-Unity OCR host gate")
+
+    for fragment in (
         "UnityPaddleOcrRecognizerRuntime.cs",
         "UnityPaddleOcrEngine.cs",
         "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.cs",
@@ -145,6 +154,7 @@ def validate() -> dict[str, object]:
         "live_reduce_max_gpu_reduction_required": True,
         "first_index_on_ties_required": True,
         "real_unity_full_vs_reduced_parity_required": True,
+        "shared_ocr_host_gate_chains_reduction_parity": True,
         "live_cpu_values_per_timestep": 2,
         "quest_execution_required": False,
     }
