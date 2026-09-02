@@ -22,6 +22,11 @@ namespace UnityEngine
         public int height { get; set; }
     }
 
+    public sealed class TextAsset : Object
+    {
+        public string text { get; set; } = string.Empty;
+    }
+
     public sealed class Shader : Object { }
 
     public sealed class Material : Object
@@ -137,6 +142,8 @@ namespace UnityEngine
 
 namespace UnityEditor
 {
+    using UnityEngine;
+
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class MenuItem : Attribute
     {
@@ -146,6 +153,12 @@ namespace UnityEditor
     public static class EditorApplication
     {
         public static void Exit(int code) { }
+    }
+
+    public static class AssetDatabase
+    {
+        public static void Refresh() { }
+        public static T LoadAssetAtPath<T>(string path) where T : Object => null;
     }
 }
 
