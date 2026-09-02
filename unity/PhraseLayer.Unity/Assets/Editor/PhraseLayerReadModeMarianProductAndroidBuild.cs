@@ -21,6 +21,7 @@ namespace PhraseLayer.Unity.Editor
         private const string DefaultApplicationIdentifier = "com.unjuno.phraselayer.readmodemarianfixture";
         private const string BuildPathEnvironment = "PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APK_PATH";
         private const string ApplicationIdentifierEnvironment = "PHRASELAYER_READ_MODE_MARIAN_PRODUCT_APPLICATION_ID";
+        private const string MetaProjectSetupEnvironment = "PHRASELAYER_META_PROJECT_SETUP_APPLIED";
         private const string DefaultRelativeBuildPath = "Builds/Android/PhraseLayerReadModeMarianProductFixture.apk";
         private const string VisualEvidenceRelativePath = "Assets/LocalReadModeAssets/read-mode-visual-assets.json";
         private const string OcrManifestRelativePath = "Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json";
@@ -35,6 +36,7 @@ namespace PhraseLayer.Unity.Editor
         public static void Build()
         {
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+            RequireMetaProjectSetupHandshake();
             EnsureAndroidTarget();
             ConfigureAndroidPlayer();
 
@@ -117,8 +119,8 @@ namespace PhraseLayer.Unity.Editor
                     CultureInfo.InvariantCulture,
                     "PhraseLayer combined Read Mode + Marian product packaging PASS: {0}; bytes={1}; " +
                     "runtime=PaddleOCR+CapturedCameraPose+MRUKEnvironmentRaycast+MarianOpusMtEnJa; " +
-                    "target=Android ARM64 IL2CPP; product_translation_gate=true; Quest/runtime execution not performed; " +
-                    "APK upload forbidden while redistribution review is pending.",
+                    "target=Android ARM64 IL2CPP; meta_project_setup=required-and-confirmed; product_translation_gate=true; " +
+                    "Quest/runtime execution not performed; APK upload forbidden while redistribution review is pending.",
                     outputPath,
                     new FileInfo(outputPath).Length));
 #else
@@ -142,6 +144,19 @@ namespace PhraseLayer.Unity.Editor
         }
 
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
+        private static void RequireMetaProjectSetupHandshake()
+        {
+            if (!string.Equals(
+                    Environment.GetEnvironmentVariable(MetaProjectSetupEnvironment),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Combined Read Mode + Marian product build requires the pinned Meta Quest Required project fixes " +
+                    "to complete successfully in a separate Unity process before this build starts.");
+            }
+        }
+
         private static void EnsureAndroidTarget()
         {
             if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
@@ -234,7 +249,7 @@ namespace PhraseLayer.Unity.Editor
             var sceneJson = string.Join(",", scenes.Select(scene => "\"" + EscapeJson(scene) + "\""));
             var json = string.Format(
                 CultureInfo.InvariantCulture,
-                "{{\n  \"schema_version\": 1,\n  \"purpose\": \"phrase-layer-read-mode-marian-product-android-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"surface_runtime\": \"MRUKEnvironmentRaycast\",\n  \"translation_runtime\": \"MarianOpusMtEnJa\",\n  \"generation_backend\": \"UnityMarianDeviceResidentGenerationBackend\",\n  \"tokenizer_runtime\": \"Microsoft.ML.Tokenizers\",\n  \"model_revision\": \"{2}\",\n  \"product_translation_gate\": true,\n  \"semantic_span_pipeline\": true,\n  \"combined_single_scene_packaging\": true,\n  \"source_weight_copied_to_unity\": false,\n  \"il2cpp_reflection_preserve_required\": true,\n  \"camera_timestamp_source\": \"MetaPassthroughCameraAccess.Timestamp\",\n  \"camera_pose_source\": \"MetaPassthroughCameraAccess.GetCameraPose\",\n  \"captured_pose_projection_required\": true,\n  \"camera_timestamp_pose_binding_implemented\": true,\n  \"camera_pixel_pose_sync_verified\": false,\n  \"quest_read_mode_smoke_autorun\": false,\n  \"quest_device_execution_performed\": false,\n  \"android_runtime_execution_performed\": false,\n  \"deterministic_single_scene_build\": true,\n  \"project_paths_anchored_to_application_data_path\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"ocr_redistribution_review\": \"pending\",\n  \"translation_redistribution_review\": \"pending\",\n  \"apk_upload_allowed\": false,\n  \"visual_asset_evidence_file\": \"{3}\",\n  \"visual_asset_evidence_size_bytes\": {4},\n  \"ocr_asset_manifest_file\": \"{5}\",\n  \"ocr_asset_manifest_size_bytes\": {6},\n  \"marian_asset_manifest_file\": \"{7}\",\n  \"marian_asset_manifest_size_bytes\": {8},\n  \"reference_fixture_file\": \"{9}\",\n  \"reference_fixture_size_bytes\": {10},\n  \"linker_descriptor_file\": \"{11}\",\n  \"linker_descriptor_size_bytes\": {12},\n  \"tokenizer_adapter_size_bytes\": {13},\n  \"tokenizer_runtime_size_bytes\": {14},\n  \"protobuf_runtime_size_bytes\": {15},\n  \"result\": \"{16}\",\n  \"total_errors\": {17},\n  \"total_warnings\": {18},\n  \"total_size_bytes_reported\": {19},\n  \"apk_size_bytes\": {20},\n  \"elapsed_seconds\": {21:F6},\n  \"scenes\": [{22}]\n}}\n",
+                "{{\n  \"schema_version\": 2,\n  \"purpose\": \"phrase-layer-read-mode-marian-product-android-fixture-build\",\n  \"unity_version\": \"{0}\",\n  \"application_identifier\": \"{1}\",\n  \"target\": \"Android\",\n  \"architecture\": \"ARM64\",\n  \"scripting_backend\": \"IL2CPP\",\n  \"meta_project_setup_applied_before_build\": true,\n  \"meta_project_setup_separate_unity_process_required\": true,\n  \"ocr_runtime\": \"PaddleOCR\",\n  \"surface_runtime\": \"MRUKEnvironmentRaycast\",\n  \"translation_runtime\": \"MarianOpusMtEnJa\",\n  \"generation_backend\": \"UnityMarianDeviceResidentGenerationBackend\",\n  \"tokenizer_runtime\": \"Microsoft.ML.Tokenizers\",\n  \"model_revision\": \"{2}\",\n  \"product_translation_gate\": true,\n  \"semantic_span_pipeline\": true,\n  \"combined_single_scene_packaging\": true,\n  \"source_weight_copied_to_unity\": false,\n  \"il2cpp_reflection_preserve_required\": true,\n  \"camera_timestamp_source\": \"MetaPassthroughCameraAccess.Timestamp\",\n  \"camera_pose_source\": \"MetaPassthroughCameraAccess.GetCameraPose\",\n  \"captured_pose_projection_required\": true,\n  \"camera_timestamp_pose_binding_implemented\": true,\n  \"camera_pixel_pose_sync_verified\": false,\n  \"quest_read_mode_smoke_autorun\": false,\n  \"quest_device_execution_performed\": false,\n  \"android_runtime_execution_performed\": false,\n  \"deterministic_single_scene_build\": true,\n  \"project_paths_anchored_to_application_data_path\": true,\n  \"source_mask_shader\": \"PhraseLayer/SourceMask\",\n  \"ocr_redistribution_review\": \"pending\",\n  \"translation_redistribution_review\": \"pending\",\n  \"apk_upload_allowed\": false,\n  \"visual_asset_evidence_file\": \"{3}\",\n  \"visual_asset_evidence_size_bytes\": {4},\n  \"ocr_asset_manifest_file\": \"{5}\",\n  \"ocr_asset_manifest_size_bytes\": {6},\n  \"marian_asset_manifest_file\": \"{7}\",\n  \"marian_asset_manifest_size_bytes\": {8},\n  \"reference_fixture_file\": \"{9}\",\n  \"reference_fixture_size_bytes\": {10},\n  \"linker_descriptor_file\": \"{11}\",\n  \"linker_descriptor_size_bytes\": {12},\n  \"tokenizer_adapter_size_bytes\": {13},\n  \"tokenizer_runtime_size_bytes\": {14},\n  \"protobuf_runtime_size_bytes\": {15},\n  \"result\": \"{16}\",\n  \"total_errors\": {17},\n  \"total_warnings\": {18},\n  \"total_size_bytes_reported\": {19},\n  \"apk_size_bytes\": {20},\n  \"elapsed_seconds\": {21:F6},\n  \"scenes\": [{22}]\n}}\n",
                 EscapeJson(Application.unityVersion),
                 EscapeJson(PlayerSettings.GetApplicationIdentifier(NamedBuildTarget.Android)),
                 EscapeJson(PhraseLayerLocalMarianAssets.ExpectedRevision),
