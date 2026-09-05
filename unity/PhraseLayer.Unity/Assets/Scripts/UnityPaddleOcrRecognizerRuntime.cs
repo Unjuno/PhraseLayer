@@ -11,10 +11,7 @@ namespace PhraseLayer.Unity
 {
     public sealed class PaddleRecognizerRawOutput
     {
-        public PaddleRecognizerRawOutput(
-            PaddleRecResizeTransform resizeTransform,
-            int[] outputShape,
-            float[] outputValues)
+        public PaddleRecognizerRawOutput(PaddleRecResizeTransform resizeTransform, int[] outputShape, float[] outputValues)
         {
             ResizeTransform = resizeTransform ?? throw new ArgumentNullException(nameof(resizeTransform));
             OutputShape = outputShape ?? throw new ArgumentNullException(nameof(outputShape));
@@ -28,32 +25,18 @@ namespace PhraseLayer.Unity
         public PaddleCtcDecodeResult Decode(IReadOnlyList<string> characterDictionary)
         {
             if (characterDictionary == null) throw new ArgumentNullException(nameof(characterDictionary));
-            if (OutputShape.Length != 3 || OutputShape[0] != 1)
-            {
-                throw new InvalidOperationException(
-                    "Recognizer output must be [1,time,class] before CTC decoding. Capture UnityInferenceModelProbe output and update the runtime contract if the pinned ONNX differs.");
-            }
-
-            return PaddleCtcGreedyDecoder.DecodeFromPredictions(
-                OutputValues,
-                OutputShape[1],
-                OutputShape[2],
-                characterDictionary);
+            PaddleOcrRuntimeContract.ValidateRecognizer(OutputShape, OutputValues, characterDictionary.Count);
+            return PaddleCtcGreedyDecoder.DecodeFromPredictions(OutputValues, OutputShape[1], OutputShape[2], characterDictionary);
         }
     }
 
     /// <summary>
-    /// GPU-reduced recognizer result. The full probability tensor remains on the GPU; CPU receives only one winning
-    /// class index and maximum score per timestep. OutputShape is copied from the unreduced GPU tensor metadata so the
-    /// normal [1,time,class] + dictionary contract can still be validated before decoding.
+    /// GPU-reduced recognizer output. CPU receives one class index and maximum score per timestep; OutputShape
+    /// describes the unreduced probability tensor metadata, not a downloaded probability matrix.
     /// </summary>
     public sealed class PaddleRecognizerReducedOutput
     {
-        public PaddleRecognizerReducedOutput(
-            PaddleRecResizeTransform resizeTransform,
-            int[] outputShape,
-            int[] classIndices,
-            float[] maxScores)
+        public PaddleRecognizerReducedOutput(PaddleRecResizeTransform resizeTransform, int[] outputShape, int[] classIndices, float[] maxScores)
         {
             ResizeTransform = resizeTransform ?? throw new ArgumentNullException(nameof(resizeTransform));
             OutputShape = outputShape ?? throw new ArgumentNullException(nameof(outputShape));
@@ -69,29 +52,23 @@ namespace PhraseLayer.Unity
         public PaddleCtcDecodeResult Decode(IReadOnlyList<string> characterDictionary)
         {
             if (characterDictionary == null) throw new ArgumentNullException(nameof(characterDictionary));
+            PaddleOcrRuntimeContract.ValidateRecognizerReduced(OutputShape, ClassIndices, MaxScores, characterDictionary.Count);
             return PaddleCtcGreedyDecoder.DecodeFromIndices(ClassIndices, MaxScores, characterDictionary);
         }
     }
 
 #if PHRASELAYER_UNITY_AI_INFERENCE_2_2
     /// <summary>
-    /// PP-OCR recognizer runtime for Unity Inference Engine 2.2.x.
-    ///
-    /// Input preprocessing remains GPU-side: the shader performs aspect-preserving resize, right padding and
-    /// PaddleOCR normalization, then TextureConverter writes BGR NCHW directly into the recognizer input tensor.
-    /// Production CTC preparation is also GPU-side: ArgMax(selectLastIndex=false) and ReduceMax run along the class
-    /// axis. The integer ArgMax result is exactly representable as float for the reviewed PP-OCR class count, then
-    /// index + score are packed into one [1,time,2] float tensor so live recognition performs one synchronous output
-    /// readback per crop rather than one readback for indices and another for scores.
-    ///
-    /// The full [1,time,class] Execute path is retained strictly as a correctness oracle. It creates a temporary full
-    /// worker on demand and disposes it before returning; the long-lived production runtime retains only the reduced
-    /// worker, avoiding a second recognizer execution plan/model allocation on Quest.
+    /// Inference Engine 2.2.1 recognizer. Shader preprocessing feeds a BGR NCHW float tensor. ArgMax with
+    /// selectLastIndex=false and ReduceMax are packed into float32 [1,time,2], class index then score. Core validates
+    /// the real packed shape and the exact-integer class-count domain before interpreting the downloaded values.
+    /// Only the reduced worker is retained. Execute creates a temporary full-output oracle for host verification.
+    /// One explicit output readback per reduced crop is a code-path contract, not a measured latency guarantee.
     /// </summary>
     public sealed class UnityPaddleOcrRecognizerRuntime : IDisposable
     {
         public const string PreprocessShaderResourceName = "PaddleOcrRecognizerPreprocess";
-        public const int ReducedValuesPerTimestep = 2;
+        public const int ReducedValuesPerTimestep = PaddleCtcPackedOutput.ValuesPerTimestep;
         public const int ReducedReadbackOperationsPerCrop = 1;
 
         private readonly ModelAsset modelAsset;
@@ -100,23 +77,14 @@ namespace PhraseLayer.Unity
         private readonly Material preprocessMaterial;
         private bool disposed;
 
-        public UnityPaddleOcrRecognizerRuntime(
-            ModelAsset modelAsset,
-            BackendType backendType = BackendType.GPUCompute)
+        public UnityPaddleOcrRecognizerRuntime(ModelAsset modelAsset, BackendType backendType = BackendType.GPUCompute)
         {
             if (modelAsset == null) throw new ArgumentNullException(nameof(modelAsset));
-
             var model = ModelLoader.Load(modelAsset);
             if (model.inputs.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    "PP-OCR recognizer runtime currently requires exactly one model input; probe the imported ONNX before widening this contract.");
-            }
+                throw new InvalidOperationException("PP-OCR recognizer runtime currently requires exactly one model input; probe the imported ONNX before widening this contract.");
             if (model.inputs[0].dataType != DataType.Float)
-            {
-                throw new InvalidOperationException(
-                    "PP-OCR recognizer input must be float so reviewed GPU resize/pad/normalization can feed the imported model directly.");
-            }
+                throw new InvalidOperationException("PP-OCR recognizer input must be float so reviewed GPU resize/pad/normalization can feed the imported model directly.");
             if (model.outputs.Count < 1)
                 throw new InvalidOperationException("PP-OCR recognizer model must expose at least one output.");
 
@@ -133,7 +101,6 @@ namespace PhraseLayer.Unity
                 UnityEngine.Object.Destroy(material);
                 throw;
             }
-
             this.modelAsset = modelAsset;
             preprocessMaterial = material;
             reducedOutputWorker = reducedWorker;
@@ -143,7 +110,7 @@ namespace PhraseLayer.Unity
         public bool IsSupported => true;
         public BackendType BackendType => backendType;
         public bool UsesGpuTexturePreprocessing => true;
-        public bool UsesGpuCtcReduction => true;
+        public bool UsesGpuCtcReduction => backendType == BackendType.GPUCompute;
         public bool RetainsFullOutputWorker => false;
         public int CtcReadbackOperationsPerCrop => ReducedReadbackOperationsPerCrop;
 
@@ -159,12 +126,7 @@ namespace PhraseLayer.Unity
         {
             var shader = Resources.Load<Shader>(PreprocessShaderResourceName);
             if (shader == null)
-            {
-                throw new InvalidOperationException(
-                    "Missing Resources/" + PreprocessShaderResourceName +
-                    ".shader. The GPU recognizer preprocessing shader must be bundled for Quest builds.");
-            }
-
+                throw new InvalidOperationException("Missing Resources/" + PreprocessShaderResourceName + ".shader. The GPU recognizer preprocessing shader must be bundled for Quest builds.");
             return new Material(shader)
             {
                 name = "PhraseLayer PP-OCR Recognizer Preprocess Material",
@@ -184,33 +146,18 @@ namespace PhraseLayer.Unity
             if (inputTensor == null) throw new ArgumentNullException(nameof(inputTensor));
             if (material == null) throw new ArgumentNullException(nameof(material));
             if (rectifiedCrop.width != resizeTransform.SourceWidth || rectifiedCrop.height != resizeTransform.SourceHeight)
-            {
-                throw new ArgumentException(
-                    "Recognizer resize geometry must describe the exact rectified crop texture dimensions.",
-                    nameof(rectifiedCrop));
-            }
+                throw new ArgumentException("Recognizer resize geometry must describe the exact rectified crop texture dimensions.", nameof(rectifiedCrop));
 
             var shape = inputTensor.shape;
-            if (shape.rank != 4 ||
-                shape[0] != 1 ||
-                shape[1] != PaddleOcrV6TinyRecognitionPreprocess.Channels ||
-                shape[2] != resizeTransform.ModelHeight ||
-                shape[3] != resizeTransform.ModelWidth)
-            {
-                throw new ArgumentException(
-                    "Recognizer input tensor must match [1,3,modelHeight,modelWidth] from the reviewed resize transform.",
-                    nameof(inputTensor));
-            }
+            if (shape.rank != 4 || shape[0] != 1 || shape[1] != PaddleOcrV6TinyRecognitionPreprocess.Channels ||
+                shape[2] != resizeTransform.ModelHeight || shape[3] != resizeTransform.ModelWidth)
+                throw new ArgumentException("Recognizer input tensor must match [1,3,modelHeight,modelWidth] from the reviewed resize transform.", nameof(inputTensor));
 
             var normalizedTexture = RenderTexture.GetTemporary(
-                resizeTransform.ModelWidth,
-                resizeTransform.ModelHeight,
-                0,
-                RenderTextureFormat.ARGBHalf,
-                RenderTextureReadWrite.Linear);
+                resizeTransform.ModelWidth, resizeTransform.ModelHeight, 0,
+                RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear);
             normalizedTexture.filterMode = FilterMode.Bilinear;
             normalizedTexture.wrapMode = TextureWrapMode.Clamp;
-
             try
             {
                 material.SetFloat("_ValidRatio", (float)resizeTransform.ValidRatio);
@@ -226,10 +173,7 @@ namespace PhraseLayer.Unity
             }
         }
 
-        /// <summary>
-        /// Correctness/parity path. A temporary full-output worker is constructed for this call only, then disposed.
-        /// Live OCR does not call this method.
-        /// </summary>
+        /// <summary>Host parity oracle only. No full-output worker is retained by the production runtime.</summary>
         public PaddleRecognizerRawOutput Execute(
             Texture rectifiedCrop,
             int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth,
@@ -240,30 +184,17 @@ namespace PhraseLayer.Unity
             var inputTensor = CreateInputTensor(resizeTransform);
             try
             {
-                PopulateReviewedInputTensor(
-                    rectifiedCrop,
-                    resizeTransform,
-                    inputTensor,
-                    preprocessMaterial,
-                    flipReadbackRows);
-
+                PopulateReviewedInputTensor(rectifiedCrop, resizeTransform, inputTensor, preprocessMaterial, flipReadbackRows);
                 using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))
                 {
                     parityWorker.Schedule(inputTensor);
                     var outputTensor = parityWorker.PeekOutput() as Tensor<float>;
                     if (outputTensor == null)
-                    {
-                        throw new InvalidOperationException(
-                            "PP-OCR recognizer default output is not a float tensor. Capture UnityInferenceModelProbe output and update the runtime contract.");
-                    }
-
+                        throw new InvalidOperationException("PP-OCR recognizer default output is not a float tensor.");
                     var cpuTensor = outputTensor.ReadbackAndClone();
                     try
                     {
-                        return new PaddleRecognizerRawOutput(
-                            resizeTransform,
-                            CopyShape(cpuTensor.shape),
-                            cpuTensor.DownloadToArray());
+                        return new PaddleRecognizerRawOutput(resizeTransform, CopyShape(cpuTensor.shape), cpuTensor.DownloadToArray());
                     }
                     finally
                     {
@@ -277,11 +208,7 @@ namespace PhraseLayer.Unity
             }
         }
 
-        /// <summary>
-        /// Production path. The wrapped model emits a packed [1,time,2] float tensor containing class index then max
-        /// score for each timestep, plus the original probability tensor only as a GPU-resident shape witness. The
-        /// packed tensor is the only recognizer output downloaded by live OCR.
-        /// </summary>
+        /// <summary>Live path: exactly one explicit readback of the packed tensor; the full output is shape-only.</summary>
         public PaddleRecognizerReducedOutput ExecuteReduced(
             Texture rectifiedCrop,
             int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth,
@@ -292,30 +219,21 @@ namespace PhraseLayer.Unity
             var inputTensor = CreateInputTensor(resizeTransform);
             try
             {
-                PopulateReviewedInputTensor(
-                    rectifiedCrop,
-                    resizeTransform,
-                    inputTensor,
-                    preprocessMaterial,
-                    flipReadbackRows);
+                PopulateReviewedInputTensor(rectifiedCrop, resizeTransform, inputTensor, preprocessMaterial, flipReadbackRows);
                 reducedOutputWorker.Schedule(inputTensor);
-
                 var packedTensor = reducedOutputWorker.PeekOutput(0) as Tensor<float>;
                 var probabilityTensor = reducedOutputWorker.PeekOutput(1) as Tensor<float>;
                 if (packedTensor == null || probabilityTensor == null)
-                {
-                    throw new InvalidOperationException(
-                        "PP-OCR recognizer reduced outputs must be a packed float [1,time,2] tensor plus a float probability shape witness.");
-                }
+                    throw new InvalidOperationException("PP-OCR recognizer reduced outputs must be a packed float [1,time,2] tensor plus a float probability shape witness.");
 
                 var outputShape = CopyShape(probabilityTensor.shape);
+                var packedShape = CopyShape(packedTensor.shape);
+                PaddleCtcPackedOutput.ValidateShapes(outputShape, packedShape);
                 var packedCpu = packedTensor.ReadbackAndClone();
                 try
                 {
-                    return UnpackReducedOutput(
-                        resizeTransform,
-                        outputShape,
-                        packedCpu.DownloadToArray());
+                    var unpacked = PaddleCtcPackedOutput.Unpack(outputShape, packedShape, packedCpu.DownloadToArray());
+                    return new PaddleRecognizerReducedOutput(resizeTransform, unpacked.OutputShape, unpacked.ClassIndices, unpacked.MaxScores);
                 }
                 finally
                 {
@@ -328,24 +246,29 @@ namespace PhraseLayer.Unity
             }
         }
 
-        public PaddleCtcDecodeResult ExecuteAndDecode(
-            Texture rectifiedCrop,
-            IReadOnlyList<string> characterDictionary,
-            int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth,
-            bool flipReadbackRows = true)
+        public PaddleCtcDecodeResult ExecuteAndDecode(Texture rectifiedCrop, IReadOnlyList<string> characterDictionary,
+            int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth, bool flipReadbackRows = true)
         {
             if (characterDictionary == null) throw new ArgumentNullException(nameof(characterDictionary));
             return Execute(rectifiedCrop, modelWidth, flipReadbackRows).Decode(characterDictionary);
         }
 
-        public PaddleCtcDecodeResult ExecuteReducedAndDecode(
-            Texture rectifiedCrop,
-            IReadOnlyList<string> characterDictionary,
-            int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth,
-            bool flipReadbackRows = true)
+        public PaddleCtcDecodeResult ExecuteReducedAndDecode(Texture rectifiedCrop, IReadOnlyList<string> characterDictionary,
+            int modelWidth = PaddleOcrV6TinyRecognitionPreprocess.DefaultModelWidth, bool flipReadbackRows = true)
         {
             if (characterDictionary == null) throw new ArgumentNullException(nameof(characterDictionary));
             return ExecuteReduced(rectifiedCrop, modelWidth, flipReadbackRows).Decode(characterDictionary);
+        }
+
+        /// <summary>Production packing operators shared with the model-independent GPU tie/blank parity probe.</summary>
+        public static FunctionalTensor PackReviewedCtcOutput(FunctionalTensor probabilities)
+        {
+            if (probabilities == null) throw new ArgumentNullException(nameof(probabilities));
+            var classIndices = Functional.ArgMax(probabilities, dim: -1, keepdim: false);
+            var maxScores = Functional.ReduceMax(probabilities, dim: -1, keepdim: false);
+            return Functional.Concat(
+                new[] { classIndices.Float().Unsqueeze(-1), maxScores.Unsqueeze(-1) },
+                dim: -1);
         }
 
         private static Model BuildGpuReducedOutputModel(Model sourceModel)
@@ -355,103 +278,30 @@ namespace PhraseLayer.Unity
             var outputs = Functional.Forward(sourceModel, input);
             if (outputs == null || outputs.Length < 1 || outputs[0] == null)
                 throw new InvalidOperationException("PP-OCR recognizer FunctionalGraph could not expose the imported model output.");
-
             var probabilities = outputs[0];
-            var classIndices = Functional.ArgMax(probabilities, dim: -1, keepdim: false);
-            var maxScores = Functional.ReduceMax(probabilities, dim: -1, keepdim: false);
-            var packed = Functional.Concat(
-                new[]
-                {
-                    classIndices.Float().Unsqueeze(-1),
-                    maxScores.Unsqueeze(-1)
-                },
-                dim: -1);
+            var packed = PackReviewedCtcOutput(probabilities);
             graph.AddOutputs(packed, probabilities);
             return graph.Compile();
-        }
-
-        private static PaddleRecognizerReducedOutput UnpackReducedOutput(
-            PaddleRecResizeTransform resizeTransform,
-            int[] outputShape,
-            float[] packedValues)
-        {
-            if (outputShape == null) throw new ArgumentNullException(nameof(outputShape));
-            if (packedValues == null) throw new ArgumentNullException(nameof(packedValues));
-            if (outputShape.Length != 3 || outputShape[0] != 1 || outputShape[1] <= 0 || outputShape[2] <= 0)
-            {
-                throw new InvalidOperationException(
-                    "Recognizer probability shape witness must remain [1,time,class] before unpacking GPU CTC reduction.");
-            }
-
-            var timeSteps = outputShape[1];
-            var expectedValues = checked(timeSteps * ReducedValuesPerTimestep);
-            if (packedValues.Length != expectedValues)
-            {
-                throw new InvalidOperationException(
-                    "Packed recognizer reduction must contain exactly two values per timestep. Observed " +
-                    packedValues.Length + ", expected " + expectedValues + ".");
-            }
-
-            var classIndices = new int[timeSteps];
-            var maxScores = new float[timeSteps];
-            for (var time = 0; time < timeSteps; time++)
-            {
-                var classValue = packedValues[time * ReducedValuesPerTimestep];
-                var score = packedValues[time * ReducedValuesPerTimestep + 1];
-                if (float.IsNaN(classValue) || float.IsInfinity(classValue) || classValue < 0f || classValue > int.MaxValue)
-                {
-                    throw new InvalidOperationException(
-                        "Packed recognizer class index must be a finite non-negative Int32-representable value at timestep " + time + ".");
-                }
-
-                var classIndex = (int)classValue;
-                if (classValue != classIndex)
-                {
-                    throw new InvalidOperationException(
-                        "Packed recognizer class index lost integer identity at timestep " + time + ": " + classValue + ".");
-                }
-                if (float.IsNaN(score) || float.IsInfinity(score))
-                {
-                    throw new InvalidOperationException(
-                        "Packed recognizer max score must be finite at timestep " + time + ".");
-                }
-
-                classIndices[time] = classIndex;
-                maxScores[time] = score;
-            }
-
-            return new PaddleRecognizerReducedOutput(
-                resizeTransform,
-                outputShape,
-                classIndices,
-                maxScores);
         }
 
         private static PaddleRecResizeTransform CreateResizeTransform(Texture rectifiedCrop, int modelWidth)
         {
             if (rectifiedCrop == null) throw new ArgumentNullException(nameof(rectifiedCrop));
             if (modelWidth <= 0) throw new ArgumentOutOfRangeException(nameof(modelWidth));
-            return PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform(
-                rectifiedCrop.width,
-                rectifiedCrop.height,
-                modelWidth,
-                PaddleOcrV6TinyRecognitionPreprocess.DefaultModelHeight);
+            return PaddleOcrV6TinyRecognitionPreprocess.CreateResizeTransform(rectifiedCrop.width, rectifiedCrop.height,
+                modelWidth, PaddleOcrV6TinyRecognitionPreprocess.DefaultModelHeight);
         }
 
         private static Tensor<float> CreateInputTensor(PaddleRecResizeTransform resizeTransform)
         {
-            return new Tensor<float>(new TensorShape(
-                1,
-                PaddleOcrV6TinyRecognitionPreprocess.Channels,
-                resizeTransform.ModelHeight,
-                resizeTransform.ModelWidth));
+            return new Tensor<float>(new TensorShape(1, PaddleOcrV6TinyRecognitionPreprocess.Channels,
+                resizeTransform.ModelHeight, resizeTransform.ModelWidth));
         }
 
         private static int[] CopyShape(TensorShape shape)
         {
             var dimensions = new int[shape.rank];
-            for (var axis = 0; axis < dimensions.Length; axis++)
-                dimensions[axis] = shape[axis];
+            for (var axis = 0; axis < dimensions.Length; axis++) dimensions[axis] = shape[axis];
             return dimensions;
         }
 
@@ -472,10 +322,7 @@ namespace PhraseLayer.Unity
     public sealed class UnityPaddleOcrRecognizerRuntime : IDisposable
     {
         public bool IsSupported => false;
-
-        public void Dispose()
-        {
-        }
+        public void Dispose() { }
     }
 #endif
 }
