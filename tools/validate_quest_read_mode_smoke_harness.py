@@ -75,7 +75,7 @@ def validate() -> dict[str, object]:
         require(engine, fragment, "Unity PP-OCR engine")
 
     for fragment in (
-        "public bool UsesGpuCtcReduction => true",
+        "public bool UsesGpuCtcReduction => backendType == BackendType.GPUCompute",
         "public bool RetainsFullOutputWorker => false",
         "private readonly Worker reducedOutputWorker",
         "using (var parityWorker = new Worker(ModelLoader.Load(modelAsset), backendType))",

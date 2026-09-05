@@ -59,7 +59,7 @@ def validate() -> dict[str, object]:
         require(engine, fragment, "live PP-OCR engine")
 
     for fragment in (
-        "public bool UsesGpuCtcReduction => true",
+        "public bool UsesGpuCtcReduction => backendType == BackendType.GPUCompute",
         "public bool RetainsFullOutputWorker => false",
         "private readonly Worker reducedOutputWorker",
         "Functional.ArgMax(probabilities, dim: -1, keepdim: false)",
@@ -86,42 +86,24 @@ def validate() -> dict[str, object]:
         'raise SmokeError(f"external command failed with exit code {completed.returncode}")',
     ):
         require(runner, fragment, "Quest device runner")
-    for forbidden in (
-        "completed.stderr.strip()",
-        '" ".join(args)',
-    ):
+    for forbidden in ("completed.stderr.strip()", '" ".join(args)'):
         forbid(runner, forbidden, "Quest device runner failure evidence")
 
     for fragment in (
-        "verify-local-ocr-inference.sh",
-        "python tools/run_quest_read_mode_smoke.py",
+        "verify-local-ocr-inference.sh", "python tools/run_quest_read_mode_smoke.py",
         'assert data["readiness"]["ocr_smoke_passed"] is True',
         'assert data["readiness"]["read_mode_smoke_passed"] is True',
     ):
         require(workflow, fragment, "Quest Read Mode workflow")
-
-    require(
-        common_gate,
-        'bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"',
-        "shared OCR host gate",
-    )
-    for fragment in (
-        "PhraseLayerPaddleOcrRecognizerGpuReductionProbe.RunBatch",
-        "full-matrix versus GPU ArgMax/ReduceMax CTC reduction parity",
-    ):
+    require(common_gate, 'bash "$ROOT/tools/unity/verify-recognizer-gpu-reduction.sh"', "shared OCR host gate")
+    for fragment in ("PhraseLayerPaddleOcrRecognizerGpuReductionProbe.RunBatch", "full-matrix versus GPU ArgMax/ReduceMax CTC reduction parity"):
         require(reduction_gate, fragment, "real-Unity recognizer reduction gate")
-
     return {
-        "status": "pass",
-        "quest_ocr_pass_requires_gpu_ctc_reduction": True,
-        "quest_ocr_pass_rejects_retained_full_worker": True,
-        "device_runner_requires_runtime_reduction_marker": True,
-        "device_evidence_full_probability_readback_claim": False,
-        "device_evidence_cpu_values_per_timestep": 2,
-        "raw_command_stderr_serialized": False,
-        "raw_command_arguments_serialized_on_failure": False,
-        "pre_device_real_unity_reduction_parity_required": True,
-        "quest_execution_still_required": True,
+        "status": "pass", "quest_ocr_pass_requires_gpu_ctc_reduction": True,
+        "quest_ocr_pass_rejects_retained_full_worker": True, "device_runner_requires_runtime_reduction_marker": True,
+        "device_evidence_full_probability_readback_claim": False, "device_evidence_cpu_values_per_timestep": 2,
+        "raw_command_stderr_serialized": False, "raw_command_arguments_serialized_on_failure": False,
+        "pre_device_real_unity_reduction_parity_required": True, "quest_execution_still_required": True,
     }
 
 
