@@ -10,131 +10,117 @@ using PhraseLayer.Core.Spatial;
 
 const double associationDistance = 0.20;
 const long retentionMicroseconds = 600_000;
+var checks = new Dictionary<string, bool>();
 
-var production = new WorldTextTrackStabilizer(
-    maximumAssociationDistanceMeters: associationDistance,
-    retentionSeconds: retentionMicroseconds / 1_000_000.0,
-    smoothingTimeConstantSeconds: 0.10);
+// Isolate display changes from source normalization; the old experiment changed both at once.
+var production = new WorldTextTrackStabilizer(associationDistance, 0.60, 0.10);
+var originalId = SingleObserved(production.Update(Layout(Target("KEEP OFF", "立入禁止", 0.00)), 0)).TrackId;
+var changed = production.Update(Layout(Target("KEEP OFF", "入らないでください", 0.01)), 100_000);
+checks["production_display_only_change_creates_new_track"] = changed.Tracks.Count == 2 &&
+    changed.Tracks.Any(track => track.TrackId == originalId && !track.ObservedThisFrame) &&
+    changed.Tracks.Any(track => track.TrackId != originalId && track.ObservedThisFrame);
+var normalizedProduction = new WorldTextTrackStabilizer(associationDistance, 0.60, 0.10);
+var normalizedId = SingleObserved(normalizedProduction.Update(Layout(Target("KEEP OFF", "立入禁止", 0)), 0)).TrackId;
+checks["production_case_spacing_only_change_preserves_track"] =
+    SingleObserved(normalizedProduction.Update(Layout(Target("keep   off", "立入禁止", 0.01)), 100_000)).TrackId == normalizedId;
+
 var candidate = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
+var first = candidate.Update(new Observation("KEEP OFF", "立入禁止", 0), 0);
+checks["candidate_display_only_change_preserves_identity"] =
+    candidate.Update(new Observation("KEEP OFF", "入らないでください", 0.01), 100_000).Id == first.Id;
+checks["candidate_case_spacing_only_change_preserves_identity"] =
+    candidate.Update(new Observation("keep   off", "入らないでください", 0.01), 110_000).Id == first.Id;
+checks["same_source_far_sign_is_separate"] = candidate.Update(new Observation("KEEP OFF", "立入禁止", 0.75), 200_000).Id != first.Id;
+checks["changed_source_nearby_is_separate"] = candidate.Update(new Observation("KEEP OUT", "立入禁止", 0.015), 300_000).Id != first.Id;
 
-var firstLayout = Layout(Target("KEEP OFF", "立入禁止", 0.00));
-var changedDisplayLayout = Layout(Target("keep   off", "入らないでください", 0.01));
-var productionFirstId = SingleObserved(production.Update(firstLayout, 0)).TrackId;
-var productionAfterDisplayChange = production.Update(changedDisplayLayout, 100_000);
-var productionDisplayChangeCreatedNewTrack =
-    productionAfterDisplayChange.Tracks.Count == 2 &&
-    productionAfterDisplayChange.Tracks.Any(track => track.TrackId == productionFirstId && !track.ObservedThisFrame) &&
-    productionAfterDisplayChange.Tracks.Any(track => track.TrackId != productionFirstId && track.ObservedThisFrame);
-if (!productionDisplayChangeCreatedNewTrack)
-    throw new InvalidOperationException("Baseline no longer demonstrates display-sensitive WorldTextTrack identity.");
+// Independent trajectories test the exact inclusive retention boundary, not a renewed last-seen age.
+var inclusive = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
+var inclusiveId = inclusive.Update(new Observation("EXIT", "出口", 0), 0).Id;
+checks["age_exactly_600000_us_is_retained"] = inclusive.Update(new Observation("EXIT", "出口", 0), 600_000).Id == inclusiveId;
+var expired = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
+var expiredId = expired.Update(new Observation("EXIT", "出口", 0), 0).Id;
+checks["age_600001_us_is_expired"] = expired.Update(new Observation("EXIT", "出口", 0), 600_001).Id != expiredId;
 
-var candidateFirst = candidate.Update(new Observation("KEEP OFF", "立入禁止", 0.00), 0);
-var candidateDisplayChanged = candidate.Update(new Observation("keep   off", "入らないでください", 0.01), 100_000);
-if (candidateDisplayChanged.Id != candidateFirst.Id)
-    throw new InvalidOperationException("Source-stable candidate changed identity when only normalized case/spacing/display text changed.");
+// A frame is a batch. Verify one-to-one assignment in both observation orders.
+foreach (var reverse in new[] { false, true })
+{
+    var batch = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
+    var initial = batch.Update(new[] { new Observation("EXIT", "A", -0.15), new Observation("EXIT", "B", 0.15) }, 0);
+    var observations = new[] { new Observation("EXIT", "A2", -0.04), new Observation("EXIT", "B2", 0.04) };
+    if (reverse) Array.Reverse(observations);
+    var next = batch.Update(observations, 100_000);
+    checks["batch_one_to_one_" + (reverse ? "reversed" : "forward")] =
+        next.Select(item => item.Id).Distinct().Count() == 2 &&
+        next.Single(item => item.CenterX < 0).Id == initial[0].Id &&
+        next.Single(item => item.CenterX > 0).Id == initial[1].Id;
+}
 
-var sameSourceFar = candidate.Update(new Observation("KEEP OFF", "立入禁止", 0.75), 200_000);
-if (sameSourceFar.Id == candidateFirst.Id)
-    throw new InvalidOperationException("Source-stable candidate merged physically separate identical signs.");
+// Preserve the original sequential-update counterexample instead of silently dropping it.
+var sequential = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
+var a0 = sequential.Update(new Observation("EXIT", "A", -0.15), 0);
+var b0 = sequential.Update(new Observation("EXIT", "B", 0.15), 1_000);
+var a1 = sequential.Update(new Observation("EXIT", "A2", -0.04), 100_000);
+var b1 = sequential.Update(new Observation("EXIT", "B2", 0.04), 101_000);
+var sequentialAliasing = a0.Id != b0.Id && a1.Id == a0.Id && b1.Id == a1.Id;
+checks["sequential_aliasing_counterexample_reproduced"] = sequentialAliasing;
 
-var changedSourceNearby = candidate.Update(new Observation("KEEP OUT", "立入禁止", 0.015), 300_000);
-if (changedSourceNearby.Id == candidateFirst.Id)
-    throw new InvalidOperationException("Source-stable candidate reused identity after source text changed.");
-
-var beforeExpiry = candidate.Update(new Observation("KEEP OFF", "別表示", 0.02), 599_999);
-if (beforeExpiry.Id != candidateFirst.Id)
-    throw new InvalidOperationException("Source-stable candidate expired before the reviewed retention boundary.");
-
-candidate.Update(Array.Empty<Observation>(), 1_200_000);
-var afterExpiry = candidate.Update(new Observation("KEEP OFF", "立入禁止", 0.02), 1_200_001);
-if (afterExpiry.Id == candidateFirst.Id)
-    throw new InvalidOperationException("Source-stable candidate reused identity after retention expiry.");
-
-var duplicates = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
-var left = duplicates.Update(new Observation("EXIT", "出口", 0.00), 0);
-var right = duplicates.Update(new Observation("EXIT", "出口", 0.50), 10_000);
-var leftAgain = duplicates.Update(new Observation("exit", "でぐち", 0.03), 20_000);
-if (left.Id == right.Id || leftAgain.Id != left.Id)
-    throw new InvalidOperationException("Identical-source multi-sign association failed physical disambiguation.");
-
-var crossing = new SourceStableIdentityPrototype(associationDistance, retentionMicroseconds);
-var a0 = crossing.Update(new Observation("EXIT", "出口A", -0.15), 0);
-var b0 = crossing.Update(new Observation("EXIT", "出口B", 0.15), 1_000);
-var a1 = crossing.Update(new Observation("EXIT", "出口A2", -0.04), 100_000);
-var b1 = crossing.Update(new Observation("EXIT", "出口B2", 0.04), 101_000);
-if (a1.Id != a0.Id || b1.Id != b0.Id)
-    throw new InvalidOperationException("Nearest-neighbor source identity lost distinct nearby identical signs before crossing.");
+// Same observations, different ordering: a greedy assignment is not a global assignment solver.
+var orderOutcomes = new List<string[]>();
+foreach (var reverse in new[] { false, true })
+{
+    var ordered = new SourceStableIdentityPrototype(0.20, retentionMicroseconds);
+    ordered.Update(new[] { new Observation("EXIT", "A", 0), new Observation("EXIT", "B", 0.10) }, 0);
+    var observations = new[] { new Observation("EXIT", "A2", 0.06), new Observation("EXIT", "B2", 0.09) };
+    if (reverse) Array.Reverse(observations);
+    orderOutcomes.Add(ordered.Update(observations, 100_000).OrderBy(item => item.CenterX).Select(item => item.Id).ToArray());
+}
+var orderDependent = !orderOutcomes[0].SequenceEqual(orderOutcomes[1]);
+checks["batch_order_dependence_counterexample_reproduced"] = orderDependent;
 
 Console.WriteLine(JsonSerializer.Serialize(new
 {
-    status = "pass",
-    experiment = "source-stable-physical-identity-prototype",
+    status = checks.Values.All(value => value) ? "pass" : "fail",
+    experiment = "source-stable-identity-characterization-v2",
     scope = "deterministic-core-geometry-prototype-only",
-    production_world_text_track_display_sensitive = productionDisplayChangeCreatedNewTrack,
-    candidate_identity_inputs = new[] { "normalized_source_text", "placement_kind", "physical_center_distance", "retention_age" },
-    display_text_excluded_from_identity = true,
-    source_normalization = "trim-collapse-whitespace-invariant-case",
-    same_source_display_change_preserves_identity = true,
-    same_source_far_sign_separates_identity = true,
-    changed_source_nearby_resets_identity = true,
-    retention_expiry_resets_identity = true,
-    identical_source_multiple_signs_spatially_disambiguated = true,
-    candidate_safe_for_cross_source_hysteresis = false,
-    global_text_only_identity_allowed = false,
+    checks,
+    candidate_identity_inputs = new[] { "normalized_source_text", "one_dimensional_center_distance", "retention_age" },
+    placement_kind_implemented = false,
+    display_text_excluded_from_candidate_identity = true,
+    association_distance_meters = associationDistance,
+    retention_microseconds = retentionMicroseconds,
+    sequential_aliasing_reproduced = sequentialAliasing,
+    batch_order_dependence_reproduced = orderDependent,
+    candidate_promotion = "rejected",
+    rejection_reasons = new[] { "sequential-aliasing", "batch-order-dependence", "placement-kind-not-implemented", "one-dimensional-prototype" },
     product_integration_performed = false,
     camera_execution_performed = false,
     quest_execution_performed = false,
+    latency_measured = false,
 }));
+if (checks.Values.Any(value => !value)) Environment.ExitCode = 1;
 
-static WorldTextTrack SingleObserved(WorldTextTrackingPlan plan)
-{
-    var observed = plan.Tracks.Where(track => track.ObservedThisFrame).ToArray();
-    if (observed.Length != 1) throw new InvalidOperationException("Expected exactly one observed world-text track.");
-    return observed[0];
-}
-
+static WorldTextTrackState SingleObserved(WorldTextTrackingPlan plan) => plan.Tracks.Single(track => track.ObservedThisFrame);
 static WorldTextLayoutPlan Layout(params WorldTextLayoutTarget[] targets) => new WorldTextLayoutPlan(targets);
-
 static WorldTextLayoutTarget Target(string sourceText, string displayText, double centerX)
 {
-    var unit = new SemanticUnit(
-        "mwe:0:" + sourceText.Length,
-        SemanticUnitKind.MultiwordExpression,
-        0,
-        sourceText.Length,
-        sourceText,
-        Math.Max(1, sourceText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length));
+    var unit = new SemanticUnit("mwe:0:" + sourceText.Length, SemanticUnitKind.MultiwordExpression,
+        0, sourceText.Length, sourceText, Math.Max(1, sourceText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length));
     var segment = new MixedLanguageSegment(sourceText, displayText, true, unit);
-    var spatial = new SpatialAssistanceTarget(
-        segment,
-        Array.Empty<OcrTextRegionSpan>(),
-        SpatialAssistanceCoverage.Exact,
-        new ViewportEnvelope(0.2, 0.3, 0.4, 0.5));
+    var spatial = new SpatialAssistanceTarget(segment, Array.Empty<OcrTextRegionSpan>(),
+        SpatialAssistanceCoverage.Exact, new ViewportEnvelope(0.2, 0.3, 0.4, 0.5));
     var ray = new SpatialRay(new SpatialVector3(0, 0, -1), new SpatialVector3(0, 0, 1));
     var hit = new SurfaceHit(new SpatialVector3(centerX, 0, 0), new SpatialVector3(0, 0, -1), 1.0);
-    var projected = new ProjectedAssistanceTarget(
-        spatial,
-        OverlayPlacementKind.InPlaceReplacement,
-        SpatialProjectionFailure.None,
-        new ViewportPoint(0.3, 0.4),
-        ray,
-        hit);
-    return new WorldTextLayoutTarget(
-        projected,
-        WorldTextLayoutFailure.None,
-        new WorldTextSurface(
-            new SpatialVector3(centerX, 0, 0),
-            new SpatialVector3(1, 0, 0),
-            new SpatialVector3(0, 1, 0),
-            new SpatialVector3(0, 0, 1),
-            0.20,
-            0.05,
-            0.0));
+    var projected = new ProjectedAssistanceTarget(spatial, OverlayPlacementKind.InPlaceReplacement,
+        SpatialProjectionFailure.None, new ViewportPoint(0.3, 0.4), ray, hit);
+    return new WorldTextLayoutTarget(projected, WorldTextLayoutFailure.None,
+        new WorldTextSurface(new SpatialVector3(centerX, 0, 0), new SpatialVector3(1, 0, 0),
+            new SpatialVector3(0, 1, 0), new SpatialVector3(0, 0, 1), 0.20, 0.05, 0.0));
 }
 
 sealed record Observation(string SourceText, string DisplayText, double CenterX);
 sealed record IdentityResult(string Id, string NormalizedSource, double CenterX, long LastSeenMicroseconds);
 
+// Deliberately retained baseline prototype. Counterexamples are evidence against promotion, not fixes.
 sealed class SourceStableIdentityPrototype
 {
     private readonly double maximumAssociationDistance;
@@ -142,38 +128,24 @@ sealed class SourceStableIdentityPrototype
     private readonly List<IdentityResult> active = new List<IdentityResult>();
     private int nextId = 1;
     private long? lastTimestamp;
-
     public SourceStableIdentityPrototype(double maximumAssociationDistance, long retentionMicroseconds)
-    {
-        this.maximumAssociationDistance = maximumAssociationDistance;
-        retention = retentionMicroseconds;
-    }
-
-    public IdentityResult Update(Observation observation, long timestampMicroseconds)
-    {
-        return Update(new[] { observation }, timestampMicroseconds).Single();
-    }
-
+    { this.maximumAssociationDistance = maximumAssociationDistance; retention = retentionMicroseconds; }
+    public IdentityResult Update(Observation observation, long timestampMicroseconds) => Update(new[] { observation }, timestampMicroseconds).Single();
     public IReadOnlyList<IdentityResult> Update(IReadOnlyList<Observation> observations, long timestampMicroseconds)
     {
         if (lastTimestamp.HasValue && timestampMicroseconds < lastTimestamp.Value)
             throw new ArgumentException("Identity prototype timestamps must be non-decreasing.", nameof(timestampMicroseconds));
         lastTimestamp = timestampMicroseconds;
         active.RemoveAll(item => timestampMicroseconds - item.LastSeenMicroseconds > retention);
-
         var results = new List<IdentityResult>(observations.Count);
         var claimedIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var observation in observations)
         {
             var normalized = NormalizeSource(observation.SourceText);
-            var candidate = active
-                .Where(item => !claimedIds.Contains(item.Id) && item.NormalizedSource == normalized)
+            var candidate = active.Where(item => !claimedIds.Contains(item.Id) && item.NormalizedSource == normalized)
                 .Select(item => new { Item = item, Distance = Math.Abs(item.CenterX - observation.CenterX) })
                 .Where(pair => pair.Distance <= maximumAssociationDistance)
-                .OrderBy(pair => pair.Distance)
-                .ThenBy(pair => pair.Item.Id, StringComparer.Ordinal)
-                .FirstOrDefault();
-
+                .OrderBy(pair => pair.Distance).ThenBy(pair => pair.Item.Id, StringComparer.Ordinal).FirstOrDefault();
             IdentityResult result;
             if (candidate == null)
             {
@@ -183,15 +155,13 @@ sealed class SourceStableIdentityPrototype
             else
             {
                 result = candidate.Item with { CenterX = observation.CenterX, LastSeenMicroseconds = timestampMicroseconds };
-                var index = active.FindIndex(item => item.Id == result.Id);
-                active[index] = result;
+                active[active.FindIndex(item => item.Id == result.Id)] = result;
             }
             claimedIds.Add(result.Id);
             results.Add(result);
         }
         return results;
     }
-
     private static string NormalizeSource(string text)
     {
         if (text == null) throw new ArgumentNullException(nameof(text));
@@ -200,15 +170,8 @@ sealed class SourceStableIdentityPrototype
         foreach (var character in text.Trim())
         {
             if (char.IsWhiteSpace(character))
-            {
-                if (!previousWhitespace) builder.Append(' ');
-                previousWhitespace = true;
-            }
-            else
-            {
-                builder.Append(char.ToUpperInvariant(character));
-                previousWhitespace = false;
-            }
+            { if (!previousWhitespace) builder.Append(' '); previousWhitespace = true; }
+            else { builder.Append(char.ToUpperInvariant(character)); previousWhitespace = false; }
         }
         return builder.ToString();
     }

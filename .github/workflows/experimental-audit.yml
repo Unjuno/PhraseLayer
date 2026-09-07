@@ -1,0 +1,35 @@
+name: Experimental Audit
+
+on:
+  push:
+    branches: ["agent/**"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", ".github/workflows/experimental-audit.yml"]
+  pull_request:
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", ".github/workflows/experimental-audit.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experimental-audit-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [SourceStableIdentity, LearningEvidenceAudit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Record selected SDK and framework
+        run: dotnet --version
+      - name: Build audit
+        run: dotnet build experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release --verbosity quiet
+      - name: Run deterministic audit
+        run: dotnet run --no-build --project experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release
