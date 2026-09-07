@@ -3,9 +3,9 @@ name: Experimental Audit
 on:
   push:
     branches: ["agent/**"]
-    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", ".github/workflows/experimental-audit.yml"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", ".github/workflows/experimental-audit.yml"]
   pull_request:
-    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", ".github/workflows/experimental-audit.yml"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", ".github/workflows/experimental-audit.yml"]
 permissions:
   contents: read
 concurrency:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit, UnityStoreFaultAudit]
+        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit, UnityStoreFaultAudit, WorldPresentationAudit, PipelineBoundaryAudit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -29,7 +29,17 @@ jobs:
       - name: Build audit
         run: dotnet build experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release --verbosity quiet
       - name: Require deterministic input, commit and recovery safety
+        env:
+          AUDIT_REPORT_PATH: audit-result.json
         run: dotnet run --no-build --project experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release -- --require-safe --require-transaction --require-filesystem
+      - name: Preserve synthetic audit results even when a safety hypothesis fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.project }}-${{ github.run_id }}
+          path: audit-result.json
+          if-no-files-found: ignore
+          retention-days: 14
   core-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
