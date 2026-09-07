@@ -1,0 +1,4 @@
+# Host-only differential experiment, not Unity or Quest runtime dependencies.
+numpy==2.2.6
+onnx==1.18.0
+onnxruntime==1.22.1
