@@ -16,6 +16,7 @@ namespace PhraseLayer.Core.Learning
     /// <summary>
     /// Evidence is collected while the displayed plan stays frozen. Finish prepares a snapshot once, then
     /// commits it. A storage retry must reuse this session and the same completion flag; it never replays gains.
+    /// Automatic evidence is limited to one update per normalized knowledge key per encounter.
     /// This is single-owner retry safety, not a process-crash durable event ledger.
     /// </summary>
     public sealed class LearningEncounterSession
@@ -77,18 +78,39 @@ namespace PhraseLayer.Core.Learning
         private Dictionary<string, PendingEvidence> BuildEvidence(bool successfulUnassistedCompletion)
         {
             var evidence = new Dictionary<string, PendingEvidence>(pending, StringComparer.Ordinal);
+            // Explicit evidence on any occurrence takes precedence over automatic evidence on the same knowledge key.
+            var automaticKeys = new HashSet<string>(pending.Values.Select(item => InMemoryLearnerModel.Normalize(item.Unit.Text)), StringComparer.OrdinalIgnoreCase);
             foreach (var decision in plan.Assistance.Decisions)
-                if (!evidence.ContainsKey(decision.Unit.Id)) evidence.Add(decision.Unit.Id, new PendingEvidence(decision.Unit, LearningEvidenceKind.AssistedExposure));
+            {
+                if (!HasTranslatedDisplayFor(decision.Unit)) continue;
+                AddAutomaticEvidence(evidence, automaticKeys, decision.Unit, LearningEvidenceKind.AssistedExposure);
+            }
             if (successfulUnassistedCompletion)
             {
+                // Keep planned assistance excluded even when translation failed: absence of a translation is not proof of unassisted success.
                 var assistedUnits = plan.Assistance.Decisions.Select(item => item.Unit).ToArray();
                 foreach (var atom in BuildAtomicUnits(document))
                 {
-                    if (assistedUnits.Any(unit => unit.Overlaps(atom)) || evidence.ContainsKey(atom.Id)) continue;
-                    evidence.Add(atom.Id, new PendingEvidence(atom, LearningEvidenceKind.CompletedWithoutAssistance));
+                    if (assistedUnits.Any(unit => unit.Overlaps(atom))) continue;
+                    AddAutomaticEvidence(evidence, automaticKeys, atom, LearningEvidenceKind.CompletedWithoutAssistance);
                 }
             }
             return evidence;
+        }
+        private bool HasTranslatedDisplayFor(SemanticUnit unit)
+        {
+            var sourceKey = InMemoryLearnerModel.Normalize(unit.Text);
+            return plan.Segments.Any(segment => segment.IsAssisted && segment.Unit != null &&
+                segment.Unit.Id == unit.Id && segment.Unit.Start == unit.Start && segment.Unit.Length == unit.Length &&
+                string.Equals(segment.SourceText, unit.Text, StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(segment.DisplayText) &&
+                !string.Equals(sourceKey, InMemoryLearnerModel.Normalize(segment.DisplayText), StringComparison.Ordinal));
+        }
+        private static void AddAutomaticEvidence(Dictionary<string, PendingEvidence> evidence, HashSet<string> keys,
+            SemanticUnit unit, LearningEvidenceKind kind)
+        {
+            if (evidence.ContainsKey(unit.Id) || !keys.Add(InMemoryLearnerModel.Normalize(unit.Text))) return;
+            evidence.Add(unit.Id, new PendingEvidence(unit, kind));
         }
         private SemanticUnit FindCanonical(SemanticUnit candidate)
         {
