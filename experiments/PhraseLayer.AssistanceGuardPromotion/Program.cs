@@ -43,20 +43,18 @@ for (var fixtureIndex = 0; fixtureIndex < fixtures.Length; fixtureIndex++)
     var segmenter = new RuleBasedSemanticSegmenter(fixture.MultiwordExpressions);
     var document = segmenter.Segment(fixture.Source);
     var atoms = BuildAtomicUnits(document).ToArray();
-    if (atoms.Length == 0)
-        throw new InvalidOperationException("Promotion fixture has no atomic semantic units: " + fixture.Name);
+    if (atoms.Length == 0) throw new InvalidOperationException("No atomic units: " + fixture.Name);
     var totalTokens = atoms.Sum(unit => unit.TokenCount);
     var keys = atoms.Select(unit => unit.Text).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     for (var seedIndex = 0; seedIndex < seedCount; seedIndex++)
     {
         var seed = unchecked(baseSeed + fixtureIndex * 104729 + seedIndex * 130363);
-        var initialProfiles = GenerateProfiles(keys, seed, profilesPerSeed);
-        var production = RunStrategy(fixture, document, atoms, totalTokens, initialProfiles, useGuard: false);
-        var guard = RunStrategy(fixture, document, atoms, totalTokens, initialProfiles, useGuard: true);
+        var profiles = GenerateProfiles(keys, seed, profilesPerSeed);
+        var production = RunStrategy(fixture, document, atoms, totalTokens, profiles, false);
+        var guard = RunStrategy(fixture, document, atoms, totalTokens, profiles, true);
         aggregateProduction.Add(production);
         aggregateGuard.Add(guard);
-
         var dominates = Dominates(guard, production);
         var regresses = Regresses(guard, production);
         if (dominates) dominanceCells++;
@@ -69,16 +67,11 @@ for (var fixtureIndex = 0; fixtureIndex < fixtures.Length; fixtureIndex++)
 var productionAggregate = aggregateProduction.Build("ProductionGreedy");
 var guardAggregate = aggregateGuard.Build("LocalIncreaseGuardAllowance2");
 var aggregateImprovement = Dominates(guardAggregate, productionAggregate);
-var crossSourceCounterexample = BuildCrossSourceCounterexample();
-if (!crossSourceCounterexample.GlobalCarryOverWouldUnderAssist)
-    throw new InvalidOperationException("Cross-source anti-hysteresis fixture stopped demonstrating under-assistance.");
+var crossSource = BuildCrossSourceCounterexample();
+if (!crossSource.GlobalCarryOverWouldUnderAssist)
+    throw new InvalidOperationException("Cross-source anti-hysteresis counterexample no longer reproduces.");
 
-var candidateForIntegration =
-    regressionCells == 0 &&
-    aggregateImprovement &&
-    interventionCells > 0 &&
-    crossSourceCounterexample.GlobalCarryOverWouldUnderAssist;
-
+var candidateForIntegration = regressionCells == 0 && aggregateImprovement && interventionCells > 0;
 Console.WriteLine(JsonSerializer.Serialize(new
 {
     status = "pass",
@@ -99,7 +92,7 @@ Console.WriteLine(JsonSerializer.Serialize(new
     cells_where_guard_regresses = regressionCells,
     cells_with_actual_guard_intervention = interventionCells,
     aggregate = new { production = productionAggregate, local_guard_allowance_2 = guardAggregate },
-    cross_source_counterexample = crossSourceCounterexample,
+    cross_source_counterexample = crossSource,
     candidate_for_product_integration = candidateForIntegration,
     production_code_changed_by_counterfactual = false,
     human_learning_effectiveness_measured = false,
@@ -110,108 +103,91 @@ Console.WriteLine(JsonSerializer.Serialize(new
 Dictionary<string, double>[] GenerateProfiles(string[] keys, int seed, int count)
 {
     var random = new Random(seed);
-    var profiles = new Dictionary<string, double>[count];
+    var result = new Dictionary<string, double>[count];
     for (var profile = 0; profile < count; profile++)
     {
         var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        foreach (var key in keys)
-            values[key] = 0.05 + random.NextDouble() * 0.75;
-        profiles[profile] = values;
+        foreach (var key in keys) values[key] = 0.05 + random.NextDouble() * 0.75;
+        result[profile] = values;
     }
-    return profiles;
+    return result;
 }
 
-StrategyReport RunStrategy(
-    Fixture fixture,
-    SemanticDocument document,
-    SemanticUnit[] atoms,
-    int totalTokens,
-    Dictionary<string, double>[] initialProfiles,
-    bool useGuard)
+StrategyReport RunStrategy(Fixture fixture, SemanticDocument document, SemanticUnit[] atoms, int totalTokens,
+    Dictionary<string, double>[] initialProfiles, bool useGuard)
 {
     var aggregate = new Aggregate();
     foreach (var initial in initialProfiles)
     {
         var learner = new InMemoryLearnerModel(0.20);
-        foreach (var pair in initial)
-            learner.SetUnderstanding(pair.Key, pair.Value);
+        foreach (var pair in initial) learner.SetUnderstanding(pair.Key, pair.Value);
         var planner = new AssistancePlanner();
         var adaptation = new LearnerAdaptationEngine(learner);
         var previousSelected = double.NaN;
         var previousTarget = double.PositiveInfinity;
         var previousMean = WeightedMean(atoms, learner);
-        var result = new ProfileMetrics();
+        var metrics = new ProfileMetrics();
 
         for (var encounter = 1; encounter <= encounterBudget; encounter++)
         {
-            var productionPlan = planner.Plan(document, learner, AssistancePolicy.ForMode(AssistanceMode.Auto));
+            var production = planner.Plan(document, learner, AssistancePolicy.ForMode(AssistanceMode.Auto));
             AssistancePlan plan;
             if (useGuard)
             {
-                plan = ApplyGuard(productionPlan, previousSelected, totalTokens, out var intervened, out var forced);
-                if (intervened) result.Interventions++;
-                if (forced) result.ForcedIndivisibleIncreases++;
+                plan = ApplyGuard(production, previousSelected, totalTokens, out var intervened, out var forced);
+                if (intervened) metrics.Interventions++;
+                if (forced) metrics.ForcedIndivisibleIncreases++;
             }
-            else plan = productionPlan;
+            else plan = production;
 
             var selected = plan.SelectedRatio;
             var target = plan.TargetRatio;
             var mean = WeightedMean(atoms, learner);
-            if (target > previousTarget + epsilon)
-                throw new InvalidOperationException("Positive-only evidence increased Auto target: " + fixture.Name);
-            if (mean + epsilon < previousMean)
-                throw new InvalidOperationException("Positive-only evidence decreased atomic understanding: " + fixture.Name);
+            if (target > previousTarget + epsilon) throw new InvalidOperationException("Target increased: " + fixture.Name);
+            if (mean + epsilon < previousMean) throw new InvalidOperationException("Understanding decreased: " + fixture.Name);
             RequireExactSemanticSpans(fixture.Source, plan);
 
-            result.Observations++;
-            result.AbsoluteTargetError += Math.Abs(selected - target);
+            metrics.Observations++;
+            metrics.AbsoluteTargetError += Math.Abs(selected - target);
             if (!double.IsNaN(previousSelected))
             {
-                result.Transitions++;
+                metrics.Transitions++;
                 if (selected > previousSelected + epsilon)
                 {
-                    result.IncreaseTransitions++;
-                    var jump = selected - previousSelected;
-                    if (jump > result.MaxIncrease) result.MaxIncrease = jump;
+                    metrics.IncreaseTransitions++;
+                    metrics.MaxIncrease = Math.Max(metrics.MaxIncrease, selected - previousSelected);
                 }
             }
-
             if (selected <= epsilon)
             {
-                result.ZeroAt = encounter;
+                metrics.ZeroAt = encounter;
                 break;
             }
 
-            var mixedPlan = BuildLearningPlan(fixture.Source, document, plan);
-            var session = new LearningEncounterSession(mixedPlan, adaptation);
-            foreach (var decision in plan.Decisions)
-                session.Record(decision.Unit, LearningEvidenceKind.RecallSucceeded);
+            var session = new LearningEncounterSession(BuildLearningPlan(fixture.Source, document, plan), adaptation);
+            foreach (var decision in plan.Decisions) session.Record(decision.Unit, LearningEvidenceKind.RecallSucceeded);
             session.Finish(successfulUnassistedCompletion: true);
-
             previousSelected = selected;
             previousTarget = target;
             previousMean = mean;
         }
-        aggregate.Add(result);
+        aggregate.Add(metrics);
     }
     return aggregate.Build(useGuard ? "LocalIncreaseGuardAllowance2" : "ProductionGreedy");
 }
 
-AssistancePlan ApplyGuard(AssistancePlan productionPlan, double previousSelected, int atomicTokens, out bool intervened, out bool forced)
+AssistancePlan ApplyGuard(AssistancePlan production, double previousSelected, int atomicTokens, out bool intervened, out bool forced)
 {
     intervened = false;
     forced = false;
-    if (double.IsNaN(previousSelected) || productionPlan.Decisions.Count == 0)
-        return productionPlan;
-
+    if (double.IsNaN(previousSelected) || production.Decisions.Count == 0) return production;
     var previousTokens = (int)Math.Round(previousSelected * atomicTokens, MidpointRounding.AwayFromZero);
     var allowedTokens = Math.Min(atomicTokens, previousTokens + allowedIncreaseTokens);
-    var productionTokens = (int)Math.Round(productionPlan.SelectedRatio * atomicTokens, MidpointRounding.AwayFromZero);
-    if (productionTokens <= allowedTokens)
-        return productionPlan;
+    var productionTokens = (int)Math.Round(production.SelectedRatio * atomicTokens, MidpointRounding.AwayFromZero);
+    if (productionTokens <= allowedTokens) return production;
 
     intervened = true;
-    var priority = productionPlan.Decisions
+    var priority = production.Decisions
         .OrderByDescending(decision => Math.Round(decision.Difficulty, difficultySortDecimals, MidpointRounding.AwayFromZero))
         .ThenByDescending(decision => decision.Unit.Kind)
         .ThenBy(decision => decision.Unit.Start)
@@ -230,134 +206,83 @@ AssistancePlan ApplyGuard(AssistancePlan productionPlan, double previousSelected
         forced = priority[0].Unit.TokenCount > previousTokens + allowedIncreaseTokens;
     }
     var chosen = priority.Take(bestLength).OrderBy(decision => decision.Unit.Start).ToArray();
-    var chosenTokens = chosen.Sum(decision => decision.Unit.TokenCount);
-    return new AssistancePlan(chosen, productionPlan.TargetRatio, Math.Min(1.0, chosenTokens / (double)atomicTokens));
+    var tokens = chosen.Sum(decision => decision.Unit.TokenCount);
+    return new AssistancePlan(chosen, production.TargetRatio, Math.Min(1.0, tokens / (double)atomicTokens));
 }
 
 CrossSourceCounterexample BuildCrossSourceCounterexample()
 {
     var hard = fixtures.Single(fixture => fixture.Name == "clauses_5_6_9");
-    var segmenter = new RuleBasedSemanticSegmenter();
-    var document = segmenter.Segment(hard.Source);
+    var document = new RuleBasedSemanticSegmenter().Segment(hard.Source);
     var atoms = BuildAtomicUnits(document).ToArray();
-    var learner = new InMemoryLearnerModel(0.05);
-    var production = new AssistancePlanner().Plan(document, learner, AssistancePolicy.ForMode(AssistanceMode.Auto));
-    var guarded = ApplyGuard(production, previousSelected: 0.0, atoms.Sum(unit => unit.TokenCount), out _, out var forced);
-    return new CrossSourceCounterexample(
-        previous_unrelated_source_selected_ratio: 0.0,
-        hard_new_source_target_ratio: production.TargetRatio,
-        hard_new_source_production_ratio: production.SelectedRatio,
-        hard_new_source_wrongly_guarded_ratio: guarded.SelectedRatio,
-        under_assistance_delta: production.SelectedRatio - guarded.SelectedRatio,
-        forced_indivisible_span: forced,
-        global_carry_over_would_under_assist: guarded.SelectedRatio + epsilon < production.SelectedRatio);
+    var production = new AssistancePlanner().Plan(document, new InMemoryLearnerModel(0.05), AssistancePolicy.ForMode(AssistanceMode.Auto));
+    var guarded = ApplyGuard(production, 0.0, atoms.Sum(unit => unit.TokenCount), out _, out var forced);
+    return new CrossSourceCounterexample(0.0, production.TargetRatio, production.SelectedRatio, guarded.SelectedRatio,
+        production.SelectedRatio - guarded.SelectedRatio, forced, guarded.SelectedRatio + epsilon < production.SelectedRatio);
 }
 
-static bool Dominates(StrategyReport guard, StrategyReport production) =>
+bool Dominates(StrategyReport guard, StrategyReport production) =>
     guard.IncreaseTransitions <= production.IncreaseTransitions &&
     guard.MaxIncrease <= production.MaxIncrease + epsilon &&
     guard.MeanAbsoluteTargetError <= production.MeanAbsoluteTargetError + epsilon &&
+    guard.ProfilesReachingZero >= production.ProfilesReachingZero &&
     guard.MaxEncountersToZero <= production.MaxEncountersToZero;
 
-static bool Regresses(StrategyReport guard, StrategyReport production) =>
+bool Regresses(StrategyReport guard, StrategyReport production) =>
     guard.IncreaseTransitions > production.IncreaseTransitions ||
     guard.MaxIncrease > production.MaxIncrease + epsilon ||
     guard.MeanAbsoluteTargetError > production.MeanAbsoluteTargetError + epsilon ||
+    guard.ProfilesReachingZero < production.ProfilesReachingZero ||
     guard.MaxEncountersToZero > production.MaxEncountersToZero;
 
 static IEnumerable<SemanticUnit> BuildAtomicUnits(SemanticDocument document)
 {
     var mwes = document.OfKind(SemanticUnitKind.MultiwordExpression).OrderBy(unit => unit.Start).ToArray();
     foreach (var mwe in mwes) yield return mwe;
-    foreach (var word in document.OfKind(SemanticUnitKind.Word))
-        if (!mwes.Any(mwe => mwe.Overlaps(word))) yield return word;
+    foreach (var word in document.OfKind(SemanticUnitKind.Word)) if (!mwes.Any(mwe => mwe.Overlaps(word))) yield return word;
 }
 
 static double WeightedMean(IEnumerable<SemanticUnit> atoms, ILearnerModel learner)
 {
-    var tokens = 0;
-    var sum = 0.0;
-    foreach (var atom in atoms)
-    {
-        tokens += atom.TokenCount;
-        sum += learner.Estimate(atom).Understanding * atom.TokenCount;
-    }
+    var tokens = 0; var sum = 0.0;
+    foreach (var atom in atoms) { tokens += atom.TokenCount; sum += learner.Estimate(atom).Understanding * atom.TokenCount; }
     return tokens == 0 ? 1.0 : sum / tokens;
 }
 
-static void RequireExactSemanticSpans(string sourceText, AssistancePlan plan)
+static void RequireExactSemanticSpans(string source, AssistancePlan plan)
 {
     foreach (var decision in plan.Decisions)
-    {
-        if (decision.Unit.Start < 0 || decision.Unit.End > sourceText.Length ||
-            !string.Equals(sourceText.Substring(decision.Unit.Start, decision.Unit.Length), decision.Unit.Text, StringComparison.Ordinal))
+        if (decision.Unit.Start < 0 || decision.Unit.End > source.Length ||
+            !string.Equals(source.Substring(decision.Unit.Start, decision.Unit.Length), decision.Unit.Text, StringComparison.Ordinal))
             throw new InvalidOperationException("Assistance decision is not an exact semantic source span.");
-    }
 }
 
-static MixedLanguagePlan BuildLearningPlan(string sourceText, SemanticDocument document, AssistancePlan assistance)
+static MixedLanguagePlan BuildLearningPlan(string source, SemanticDocument document, AssistancePlan assistance)
 {
     var segments = new List<MixedLanguageSegment>();
     var cursor = 0;
     foreach (var decision in assistance.Decisions.OrderBy(decision => decision.Unit.Start))
     {
         var unit = decision.Unit;
-        if (unit.Start > cursor)
-        {
-            var untouched = sourceText.Substring(cursor, unit.Start - cursor);
-            segments.Add(new MixedLanguageSegment(untouched, untouched, false, null));
-        }
+        if (unit.Start > cursor) { var text = source.Substring(cursor, unit.Start - cursor); segments.Add(new MixedLanguageSegment(text, text, false, null)); }
         segments.Add(new MixedLanguageSegment(unit.Text, unit.Text, true, unit));
         cursor = unit.End;
     }
-    if (cursor < sourceText.Length)
-    {
-        var rest = sourceText.Substring(cursor);
-        segments.Add(new MixedLanguageSegment(rest, rest, false, null));
-    }
-    if (segments.Count == 0) segments.Add(new MixedLanguageSegment(sourceText, sourceText, false, null));
-    return new MixedLanguagePlan(sourceText, segments, assistance, document);
+    if (cursor < source.Length) { var text = source.Substring(cursor); segments.Add(new MixedLanguageSegment(text, text, false, null)); }
+    if (segments.Count == 0) segments.Add(new MixedLanguageSegment(source, source, false, null));
+    return new MixedLanguagePlan(source, segments, assistance, document);
 }
 
 sealed record Fixture(string Name, string Source, string[] MultiwordExpressions);
 sealed record CellReport(string Fixture, int SeedIndex, int Seed, int TotalTokens, StrategyReport Production, StrategyReport Guard, bool GuardDominates, bool GuardRegresses);
 sealed record CrossSourceCounterexample(double PreviousUnrelatedSourceSelectedRatio, double HardNewSourceTargetRatio, double HardNewSourceProductionRatio, double HardNewSourceWronglyGuardedRatio, double UnderAssistanceDelta, bool ForcedIndivisibleSpan, bool GlobalCarryOverWouldUnderAssist);
-
-sealed class ProfileMetrics
-{
-    public int Observations;
-    public int Transitions;
-    public int IncreaseTransitions;
-    public double MaxIncrease;
-    public double AbsoluteTargetError;
-    public int Interventions;
-    public int ForcedIndivisibleIncreases;
-    public int? ZeroAt;
-}
-
+sealed class ProfileMetrics { public int Observations, Transitions, IncreaseTransitions, Interventions, ForcedIndivisibleIncreases; public double MaxIncrease, AbsoluteTargetError; public int? ZeroAt; }
 sealed class Aggregate
 {
     private int profiles, observations, transitions, increases, interventions, forced, zeroCount, maxZero;
-    private double maxIncrease, absoluteTargetError;
-    public void Add(ProfileMetrics result)
-    {
-        profiles++; observations += result.Observations; transitions += result.Transitions; increases += result.IncreaseTransitions;
-        if (result.MaxIncrease > maxIncrease) maxIncrease = result.MaxIncrease;
-        absoluteTargetError += result.AbsoluteTargetError; interventions += result.Interventions; forced += result.ForcedIndivisibleIncreases;
-        if (result.ZeroAt.HasValue) { zeroCount++; if (result.ZeroAt.Value > maxZero) maxZero = result.ZeroAt.Value; }
-    }
-    public void Add(StrategyReport report)
-    {
-        profiles += report.Profiles; observations += report.Observations; transitions += report.Transitions; increases += report.IncreaseTransitions;
-        if (report.MaxIncrease > maxIncrease) maxIncrease = report.MaxIncrease;
-        absoluteTargetError += report.MeanAbsoluteTargetError * report.Observations; interventions += report.Interventions;
-        forced += report.ForcedIndivisibleIncreases; zeroCount += report.ProfilesReachingZero;
-        if (report.MaxEncountersToZero > maxZero) maxZero = report.MaxEncountersToZero;
-    }
-    public StrategyReport Build(string strategy) => new StrategyReport(strategy, profiles, observations, transitions, increases,
-        transitions == 0 ? 0.0 : increases / (double)transitions, maxIncrease,
-        observations == 0 ? 0.0 : absoluteTargetError / observations, interventions, forced, zeroCount, maxZero);
+    private double maxIncrease, error;
+    public void Add(ProfileMetrics x) { profiles++; observations += x.Observations; transitions += x.Transitions; increases += x.IncreaseTransitions; maxIncrease = Math.Max(maxIncrease, x.MaxIncrease); error += x.AbsoluteTargetError; interventions += x.Interventions; forced += x.ForcedIndivisibleIncreases; if (x.ZeroAt.HasValue) { zeroCount++; maxZero = Math.Max(maxZero, x.ZeroAt.Value); } }
+    public void Add(StrategyReport x) { profiles += x.Profiles; observations += x.Observations; transitions += x.Transitions; increases += x.IncreaseTransitions; maxIncrease = Math.Max(maxIncrease, x.MaxIncrease); error += x.MeanAbsoluteTargetError * x.Observations; interventions += x.Interventions; forced += x.ForcedIndivisibleIncreases; zeroCount += x.ProfilesReachingZero; maxZero = Math.Max(maxZero, x.MaxEncountersToZero); }
+    public StrategyReport Build(string strategy) => new StrategyReport(strategy, profiles, observations, transitions, increases, transitions == 0 ? 0 : increases / (double)transitions, maxIncrease, observations == 0 ? 0 : error / observations, interventions, forced, zeroCount, maxZero);
 }
-
-sealed record StrategyReport(string Strategy, int Profiles, int Observations, int Transitions, int IncreaseTransitions, double IncreaseRate,
-    double MaxIncrease, double MeanAbsoluteTargetError, int Interventions, int ForcedIndivisibleIncreases, int ProfilesReachingZero, int MaxEncountersToZero);
+sealed record StrategyReport(string Strategy, int Profiles, int Observations, int Transitions, int IncreaseTransitions, double IncreaseRate, double MaxIncrease, double MeanAbsoluteTargetError, int Interventions, int ForcedIndivisibleIncreases, int ProfilesReachingZero, int MaxEncountersToZero);
