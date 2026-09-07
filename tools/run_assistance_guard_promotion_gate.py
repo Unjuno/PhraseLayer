@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Run the deterministic assistance-guard promotion stress experiment and gate integration candidacy.
+"""Run the deterministic assistance-guard promotion stress experiment and lock its rejection result.
 
-This is a Core-policy experiment only. It does not measure human learning effectiveness or Quest behavior.
+The allowance=2 temporal guard is intentionally *not* a product candidate: broad stress found per-cell regressions and
+a worse maximum selected-ratio jump. This regression gate prevents a later refactor from accidentally treating the
+narrow-fixture win as promotion evidence. It is a Core-policy experiment only; no human-learning or Quest claim.
 """
 
 from __future__ import annotations
@@ -41,8 +43,9 @@ def main() -> None:
     guard = data["aggregate"]["local_guard_allowance_2"]
     cross_source = data["cross_source_counterexample"]
     compact = {
-        "status": data.get("status"),
+        "status": "pass",
         "experiment": data.get("experiment"),
+        "promotion_result": "rejected",
         "cells_tested": data.get("cells_tested"),
         "cells_where_guard_regresses": data.get("cells_where_guard_regresses"),
         "cells_where_guard_dominates": data.get("cells_where_guard_dominates"),
@@ -62,20 +65,27 @@ def main() -> None:
         "guard_max_encounters_to_zero": guard["MaxEncountersToZero"],
         "cross_source_under_assistance_delta": cross_source["UnderAssistanceDelta"],
         "cross_source_global_carry_over_would_under_assist": cross_source["GlobalCarryOverWouldUnderAssist"],
+        "production_change_allowed": False,
         "human_learning_effectiveness_measured": False,
         "quest_execution_performed": False,
     }
     print(json.dumps(compact, sort_keys=True))
 
-    if data.get("cells_where_guard_regresses") != 0:
-        raise SystemExit("local assistance guard regressed at least one fixture/seed cell")
-    if not data.get("aggregate_improvement_on_all_reviewed_metrics", True):
-        # Older experiment schema computes aggregate candidacy into candidate_for_product_integration.
-        raise SystemExit("local assistance guard did not improve/non-regress aggregate reviewed metrics")
-    if not data.get("candidate_for_product_integration"):
-        raise SystemExit("local assistance guard failed deterministic promotion criteria")
+    # Reviewed rejection criteria. If this fixture no longer reproduces the rejection, the hypothesis must be
+    # re-evaluated deliberately rather than silently promoted from a narrow test.
+    if data.get("cells_tested") != 88:
+        raise SystemExit("promotion rejection fixture matrix drifted from 88 reviewed cells")
+    regressions = data.get("cells_where_guard_regresses")
+    if not isinstance(regressions, int) or regressions <= 0:
+        raise SystemExit("rejected local guard no longer reproduces any per-cell regression; review hypothesis again")
+    if data.get("candidate_for_product_integration") is not False:
+        raise SystemExit("rejected local guard unexpectedly became a product candidate")
+    if guard["MaxIncrease"] <= production["MaxIncrease"]:
+        raise SystemExit("rejection witness drifted: guard no longer has a worse maximum selected-ratio jump")
     if not cross_source.get("GlobalCarryOverWouldUnderAssist"):
         raise SystemExit("cross-source anti-hysteresis counterexample must remain active")
+    if guard["ProfilesReachingZero"] != production["ProfilesReachingZero"]:
+        raise SystemExit("rejection comparison profile completion population drifted")
 
 
 if __name__ == "__main__":
