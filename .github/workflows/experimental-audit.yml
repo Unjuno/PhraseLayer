@@ -3,9 +3,9 @@ name: Experimental Audit
 on:
   push:
     branches: ["agent/**"]
-    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", ".github/workflows/experimental-audit.yml"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLiveReadModeBehaviour.cs", ".github/workflows/experimental-audit.yml"]
   pull_request:
-    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", ".github/workflows/experimental-audit.yml"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLiveReadModeBehaviour.cs", ".github/workflows/experimental-audit.yml"]
 permissions:
   contents: read
 concurrency:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit, UnityStoreFaultAudit, WorldPresentationAudit, PipelineBoundaryAudit]
+        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit, UnityStoreFaultAudit, WorldPresentationAudit, PipelineBoundaryAudit, CoordinatorCancellationAudit, LiveLifecycleAudit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
