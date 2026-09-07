@@ -25,6 +25,7 @@ def main() -> None:
     assert data["packed_bytes_per_timestep"] == 8
     assert data["payload_reduction_ratio"] == 3453.0
     assert data["explicit_output_readbacks_per_crop"] == 1
+    assert data["runtime_values_per_timestep_aliases_core_abi"] is True
     assert data["full_probability_matrix_cpu_readback"] is False
     assert data["latency_measured"] is False
     assert data["quest_execution_performed"] is False
@@ -36,12 +37,15 @@ def main() -> None:
     assert '"quest_execution_performed": False' in source
     assert '"quest_performance_claim_allowed": False' in source
     assert "effective_token_count" in source
-    assert '"ReducedValuesPerTimestep"' in source
+    assert "PaddleCtcPackedOutput.cs" in source
+    assert "PaddleCtcPackedOutput.ValuesPerTimestep" in source
     assert '"ReducedReadbackOperationsPerCrop"' in source
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "models").mkdir(parents=True)
+        core_dir = root / "src" / "PhraseLayer.Core"
+        core_dir.mkdir(parents=True)
         runtime_dir = root / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts"
         runtime_dir.mkdir(parents=True)
         lock = {
@@ -54,8 +58,12 @@ def main() -> None:
             ]
         }
         (root / "models" / "models.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+        (core_dir / "PaddleCtcPackedOutput.cs").write_text(
+            "public const int ValuesPerTimestep = 2;\n",
+            encoding="utf-8",
+        )
         (runtime_dir / "UnityPaddleOcrRecognizerRuntime.cs").write_text(
-            "public const int ReducedValuesPerTimestep = 2;\n"
+            "public const int ReducedValuesPerTimestep = PaddleCtcPackedOutput.ValuesPerTimestep;\n"
             "public const int ReducedReadbackOperationsPerCrop = 1;\n",
             encoding="utf-8",
         )
@@ -65,8 +73,12 @@ def main() -> None:
         assert fixture["packed_bytes_per_timestep"] == 8
         assert fixture["payload_reduction_ratio"] == 2.0
 
+        (core_dir / "PaddleCtcPackedOutput.cs").write_text(
+            "public const int ValuesPerTimestep = 3;\n",
+            encoding="utf-8",
+        )
         (runtime_dir / "UnityPaddleOcrRecognizerRuntime.cs").write_text(
-            "public const int ReducedValuesPerTimestep = 3;\n"
+            "public const int ReducedValuesPerTimestep = PaddleCtcPackedOutput.ValuesPerTimestep;\n"
             "public const int ReducedReadbackOperationsPerCrop = 2;\n",
             encoding="utf-8",
         )
@@ -75,7 +87,19 @@ def main() -> None:
         assert drifted["explicit_output_readbacks_per_crop"] == 2
         assert drifted["payload_reduction_ratio"] != 2.0
 
-    print("PASS: PP-OCR CTC transfer-budget experiment arithmetic, runtime wiring, and no-device-claim boundary")
+        (runtime_dir / "UnityPaddleOcrRecognizerRuntime.cs").write_text(
+            "public const int ReducedValuesPerTimestep = 3;\n"
+            "public const int ReducedReadbackOperationsPerCrop = 1;\n",
+            encoding="utf-8",
+        )
+        try:
+            module.measure(root)
+        except module.BudgetError:
+            pass
+        else:
+            raise AssertionError("runtime must alias the Core packed ABI instead of duplicating the value")
+
+    print("PASS: PP-OCR CTC transfer-budget experiment arithmetic, Core/runtime wiring, and no-device-claim boundary")
 
 
 if __name__ == "__main__":
