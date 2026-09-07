@@ -28,5 +28,15 @@ jobs:
         run: dotnet --version
       - name: Build audit
         run: dotnet build experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release --verbosity quiet
-      - name: Require deterministic input and commit safety
-        run: dotnet run --no-build --project experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release -- --require-safe --require-transaction
+      - name: Require deterministic input, commit and recovery safety
+        run: dotnet run --no-build --project experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release -- --require-safe --require-transaction --require-filesystem
+  core-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Run all Core regressions including 2048-case batch parity
+        run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --verbosity quiet
