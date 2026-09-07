@@ -15,7 +15,6 @@ namespace PhraseLayer.Core.Learning
             Updates = updates ?? throw new ArgumentNullException(nameof(updates));
             SuccessfulUnassistedCompletion = successfulUnassistedCompletion;
         }
-
         public IReadOnlyList<LearnerUpdate> Updates { get; }
         public bool SuccessfulUnassistedCompletion { get; }
     }
@@ -39,10 +38,8 @@ namespace PhraseLayer.Core.Learning
             this.plan = plan ?? throw new ArgumentNullException(nameof(plan));
             this.adaptation = adaptation ?? throw new ArgumentNullException(nameof(adaptation));
             document = plan.Document ?? throw new ArgumentException(
-                "The mixed-language plan must retain its semantic document to create a learning encounter.",
-                nameof(plan));
+                "The mixed-language plan must retain its semantic document to create a learning encounter.", nameof(plan));
         }
-
         public MixedLanguagePlan Plan => plan;
         public bool IsFinished => finishedSummary != null;
 
@@ -50,54 +47,41 @@ namespace PhraseLayer.Core.Learning
         {
             if (sourceIndex < 0 || sourceIndex >= plan.SourceText.Length)
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
-
-            var assisted = plan.Assistance.Decisions
-                .Select(item => item.Unit)
-                .Where(unit => ContainsIndex(unit, sourceIndex))
-                .OrderBy(unit => unit.Length)
-                .FirstOrDefault();
+            var assisted = plan.Assistance.Decisions.Select(item => item.Unit)
+                .Where(unit => ContainsIndex(unit, sourceIndex)).OrderBy(unit => unit.Length).FirstOrDefault();
             if (assisted != null) return assisted;
-
-            var containing = document.Units.Where(unit => ContainsIndex(unit, sourceIndex)).ToArray();
-            var resolved = containing
-                .OrderBy(unit => ResolutionPriority(unit.Kind))
-                .ThenBy(unit => unit.Length)
-                .FirstOrDefault();
-            if (resolved == null)
-                throw new InvalidOperationException("No semantic unit covers the requested source index.");
+            var resolved = document.Units.Where(unit => ContainsIndex(unit, sourceIndex))
+                .OrderBy(unit => ResolutionPriority(unit.Kind)).ThenBy(unit => unit.Length).FirstOrDefault();
+            if (resolved == null) throw new InvalidOperationException("No semantic unit covers the requested source index.");
             return resolved;
         }
-
-        public void RecordAt(int sourceIndex, LearningEvidenceKind evidence)
-        {
-            Record(ResolveUnitAt(sourceIndex), evidence);
-        }
-
+        public void RecordAt(int sourceIndex, LearningEvidenceKind evidence) { Record(ResolveUnitAt(sourceIndex), evidence); }
         public void Record(SemanticUnit unit, LearningEvidenceKind evidence)
         {
             EnsureOpen();
             if (unit == null) throw new ArgumentNullException(nameof(unit));
+            // Reject before changing pending evidence; a late failure inside Finish could partially apply scores.
+            if (!Enum.IsDefined(typeof(LearningEvidenceKind), evidence))
+                throw new ArgumentOutOfRangeException(nameof(evidence), evidence, "Unknown learning evidence kind.");
             var canonical = FindCanonical(unit);
             pending[canonical.Id] = new PendingEvidence(canonical, evidence);
         }
 
         /// <summary>
-        /// Finalizes the encounter and applies its learning evidence exactly once.
-        /// If successfulUnassistedCompletion is true, atomic source units that were not translated in this
-        /// encounter receive positive unassisted evidence. Translated units receive only passive exposure
-        /// unless stronger explicit evidence was recorded for them.
+        /// Finalizes the encounter and applies its learning evidence exactly once on successful completion.
+        /// If successfulUnassistedCompletion is true, atomic source units that were not translated receive
+        /// positive unassisted evidence. Translated units receive passive exposure unless explicit evidence exists.
+        /// Storage failures during application do not yet have a transaction contract.
         /// </summary>
         public LearningEncounterSummary Finish(bool successfulUnassistedCompletion = false)
         {
             if (finishedSummary != null) return finishedSummary;
-
             var evidence = new Dictionary<string, PendingEvidence>(pending, StringComparer.Ordinal);
             foreach (var decision in plan.Assistance.Decisions)
             {
                 if (!evidence.ContainsKey(decision.Unit.Id))
                     evidence.Add(decision.Unit.Id, new PendingEvidence(decision.Unit, LearningEvidenceKind.AssistedExposure));
             }
-
             if (successfulUnassistedCompletion)
             {
                 var assistedUnits = plan.Assistance.Decisions.Select(item => item.Unit).ToArray();
@@ -108,52 +92,32 @@ namespace PhraseLayer.Core.Learning
                     evidence.Add(atom.Id, new PendingEvidence(atom, LearningEvidenceKind.CompletedWithoutAssistance));
                 }
             }
-
             var updates = new List<LearnerUpdate>(evidence.Count);
-            foreach (var item in evidence.Values
-                         .OrderBy(item => item.Unit.Start)
-                         .ThenBy(item => ResolutionPriority(item.Unit.Kind))
-                         .ThenBy(item => item.Unit.Length))
-            {
+            foreach (var item in evidence.Values.OrderBy(item => item.Unit.Start)
+                         .ThenBy(item => ResolutionPriority(item.Unit.Kind)).ThenBy(item => item.Unit.Length))
                 updates.Add(adaptation.Apply(item.Unit, item.Evidence));
-            }
-
             finishedSummary = new LearningEncounterSummary(updates, successfulUnassistedCompletion);
             return finishedSummary;
         }
-
         private SemanticUnit FindCanonical(SemanticUnit candidate)
         {
             var unit = document.Units.FirstOrDefault(item =>
-                string.Equals(item.Id, candidate.Id, StringComparison.Ordinal) &&
-                item.Kind == candidate.Kind &&
-                item.Start == candidate.Start &&
-                item.Length == candidate.Length &&
+                string.Equals(item.Id, candidate.Id, StringComparison.Ordinal) && item.Kind == candidate.Kind &&
+                item.Start == candidate.Start && item.Length == candidate.Length &&
                 string.Equals(item.Text, candidate.Text, StringComparison.Ordinal));
-            if (unit == null)
-                throw new ArgumentException("Semantic unit does not belong to this encounter.", nameof(candidate));
+            if (unit == null) throw new ArgumentException("Semantic unit does not belong to this encounter.", nameof(candidate));
             return unit;
         }
-
         private void EnsureOpen()
-        {
-            if (finishedSummary != null)
-                throw new InvalidOperationException("The learning encounter has already been finished.");
-        }
-
+        { if (finishedSummary != null) throw new InvalidOperationException("The learning encounter has already been finished."); }
         private static IEnumerable<SemanticUnit> BuildAtomicUnits(SemanticDocument document)
         {
             var mwes = document.OfKind(SemanticUnitKind.MultiwordExpression).OrderBy(unit => unit.Start).ToArray();
             foreach (var mwe in mwes) yield return mwe;
             foreach (var word in document.OfKind(SemanticUnitKind.Word))
-            {
                 if (!mwes.Any(mwe => mwe.Overlaps(word))) yield return word;
-            }
         }
-
-        private static bool ContainsIndex(SemanticUnit unit, int sourceIndex) =>
-            unit.Start <= sourceIndex && sourceIndex < unit.End;
-
+        private static bool ContainsIndex(SemanticUnit unit, int sourceIndex) => unit.Start <= sourceIndex && sourceIndex < unit.End;
         private static int ResolutionPriority(SemanticUnitKind kind)
         {
             switch (kind)
@@ -166,15 +130,9 @@ namespace PhraseLayer.Core.Learning
                 default: return 5;
             }
         }
-
         private readonly struct PendingEvidence
         {
-            public PendingEvidence(SemanticUnit unit, LearningEvidenceKind evidence)
-            {
-                Unit = unit;
-                Evidence = evidence;
-            }
-
+            public PendingEvidence(SemanticUnit unit, LearningEvidenceKind evidence) { Unit = unit; Evidence = evidence; }
             public SemanticUnit Unit { get; }
             public LearningEvidenceKind Evidence { get; }
         }
