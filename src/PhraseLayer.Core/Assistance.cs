@@ -44,7 +44,15 @@ namespace PhraseLayer.Core.Assistance
     public sealed class AssistancePlan
     {
         public AssistancePlan(IReadOnlyList<AssistanceDecision> decisions, double targetRatio, double selectedRatio)
-        { Decisions = decisions; TargetRatio = targetRatio; SelectedRatio = selectedRatio; }
+        {
+            if (decisions == null) throw new ArgumentNullException(nameof(decisions));
+            var frozenDecisions = decisions.ToArray();
+            if (frozenDecisions.Any(decision => decision == null))
+                throw new ArgumentException("Assistance decisions cannot contain null items.", nameof(decisions));
+            Decisions = Array.AsReadOnly(frozenDecisions);
+            TargetRatio = targetRatio;
+            SelectedRatio = selectedRatio;
+        }
         public IReadOnlyList<AssistanceDecision> Decisions { get; }
         public double TargetRatio { get; }
         public double SelectedRatio { get; }

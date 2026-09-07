@@ -47,8 +47,8 @@ namespace PhraseLayer.Core.Semantics
         public SemanticDocument(string sourceText, IEnumerable<SemanticUnit> units)
         {
             SourceText = sourceText ?? throw new ArgumentNullException(nameof(sourceText));
-            _units = (units ?? throw new ArgumentNullException(nameof(units)))
-                .OrderBy(unit => unit.Start).ThenByDescending(unit => unit.Length).ToArray();
+            _units = Array.AsReadOnly((units ?? throw new ArgumentNullException(nameof(units)))
+                .OrderBy(unit => unit.Start).ThenByDescending(unit => unit.Length).ToArray());
         }
         public string SourceText { get; }
         public IReadOnlyList<SemanticUnit> Units => _units;
