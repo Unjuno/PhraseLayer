@@ -52,6 +52,12 @@ namespace PhraseLayer.Core.Assistance
 
     public sealed class AssistancePlanner
     {
+        // Sorting is a policy decision, not a floating-point accident. Weighted averages of the same learner score can
+        // differ at ~1e-16 solely because clauses contain different token counts (for example 3 * 0.2 / 3 versus
+        // 4 * 0.2 / 4). Quantize only the ranking key so semantically equal difficulties fall through to the reviewed
+        // deterministic kind/source-order tie breakers. The original understanding value is retained in the decision.
+        private const int DifficultySortDecimals = 12;
+
         public AssistancePlan Plan(SemanticDocument document, ILearnerModel learner, AssistancePolicy policy)
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
@@ -96,7 +102,10 @@ namespace PhraseLayer.Core.Assistance
 
             candidates = candidates.GroupBy(item => item.Unit.Start + ":" + item.Unit.Length)
                 .Select(group => group.OrderByDescending(item => item.Unit.Kind).First())
-                .OrderByDescending(item => item.Difficulty).ThenByDescending(item => item.Unit.Kind).ThenBy(item => item.Unit.Start).ToList();
+                .OrderByDescending(DifficultySortKey)
+                .ThenByDescending(item => item.Unit.Kind)
+                .ThenBy(item => item.Unit.Start)
+                .ToList();
 
             var averageDifficulty = atomicUnits.Sum(unit => (1.0 - estimates[unit.Id].Understanding) * unit.TokenCount) / totalTokens;
             var targetRatio = policy.TargetAssistanceRatio ?? Clamp(averageDifficulty, 0.10, 0.75);
@@ -114,6 +123,9 @@ namespace PhraseLayer.Core.Assistance
             var selectedRatio = Math.Min(1.0, (double)selectedTokens / totalTokens);
             return new AssistancePlan(selected, targetRatio, selectedRatio);
         }
+
+        private static double DifficultySortKey(AssistanceDecision decision) =>
+            Math.Round(decision.Difficulty, DifficultySortDecimals, MidpointRounding.AwayFromZero);
 
         private static IEnumerable<SemanticUnit> BuildAtomicUnits(SemanticDocument document)
         {
