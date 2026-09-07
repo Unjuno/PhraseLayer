@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using PhraseLayer.Core.Assistance;
 using PhraseLayer.Core.Learning;
 using PhraseLayer.Core.Pipeline;
