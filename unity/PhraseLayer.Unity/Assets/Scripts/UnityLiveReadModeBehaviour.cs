@@ -8,16 +8,14 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Connects recognized OCR to adaptive Read Mode. In addition to camera-generation checks in Core,
-    /// a scene-configuration generation rejects results crossing a presenter, mode, processor or lifetime change.
-    /// All component access stays on the caller's Unity synchronization context.
+    /// Connects recognized OCR to adaptive Read Mode. Configuration and accepted-frame generations protect
+    /// presentation from obsolete success, failure and skip results. Platform awaits retain the Unity context.
     /// </summary>
     public sealed class UnityLiveReadModeBehaviour : MonoBehaviour
     {
         [SerializeField] private OcrViewportDebugBehaviour ocrPresenter = default(OcrViewportDebugBehaviour);
         [SerializeField] private UnityWorldTextTrackingBehaviour worldTextTracking = default(UnityWorldTextTrackingBehaviour);
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
-
         private LiveReadModeCoordinator coordinator;
         private CancellationTokenSource lifetime;
         private bool subscribed;
@@ -32,6 +30,7 @@ namespace PhraseLayer.Unity
         public long SupersededObservationCount { get; private set; }
         public long StaleObservationCount { get; private set; }
         public long UnconfiguredObservationCount { get; private set; }
+        public long SupersededErrorCount { get; private set; }
 
         public void SetSceneReferences(OcrViewportDebugBehaviour presenter, UnityWorldTextTrackingBehaviour tracking)
         {
@@ -43,13 +42,11 @@ namespace PhraseLayer.Unity
             worldTextTracking = tracking;
             SubscribeIfEnabledLifetimeExists();
         }
-
         public void ConfigureLanguagePipeline(LanguagePipeline languagePipeline)
         {
             if (languagePipeline == null) throw new ArgumentNullException(nameof(languagePipeline));
             ConfigureProcessor(new ReadModeObservationProcessor(languagePipeline));
         }
-
         public void ConfigureProcessor(ReadModeObservationProcessor processor)
         {
             if (processor == null) throw new ArgumentNullException(nameof(processor));
@@ -58,7 +55,6 @@ namespace PhraseLayer.Unity
             coordinator = new LiveReadModeCoordinator(processor);
             LastError = null;
         }
-
         public void SetAssistanceMode(AssistanceMode mode)
         {
             if (!Enum.IsDefined(typeof(AssistanceMode), mode)) throw new ArgumentOutOfRangeException(nameof(mode));
@@ -66,7 +62,6 @@ namespace PhraseLayer.Unity
             InvalidatePresentation();
             assistanceMode = mode;
         }
-
         private void OnEnable()
         {
             InvalidatePresentation();
@@ -74,14 +69,12 @@ namespace PhraseLayer.Unity
             lifetime = new CancellationTokenSource();
             Subscribe();
         }
-
         private void OnDisable()
         {
             Unsubscribe();
             try { InvalidatePresentation(); }
             finally { lifetime?.Cancel(); }
         }
-
         private void OnDestroy()
         {
             Unsubscribe();
@@ -91,14 +84,11 @@ namespace PhraseLayer.Unity
                 try { lifetime?.Cancel(); }
                 finally
                 {
-                    lifetime?.Dispose();
-                    lifetime = null;
-                    coordinator?.Dispose();
-                    coordinator = null;
+                    lifetime?.Dispose(); lifetime = null;
+                    coordinator?.Dispose(); coordinator = null;
                 }
             }
         }
-
         private void InvalidatePresentation()
         {
             configurationGeneration++;
@@ -108,7 +98,6 @@ namespace PhraseLayer.Unity
             catch (ObjectDisposedException) { }
             finally { worldTextTracking?.ResetTracking(); }
         }
-
         private void SubscribeIfEnabledLifetimeExists()
         {
             if (lifetime != null && !lifetime.IsCancellationRequested) Subscribe();
@@ -125,7 +114,6 @@ namespace PhraseLayer.Unity
             ocrPresenter.ObservationPresented -= OnObservationPresented;
             subscribed = false;
         }
-
         private bool IsCurrent(LiveReadModeCoordinator localCoordinator, CancellationTokenSource localLifetime,
             UnityWorldTextTrackingBehaviour localTracking, long localGeneration)
         {
@@ -133,7 +121,6 @@ namespace PhraseLayer.Unity
                 ReferenceEquals(localLifetime, lifetime) && ReferenceEquals(localTracking, worldTextTracking) &&
                 localLifetime != null && !localLifetime.IsCancellationRequested;
         }
-
         private async void OnObservationPresented(OcrObservation observation, ImageFrame frame)
         {
             var localCoordinator = coordinator;
@@ -150,35 +137,34 @@ namespace PhraseLayer.Unity
                 var result = await localCoordinator.SubmitAsync(frame, observation,
                     AssistancePolicy.ForMode(assistanceMode), localLifetime.Token);
                 if (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration)) return;
-                LastProcessingStatus = result.Status;
-                switch (result.Status)
+                // Skip diagnostics are cumulative; an old/duplicate input must not rewrite the latest display status.
+                if (result.Status == LiveReadModeProcessingStatus.Superseded) { SupersededObservationCount++; return; }
+                if (result.Status == LiveReadModeProcessingStatus.StaleInput) { StaleObservationCount++; return; }
+                if (result.Status != LiveReadModeProcessingStatus.Processed) throw new ArgumentOutOfRangeException();
+                if (localCoordinator.LatestAcceptedTimestampMicroseconds != result.FrameTimestampMicroseconds)
                 {
-                    case LiveReadModeProcessingStatus.Processed:
-                        if (result.Aligned == null)
-                            throw new InvalidOperationException("Processed live Read Mode result is missing aligned output.");
-                        localTracking.ProjectFitAndTrack(result.Aligned, result.FrameTimestampMicroseconds);
-                        LastAlignedResult = result.Aligned;
-                        ProcessedObservationCount++;
-                        LastError = null;
-                        break;
-                    case LiveReadModeProcessingStatus.Superseded:
-                        SupersededObservationCount++;
-                        break;
-                    case LiveReadModeProcessingStatus.StaleInput:
-                        StaleObservationCount++;
-                        break;
-                    default: throw new ArgumentOutOfRangeException();
+                    SupersededObservationCount++;
+                    return;
                 }
+                if (result.Aligned == null) throw new InvalidOperationException("Processed live Read Mode result is missing aligned output.");
+                localTracking.ProjectFitAndTrack(result.Aligned, result.FrameTimestampMicroseconds);
+                LastAlignedResult = result.Aligned;
+                LastProcessingStatus = result.Status;
+                ProcessedObservationCount++;
+                LastError = null;
             }
-            catch (OperationCanceledException) when (localLifetime.IsCancellationRequested)
-            {
-            }
-            catch (ObjectDisposedException) when (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration))
-            {
-            }
+            catch (OperationCanceledException) when (localLifetime.IsCancellationRequested) { }
+            catch (ObjectDisposedException) when (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration)) { }
             catch (Exception exception)
             {
                 if (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration)) return;
+                // Unlike an obsolete cancellation, an adapter failure is not converted to Superseded by Core.
+                // It may arrive after a newer success, so check frame ownership before touching any presentation.
+                if (frame != null && localCoordinator.LatestAcceptedTimestampMicroseconds != frame.TimestampMicroseconds)
+                {
+                    SupersededErrorCount++;
+                    return;
+                }
                 LastError = exception;
                 LastAlignedResult = null;
                 LastProcessingStatus = null;
