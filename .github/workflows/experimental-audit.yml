@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [SourceStableIdentity, LearningEvidenceAudit]
+        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
