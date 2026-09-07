@@ -1,0 +1,37 @@
+name: Semantic Robustness
+on:
+  push:
+    branches: ["agent/**", main]
+    paths: ["src/PhraseLayer.Core/**", "experiments/PhraseLayer.SemanticWhitespaceAudit/**", ".github/workflows/semantic-robustness.yml"]
+  pull_request:
+    paths: ["src/PhraseLayer.Core/**", "experiments/PhraseLayer.SemanticWhitespaceAudit/**", ".github/workflows/semantic-robustness.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: semantic-robustness-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  semantic-robustness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Record SDK
+        run: dotnet --version
+      - name: Build synthetic semantic audit
+        run: dotnet build experiments/PhraseLayer.SemanticWhitespaceAudit/PhraseLayer.SemanticWhitespaceAudit.csproj -c Release --verbosity quiet
+      - name: Require whitespace and atomic-token invariants
+        env:
+          AUDIT_REPORT_PATH: semantic-audit.json
+        run: dotnet run --no-build --project experiments/PhraseLayer.SemanticWhitespaceAudit/PhraseLayer.SemanticWhitespaceAudit.csproj -c Release -- --require-safe
+      - name: Preserve synthetic findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-robustness-${{ github.run_id }}
+          path: semantic-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
