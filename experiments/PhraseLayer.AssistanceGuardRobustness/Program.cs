@@ -141,15 +141,16 @@ StrategyReport RunStrategy(
         for (var encounter = 1; encounter <= encounterBudget; encounter++)
         {
             var productionPlan = planner.Plan(document, learner, AssistancePolicy.ForMode(AssistanceMode.Auto));
-            var plan = useGuard
-                ? ApplyGuard(productionPlan, previousSelected, totalTokens, out var intervened, out var forced)
-                : productionPlan;
+            AssistancePlan plan;
             if (useGuard)
             {
-                ApplyGuard(productionPlan, previousSelected, totalTokens, out var countedPlan, out var countedForced);
-                plan = countedPlan;
-                if (countedForced) result.ForcedIndivisibleIncreases++;
-                if (!ReferenceEquals(plan, productionPlan)) result.Interventions++;
+                plan = ApplyGuard(productionPlan, previousSelected, totalTokens, out var intervened, out var forced);
+                if (intervened) result.Interventions++;
+                if (forced) result.ForcedIndivisibleIncreases++;
+            }
+            else
+            {
+                plan = productionPlan;
             }
 
             var selected = plan.SelectedRatio;
