@@ -8,9 +8,9 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Connects the already-recognized live OCR stream to adaptive Read Mode without invoking OCR again.
-    /// A newer observation supersedes older in-flight language work through LiveReadModeCoordinator, then only the
-    /// accepted latest result is projected, fitted, tracked, and optionally rendered in world space.
+    /// Connects recognized OCR to adaptive Read Mode. In addition to camera-generation checks in Core,
+    /// a scene-configuration generation rejects results crossing a presenter, mode, processor or lifetime change.
+    /// All component access stays on the caller's Unity synchronization context.
     /// </summary>
     public sealed class UnityLiveReadModeBehaviour : MonoBehaviour
     {
@@ -21,6 +21,7 @@ namespace PhraseLayer.Unity
         private LiveReadModeCoordinator coordinator;
         private CancellationTokenSource lifetime;
         private bool subscribed;
+        private long configurationGeneration;
 
         public bool IsConfigured => coordinator != null && ocrPresenter != null && worldTextTracking != null;
         public AssistanceMode AssistanceMode => assistanceMode;
@@ -32,14 +33,12 @@ namespace PhraseLayer.Unity
         public long StaleObservationCount { get; private set; }
         public long UnconfiguredObservationCount { get; private set; }
 
-        public void SetSceneReferences(
-            OcrViewportDebugBehaviour presenter,
-            UnityWorldTextTrackingBehaviour tracking)
+        public void SetSceneReferences(OcrViewportDebugBehaviour presenter, UnityWorldTextTrackingBehaviour tracking)
         {
             if (presenter == null) throw new ArgumentNullException(nameof(presenter));
             if (tracking == null) throw new ArgumentNullException(nameof(tracking));
-
             Unsubscribe();
+            InvalidatePresentation();
             ocrPresenter = presenter;
             worldTextTracking = tracking;
             SubscribeIfEnabledLifetimeExists();
@@ -54,20 +53,23 @@ namespace PhraseLayer.Unity
         public void ConfigureProcessor(ReadModeObservationProcessor processor)
         {
             if (processor == null) throw new ArgumentNullException(nameof(processor));
+            InvalidatePresentation();
             coordinator?.Dispose();
             coordinator = new LiveReadModeCoordinator(processor);
-            LastProcessingStatus = null;
-            LastAlignedResult = null;
             LastError = null;
         }
 
         public void SetAssistanceMode(AssistanceMode mode)
         {
+            if (!Enum.IsDefined(typeof(AssistanceMode), mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            if (assistanceMode == mode) return;
+            InvalidatePresentation();
             assistanceMode = mode;
         }
 
         private void OnEnable()
         {
+            InvalidatePresentation();
             lifetime?.Dispose();
             lifetime = new CancellationTokenSource();
             Subscribe();
@@ -76,42 +78,47 @@ namespace PhraseLayer.Unity
         private void OnDisable()
         {
             Unsubscribe();
-            lifetime?.Cancel();
-            if (coordinator != null)
-            {
-                try
-                {
-                    coordinator.CancelActive();
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-            }
+            try { InvalidatePresentation(); }
+            finally { lifetime?.Cancel(); }
         }
 
         private void OnDestroy()
         {
             Unsubscribe();
-            lifetime?.Cancel();
-            lifetime?.Dispose();
-            lifetime = null;
-            coordinator?.Dispose();
-            coordinator = null;
+            try { InvalidatePresentation(); }
+            finally
+            {
+                try { lifetime?.Cancel(); }
+                finally
+                {
+                    lifetime?.Dispose();
+                    lifetime = null;
+                    coordinator?.Dispose();
+                    coordinator = null;
+                }
+            }
+        }
+
+        private void InvalidatePresentation()
+        {
+            configurationGeneration++;
+            LastProcessingStatus = null;
+            LastAlignedResult = null;
+            try { coordinator?.CancelActive(); }
+            catch (ObjectDisposedException) { }
+            finally { worldTextTracking?.ResetTracking(); }
         }
 
         private void SubscribeIfEnabledLifetimeExists()
         {
-            if (lifetime != null && !lifetime.IsCancellationRequested)
-                Subscribe();
+            if (lifetime != null && !lifetime.IsCancellationRequested) Subscribe();
         }
-
         private void Subscribe()
         {
             if (subscribed || ocrPresenter == null) return;
             ocrPresenter.ObservationPresented += OnObservationPresented;
             subscribed = true;
         }
-
         private void Unsubscribe()
         {
             if (!subscribed || ocrPresenter == null) return;
@@ -119,34 +126,38 @@ namespace PhraseLayer.Unity
             subscribed = false;
         }
 
+        private bool IsCurrent(LiveReadModeCoordinator localCoordinator, CancellationTokenSource localLifetime,
+            UnityWorldTextTrackingBehaviour localTracking, long localGeneration)
+        {
+            return localGeneration == configurationGeneration && ReferenceEquals(localCoordinator, coordinator) &&
+                ReferenceEquals(localLifetime, lifetime) && ReferenceEquals(localTracking, worldTextTracking) &&
+                localLifetime != null && !localLifetime.IsCancellationRequested;
+        }
+
         private async void OnObservationPresented(OcrObservation observation, ImageFrame frame)
         {
             var localCoordinator = coordinator;
             var localLifetime = lifetime;
-            if (localCoordinator == null || worldTextTracking == null || localLifetime == null || localLifetime.IsCancellationRequested)
+            var localTracking = worldTextTracking;
+            var localGeneration = configurationGeneration;
+            if (localCoordinator == null || localTracking == null || localLifetime == null || localLifetime.IsCancellationRequested)
             {
                 UnconfiguredObservationCount++;
                 return;
             }
-
             try
             {
-                var result = await localCoordinator.SubmitAsync(
-                    frame,
-                    observation,
-                    AssistancePolicy.ForMode(assistanceMode),
-                    localLifetime.Token);
+                var result = await localCoordinator.SubmitAsync(frame, observation,
+                    AssistancePolicy.ForMode(assistanceMode), localLifetime.Token);
+                if (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration)) return;
                 LastProcessingStatus = result.Status;
-
                 switch (result.Status)
                 {
                     case LiveReadModeProcessingStatus.Processed:
                         if (result.Aligned == null)
                             throw new InvalidOperationException("Processed live Read Mode result is missing aligned output.");
+                        localTracking.ProjectFitAndTrack(result.Aligned, result.FrameTimestampMicroseconds);
                         LastAlignedResult = result.Aligned;
-                        worldTextTracking.ProjectFitAndTrack(
-                            result.Aligned,
-                            result.FrameTimestampMicroseconds);
                         ProcessedObservationCount++;
                         LastError = null;
                         break;
@@ -156,19 +167,22 @@ namespace PhraseLayer.Unity
                     case LiveReadModeProcessingStatus.StaleInput:
                         StaleObservationCount++;
                         break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
+                    default: throw new ArgumentOutOfRangeException();
                 }
             }
             catch (OperationCanceledException) when (localLifetime.IsCancellationRequested)
             {
             }
-            catch (ObjectDisposedException) when (localLifetime.IsCancellationRequested || !ReferenceEquals(localCoordinator, coordinator))
+            catch (ObjectDisposedException) when (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration))
             {
             }
             catch (Exception exception)
             {
+                if (!IsCurrent(localCoordinator, localLifetime, localTracking, localGeneration)) return;
                 LastError = exception;
+                LastAlignedResult = null;
+                LastProcessingStatus = null;
+                localTracking.ResetTracking();
                 Debug.LogException(exception, this);
             }
         }
