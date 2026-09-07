@@ -50,6 +50,21 @@ Check("new_scene_can_process_fresh_observation", f => {
     f.Live.SetSceneReferences(presenter, next); f.Complete(); f.Translator.Block = null; presenter.Publish("fresh", 3_000_000); f.Context.Drain();
     return next.PresentCalls == 1 && next.Visible;
 });
+Check("late_old_error_cannot_erase_new_success", f => {
+    f.Pending(); var old = f.Translator.Block; f.Translator.Block = null;
+    f.Presenter.Publish("fresh", 3_000_000); f.Context.Drain(); var latest = f.Live.LastAlignedResult;
+    old.SetException(new InvalidOperationException("old synthetic failure")); f.Context.Drain();
+    return f.Tracking.Visible && ReferenceEquals(latest, f.Live.LastAlignedResult) && f.Live.LastError == null;
+});
+Check("late_superseded_result_cannot_overwrite_latest_status", f => {
+    f.Pending(); var old = f.Translator.Block; f.Translator.Block = null;
+    f.Presenter.Publish("fresh", 3_000_000); f.Context.Drain(); old.SetResult("old"); f.Context.Drain();
+    return f.Tracking.Visible && f.Live.LastProcessingStatus == LiveReadModeProcessingStatus.Processed && f.Live.SupersededObservationCount == 1;
+});
+Check("duplicate_input_cannot_overwrite_latest_status", f => {
+    f.Presenter.Publish("duplicate", 1_000_000); f.Context.Drain();
+    return f.Tracking.Visible && f.Live.LastProcessingStatus == LiveReadModeProcessingStatus.Processed && f.Live.StaleObservationCount == 1;
+});
 var json = JsonSerializer.Serialize(new {
     experiment = "live-read-mode-lifecycle-and-owner-generation-audit", experiment_status = "completed",
     safety_result = failed == 0 ? "PASS" : "FAIL", failed_checks = failed, checks,
