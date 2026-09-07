@@ -27,6 +27,8 @@ jobs:
       - run: python tools/validate_ppocr_gpu_preprocess_gate.py
       - run: python tools/validate_ppocr_gpu_ctc_reduction_gate.py
       - run: python tools/test_ppocr_packed_gate.py
+      - run: python tools/measure_ppocr_ctc_transfer_budget.py
+      - run: python tools/test_measure_ppocr_ctc_transfer_budget.py
       - run: python tools/validate_read_mode_mask_gate.py
       - run: python tools/validate_mruk_environment_raycast_gate.py
       - run: python tools/validate_quest_project_setup_gate.py
