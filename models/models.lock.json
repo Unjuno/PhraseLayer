@@ -10,6 +10,14 @@
       "artifact": "inference.onnx",
       "artifact_size_bytes": 1780590,
       "artifact_sha256": "193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8",
+      "support_artifacts": [
+        {
+          "purpose": "detection-export-config",
+          "artifact": "inference.yml",
+          "artifact_size_bytes": 883,
+          "artifact_sha256": "3ac018be6f97499a08faa3bbdeb33640968d9307f6736d152902747a9f259593"
+        }
+      ],
       "format": "onnx",
       "license": "Apache-2.0",
       "license_status": "upstream-metadata-verified; redistribution-review-pending",
