@@ -2,9 +2,9 @@ name: OCR CPU Differential
 on:
   push:
     branches: ["agent/**", main]
-    paths: ["models/models.lock.json", "tools/run_ppocr_cpu_reduction_experiment.py", "tools/audit_ppocr_dictionary_oracle.py", "tools/requirements-ocr-cpu-audit.txt", "tools/extract_ppocr_dictionary.py", "tools/test_ppocr_whitespace_contract.py", "experiments/PhraseLayer.OcrOutputReplay/**", "src/PhraseLayer.Core/Paddle*.cs", ".github/workflows/ocr-cpu-differential.yml"]
+    paths: ["models/models.lock.json", "tools/run_ppocr_cpu_reduction_experiment.py", "tools/audit_ppocr_dictionary_oracle.py", "tools/run_ppocr_dictionary_fault_experiment.py", "tools/requirements-ocr-cpu-audit.txt", "tools/extract_ppocr_dictionary.py", "tools/test_ppocr_whitespace_contract.py", "experiments/PhraseLayer.OcrOutputReplay/**", "src/PhraseLayer.Core/Paddle*.cs", ".github/workflows/ocr-cpu-differential.yml"]
   pull_request:
-    paths: ["models/models.lock.json", "tools/run_ppocr_cpu_reduction_experiment.py", "tools/audit_ppocr_dictionary_oracle.py", "tools/requirements-ocr-cpu-audit.txt", "tools/extract_ppocr_dictionary.py", "tools/test_ppocr_whitespace_contract.py", "experiments/PhraseLayer.OcrOutputReplay/**", "src/PhraseLayer.Core/Paddle*.cs", ".github/workflows/ocr-cpu-differential.yml"]
+    paths: ["models/models.lock.json", "tools/run_ppocr_cpu_reduction_experiment.py", "tools/audit_ppocr_dictionary_oracle.py", "tools/run_ppocr_dictionary_fault_experiment.py", "tools/requirements-ocr-cpu-audit.txt", "tools/extract_ppocr_dictionary.py", "tools/test_ppocr_whitespace_contract.py", "experiments/PhraseLayer.OcrOutputReplay/**", "src/PhraseLayer.Core/Paddle*.cs", ".github/workflows/ocr-cpu-differential.yml"]
 permissions:
   contents: read
 concurrency:
@@ -44,6 +44,14 @@ jobs:
           dotnet run --project experiments/PhraseLayer.OcrOutputReplay/PhraseLayer.OcrOutputReplay.csproj -c Release -- \
             artifacts/ocr-cpu-audit/replay.json artifacts/ocr-cpu-audit/core-replay.json \
             artifacts/models/pp-ocrv6-tiny-rec/ppocr_keys.txt artifacts/models/pp-ocrv6-tiny-rec/ppocr_keys.manifest.json
+      - name: Reject legacy, reordered and forged dictionary artifacts through actual Core
+        run: |
+          ulimit -c 0
+          python tools/run_ppocr_dictionary_fault_experiment.py \
+            --dictionary artifacts/models/pp-ocrv6-tiny-rec/ppocr_keys.txt \
+            --manifest artifacts/models/pp-ocrv6-tiny-rec/ppocr_keys.manifest.json \
+            --replay artifacts/ocr-cpu-audit/replay.json \
+            --report artifacts/ocr-cpu-audit/dictionary-faults.json
       - name: Upload only numerical summaries, not models, images, dictionaries, or tensors
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,6 +61,7 @@ jobs:
             artifacts/ocr-cpu-audit/dictionary-oracle.json
             artifacts/ocr-cpu-audit/report.json
             artifacts/ocr-cpu-audit/core-replay.json
+            artifacts/ocr-cpu-audit/dictionary-faults.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Remove locally staged model and replay payload
