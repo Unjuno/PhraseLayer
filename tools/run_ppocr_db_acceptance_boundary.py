@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Stress PP-OCR DB box-score acceptance around box_thresh=0.4.
 
-This isolates one question from the broader detector geometry differential: can the dependency-free
-Core raster score and PaddleOCR/OpenCV fillPoly score make different accept/reject decisions for the
-same thresholded component? Inputs are deterministic synthetic float32 probability maps. No model,
-image, camera, Unity or Quest execution is involved.
+Core is replayed with diagnostic box_threshold=0 so this experiment can observe candidate scores
+that the real 0.4 production gate would reject. The final acceptance comparison still uses the exact
+production threshold. Inputs are deterministic synthetic float32 probability maps; no model, Unity,
+GPU, camera, Quest, latency or human-learning claim is made.
 """
 from __future__ import annotations
 
 import argparse
-import importlib.metadata
 import json
 from pathlib import Path
 import platform
@@ -71,7 +70,6 @@ def build_cases(work_dir: Path) -> tuple[list[dict], dict[str, dict]]:
     angles = [-75.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 75.0]
     sizes = [(18, 6), (28, 9), (44, 14), (64, 20)]
     backgrounds = [0.01, 0.03, 0.10, 0.19]
-    # Dense around the acceptance gate, with wider shoulders to prove both sides agree away from it.
     signals = np.concatenate([
         np.linspace(0.405, 0.455, 11),
         np.linspace(0.46, 0.60, 15),
@@ -124,27 +122,37 @@ def main() -> int:
     manifest_cases, expected = build_cases(args.work_dir)
     manifest_path = args.work_dir / "manifest.json"
     core_path = args.work_dir / "core.json"
-    manifest_path.write_text(json.dumps({"cases": manifest_cases}), encoding="utf-8")
+    # Diagnostic replay exposes the production Core candidate score without the final score gate.
+    # Geometry/min-size filtering stays at the production V6 values.
+    manifest_path.write_text(json.dumps({"box_threshold": 0.0, "cases": manifest_cases}), encoding="utf-8")
     subprocess.run([
         "dotnet", "run", "--project",
         str(ROOT / "experiments/PhraseLayer.DetectorOutputReplay/PhraseLayer.DetectorOutputReplay.csproj"),
         "-c", "Release", "--", str(manifest_path), str(core_path)
     ], check=True)
     core = json.loads(core_path.read_text(encoding="utf-8"))
+    if core.get("configured_box_threshold") != 0.0:
+        raise RuntimeError("Diagnostic replay did not apply box_threshold=0.")
     actual = {row["name"]: row["detections"] for row in core["cases"]}
 
     flips = []
+    score_pairs = 0
+    maximum_score_absolute_error = 0.0
     accepted_by_both = 0
     rejected_by_both = 0
     for name, reference in expected.items():
-        core_count = len(actual[name])
-        core_accepts = core_count > 0
-        if core_count > 1:
-            flips.append({**reference, "name": name, "reason": "core_returned_multiple_boxes", "core_count": core_count})
+        candidates = actual[name]
+        if len(candidates) != 1:
+            flips.append({**reference, "name": name, "reason": "core_candidate_count", "core_count": len(candidates)})
             continue
+        core_score = float(candidates[0]["score"])
+        score_pairs += 1
+        score_error = abs(core_score - reference["reference_score"])
+        maximum_score_absolute_error = max(maximum_score_absolute_error, score_error)
+        core_accepts = core_score >= BOX_THRESHOLD
         if core_accepts != reference["reference_accepts"]:
-            flips.append({**reference, "name": name, "reason": "acceptance_flip", "core_count": core_count,
-                          "core_score": None if not core_accepts else actual[name][0]["score"]})
+            flips.append({**reference, "name": name, "reason": "acceptance_flip", "core_count": 1,
+                          "core_score": core_score, "score_absolute_error": score_error})
         elif core_accepts:
             accepted_by_both += 1
         else:
@@ -157,10 +165,13 @@ def main() -> int:
         "safety_result": "PASS" if not flips else "FAIL",
         "seed": SEED,
         "total_cases": len(expected),
+        "score_pairs": score_pairs,
         "acceptance_flip_cases": len(flips),
         "accepted_by_both": accepted_by_both,
         "rejected_by_both": rejected_by_both,
+        "maximum_score_absolute_error": maximum_score_absolute_error,
         "box_threshold": BOX_THRESHOLD,
+        "diagnostic_core_box_threshold": 0.0,
         "bitmap_threshold_float32": float(BITMAP_THRESHOLD),
         "nearest_flips": nearest_flips,
         "opencv_version": cv2.__version__,
