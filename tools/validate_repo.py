@@ -90,12 +90,13 @@ for model in manifest.get("candidates", []):
         dictionary = model.get("recognition_dictionary")
         require(isinstance(dictionary, dict), f"OCR recognition model missing recognition_dictionary: {model_id}")
         if isinstance(dictionary, dict):
+            # Independently reproduced from the exact YAML, without token trimming.
             expected = {
                 "source_artifact": "inference.yml", "source_format": "paddle-inference-yaml",
                 "postprocess_name": "CTCLabelDecode", "yaml_path": ["PostProcess", "character_dict"],
                 "use_space_char": True, "raw_token_count": 6904, "effective_token_count": 6905,
-                "generated_artifact": "ppocr_keys.txt", "generated_artifact_size_bytes": 27153,
-                "generated_artifact_sha256": "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc",
+                "generated_artifact": "ppocr_keys.txt", "generated_artifact_size_bytes": 27156,
+                "generated_artifact_sha256": "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd",
                 "generated_manifest": "ppocr_keys.manifest.json",
             }
             for key, value in expected.items():
@@ -140,7 +141,7 @@ validate_markers(CORE / "PaddleOcrRuntimeContract.cs", "Core PP-OCR runtime cont
                   "dictionary token count + 1 CTC blank", "ValidateRecognizerReduced(", "BuildReport("))
 validate_markers(CORE / "PaddleOcrDictionaryManifest.cs", "Core PP-OCR dictionary manifest contract",
                  ("ExpectedSourceArtifact = \"inference.yml\"", "ExpectedRawTokenCount = 6904", "ExpectedEffectiveTokenCount = 6905",
-                  "ExpectedGeneratedSha256 = \"46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc\""))
+                  "ExpectedGeneratedSha256 = \"c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd\""))
 validate_markers(UNITY / "Assets" / "Scripts" / "OcrDebugRuntimeBehaviour.cs", "Unity OCR runtime driver",
                  ("ConfigureEngine(IOcrEngine engine)", "ConfigureEngine(new UnityTextureOcrEngine(backend))", "new OcrFrameScheduler(engine, targetOcrHz)"))
 validate_markers(UNITY / "Assets" / "Scripts" / "UnityPaddleOcrDetectorRuntime.cs", "Unity PP-OCR detector runtime",
