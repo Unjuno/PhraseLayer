@@ -89,9 +89,9 @@ namespace PhraseLayer.Core.Inputs
     /// minimum-area rectangle -> fast box score -> unclip distance -> expanded rectangle ->
     /// minimum-short-side filter -> destination scaling.
     ///
-    /// PaddleOCR scores each candidate by converting the min-area rectangle to int32 and filling it
-    /// with OpenCV fillPoly using LINE_8. BoxScoreFast mirrors that edge raster and scanline fill instead
-    /// of using an ideal point-in-polygon test; the distinction changes acceptance near box_thresh.
+    /// PaddleOCR scores each candidate by converting the float32 OpenCV min-area rectangle to int32 and filling it
+    /// with OpenCV fillPoly using LINE_8. BoxScoreFast mirrors the float32 boundary, edge raster and scanline fill
+    /// instead of using idealized double-precision polygon tests; these distinctions change acceptance near box_thresh.
     /// Contour extraction/min-area rectangle and round-offset geometry remain dependency-free equivalents
     /// and are continuously compared with the pinned OpenCV/pyclipper host oracle.
     /// </summary>
@@ -283,21 +283,28 @@ namespace PhraseLayer.Core.Inputs
             int height,
             IReadOnlyList<DbPoint> box)
         {
-            var xmin = Clamp((int)Math.Floor(box.Min(point => point.X)), 0, width - 1);
-            var xmax = Clamp((int)Math.Ceiling(box.Max(point => point.X)), 0, width - 1);
-            var ymin = Clamp((int)Math.Floor(box.Min(point => point.Y)), 0, height - 1);
-            var ymax = Clamp((int)Math.Ceiling(box.Max(point => point.Y)), 0, height - 1);
+            // cv2.boxPoints returns float32. Preserve that numerical boundary before PaddleOCR's
+            // floor/ceil ROI selection and astype(int32); carrying mathematically identical corners in
+            // double can put an edge on the other side of an integer pixel and change box_thresh acceptance.
+            var scoringBox = new DbPoint[box.Count];
+            for (var index = 0; index < box.Count; index++)
+                scoringBox[index] = new DbPoint((float)box[index].X, (float)box[index].Y);
+
+            var xmin = Clamp((int)Math.Floor(scoringBox.Min(point => point.X)), 0, width - 1);
+            var xmax = Clamp((int)Math.Ceiling(scoringBox.Max(point => point.X)), 0, width - 1);
+            var ymin = Clamp((int)Math.Floor(scoringBox.Min(point => point.Y)), 0, height - 1);
+            var ymax = Clamp((int)Math.Ceiling(scoringBox.Max(point => point.Y)), 0, height - 1);
             var localWidth = checked(xmax - xmin + 1);
             var localHeight = checked(ymax - ymin + 1);
 
-            var integerBox = new DbIntPoint[box.Count];
-            for (var index = 0; index < box.Count; index++)
+            var integerBox = new DbIntPoint[scoringBox.Length];
+            for (var index = 0; index < scoringBox.Length; index++)
             {
                 // Matches NumPy astype(int32) in PaddleOCR box_score_fast: truncate toward zero
-                // after shifting the floating rectangle into the local bounding rectangle.
+                // after shifting the float32 rectangle into the local bounding rectangle.
                 integerBox[index] = new DbIntPoint(
-                    (int)(box[index].X - xmin),
-                    (int)(box[index].Y - ymin));
+                    (int)(scoringBox[index].X - xmin),
+                    (int)(scoringBox[index].Y - ymin));
             }
 
             var mask = BuildOpenCvFillPolyMask(integerBox, localWidth, localHeight);
