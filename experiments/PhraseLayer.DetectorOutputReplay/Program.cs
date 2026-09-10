@@ -11,10 +11,23 @@ if (args.Length != 2)
 var manifestPath = Path.GetFullPath(args[0]);
 var manifestDirectory = Path.GetDirectoryName(manifestPath) ?? throw new InvalidOperationException();
 using var manifest = JsonDocument.Parse(File.ReadAllBytes(manifestPath));
+var root = manifest.RootElement;
+var boxThreshold = root.TryGetProperty("box_threshold", out var configuredBoxThreshold)
+    ? configuredBoxThreshold.GetDouble()
+    : PaddleDbPostprocessSpec.V6TinyBoxThreshold;
+var minimumShortSide = root.TryGetProperty("minimum_short_side", out var configuredMinimumShortSide)
+    ? configuredMinimumShortSide.GetDouble()
+    : PaddleDbPostprocessSpec.DefaultMinimumShortSide;
+var processor = new PaddleDbQuadPostprocessor(new PaddleDbPostprocessSpec(
+    PaddleDbPostprocessSpec.V6TinyBitmapThreshold,
+    boxThreshold,
+    PaddleDbPostprocessSpec.V6TinyMaxCandidates,
+    PaddleDbPostprocessSpec.V6TinyUnclipRatio,
+    PaddleDbScoreMode.Fast,
+    minimumShortSide));
 var rows = new List<object>();
-var processor = new PaddleDbQuadPostprocessor(PaddleDbPostprocessSpec.V6Tiny());
 
-foreach (var item in manifest.RootElement.GetProperty("cases").EnumerateArray())
+foreach (var item in root.GetProperty("cases").EnumerateArray())
 {
     var name = item.GetProperty("name").GetString() ?? throw new InvalidDataException("Case name missing.");
     var width = item.GetProperty("width").GetInt32();
@@ -52,6 +65,8 @@ foreach (var item in manifest.RootElement.GetProperty("cases").EnumerateArray())
 var report = new
 {
     experiment = "production-core-db-quad-postprocess-replay",
+    configured_box_threshold = boxThreshold,
+    configured_minimum_short_side = minimumShortSide,
     cases = rows,
     real_unity_execution_performed = false,
     gpu_execution_performed = false,
@@ -60,4 +75,4 @@ var report = new
 };
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(args[1])) ?? ".");
 File.WriteAllText(args[1], JsonSerializer.Serialize(report));
-Console.WriteLine(JsonSerializer.Serialize(new { report.experiment, replay_cases = rows.Count }));
+Console.WriteLine(JsonSerializer.Serialize(new { report.experiment, replay_cases = rows.Count, box_threshold = boxThreshold }));
