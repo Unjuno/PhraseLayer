@@ -53,8 +53,8 @@
         "raw_token_count": 6904,
         "effective_token_count": 6905,
         "generated_artifact": "ppocr_keys.txt",
-        "generated_artifact_size_bytes": 27153,
-        "generated_artifact_sha256": "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc",
+        "generated_artifact_size_bytes": 27156,
+        "generated_artifact_sha256": "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd",
         "generated_manifest": "ppocr_keys.manifest.json"
       },
       "format": "onnx",
