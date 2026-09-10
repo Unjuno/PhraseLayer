@@ -21,12 +21,15 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
-        public void BitmapThresholdIsStrictButBoxThresholdAcceptsEquality()
+        public void BitmapThresholdUsesDetectorFloat32DomainAndBoxThresholdAcceptsEquality()
         {
             var spec = PaddleDbPostprocessSpec.V6Tiny();
+            var floatThreshold = (float)spec.BitmapThreshold;
+            var nextFloat = BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(floatThreshold) + 1);
 
             Assert.False(spec.IsForeground(0.2));
-            Assert.True(spec.IsForeground(0.2000001));
+            Assert.False(spec.IsForeground(floatThreshold));
+            Assert.True(spec.IsForeground(nextFloat));
             Assert.False(spec.AcceptBoxScore(0.3999999));
             Assert.True(spec.AcceptBoxScore(0.4));
         }
