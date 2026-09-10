@@ -89,15 +89,16 @@ namespace PhraseLayer.Core.Inputs
     /// minimum-area rectangle -> fast box score -> unclip distance -> expanded rectangle ->
     /// minimum-short-side filter -> destination scaling.
     ///
-    /// Geometry backend note: PaddleOCR uses OpenCV findContours/minAreaRect and pyclipper JT_ROUND.
-    /// This baseline uses 8-connected foreground components, a convex hull, an exact rotating-edge
-    /// minimum-area rectangle, and expands that rectangle by the same unclip distance. For quad mode,
-    /// the downstream minimum-area rectangle of a round offset of a rectangle has the same extents,
-    /// but contour enumeration and raster-score edge behavior are not claimed pixel-identical until
-    /// fixture parity is measured against OpenCV/pyclipper.
+    /// PaddleOCR scores each candidate by converting the min-area rectangle to int32 and filling it
+    /// with OpenCV fillPoly using LINE_8. BoxScoreFast mirrors that edge raster and scanline fill instead
+    /// of using an ideal point-in-polygon test; the distinction changes acceptance near box_thresh.
+    /// Contour extraction/min-area rectangle and round-offset geometry remain dependency-free equivalents
+    /// and are continuously compared with the pinned OpenCV/pyclipper host oracle.
     /// </summary>
     public sealed class PaddleDbQuadPostprocessor
     {
+        private const int OpenCvXyShift = 16;
+        private const long OpenCvXyOne = 1L << OpenCvXyShift;
         private readonly PaddleDbPostprocessSpec spec;
 
         public PaddleDbQuadPostprocessor(PaddleDbPostprocessSpec spec)
@@ -276,30 +277,39 @@ namespace PhraseLayer.Core.Inputs
             return lower;
         }
 
-        private static double BoxScoreFast(float[] probability, int width, int height, IReadOnlyList<DbPoint> box)
+        private static double BoxScoreFast(
+            float[] probability,
+            int width,
+            int height,
+            IReadOnlyList<DbPoint> box)
         {
             var xmin = Clamp((int)Math.Floor(box.Min(point => point.X)), 0, width - 1);
             var xmax = Clamp((int)Math.Ceiling(box.Max(point => point.X)), 0, width - 1);
             var ymin = Clamp((int)Math.Floor(box.Min(point => point.Y)), 0, height - 1);
             var ymax = Clamp((int)Math.Ceiling(box.Max(point => point.Y)), 0, height - 1);
+            var localWidth = checked(xmax - xmin + 1);
+            var localHeight = checked(ymax - ymin + 1);
 
             var integerBox = new DbIntPoint[box.Count];
             for (var index = 0; index < box.Count; index++)
             {
+                // Matches NumPy astype(int32) in PaddleOCR box_score_fast: truncate toward zero
+                // after shifting the floating rectangle into the local bounding rectangle.
                 integerBox[index] = new DbIntPoint(
                     (int)(box[index].X - xmin),
                     (int)(box[index].Y - ymin));
             }
 
+            var mask = BuildOpenCvFillPolyMask(integerBox, localWidth, localHeight);
             double sum = 0.0;
             var count = 0;
-            for (var y = ymin; y <= ymax; y++)
+            for (var localY = 0; localY < localHeight; localY++)
             {
-                for (var x = xmin; x <= xmax; x++)
+                for (var localX = 0; localX < localWidth; localX++)
                 {
-                    if (!PointInPolygonInclusive(x - xmin, y - ymin, integerBox))
+                    if (!mask[(localY * localWidth) + localX])
                         continue;
-                    sum += probability[(y * width) + x];
+                    sum += probability[((ymin + localY) * width) + xmin + localX];
                     count++;
                 }
             }
@@ -307,32 +317,170 @@ namespace PhraseLayer.Core.Inputs
             return count == 0 ? 0.0 : sum / count;
         }
 
-        private static bool PointInPolygonInclusive(double x, double y, IReadOnlyList<DbIntPoint> polygon)
+        /// <summary>
+        /// Mirrors the subset of OpenCV fillPoly used by PaddleOCR box_score_fast:
+        /// one integer polygon, LINE_8, shift=0, no offset. OpenCV first paints each edge with its
+        /// 8-connected LineIterator and then fills inclusive scanline spans between active edges.
+        /// The score polygon is a convex min-area rectangle, so sorting active crossings per row is
+        /// equivalent to OpenCV's active-edge list while avoiding platform dependencies in Core.
+        /// </summary>
+        private static bool[] BuildOpenCvFillPolyMask(
+            IReadOnlyList<DbIntPoint> polygon,
+            int width,
+            int height)
         {
-            var inside = false;
-            for (var i = 0; i < polygon.Count; i++)
-            {
-                var j = (i + polygon.Count - 1) % polygon.Count;
-                var a = polygon[j];
-                var b = polygon[i];
-                if (PointOnSegment(x, y, a, b))
-                    return true;
+            if (polygon == null) throw new ArgumentNullException(nameof(polygon));
+            if (polygon.Count < 3) throw new ArgumentException("A fill polygon needs at least three points.", nameof(polygon));
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
 
-                var intersects = ((a.Y > y) != (b.Y > y)) &&
-                                 (x < ((double)(b.X - a.X) * (y - a.Y) / (b.Y - a.Y)) + a.X);
-                if (intersects)
-                    inside = !inside;
+            var mask = new bool[checked(width * height)];
+            var edges = new List<DbPolyEdge>(polygon.Count);
+            var previous = polygon[polygon.Count - 1];
+            for (var index = 0; index < polygon.Count; index++)
+            {
+                var current = polygon[index];
+                RasterizeOpenCvLine8(previous, current, width, height, mask);
+
+                if (previous.Y != current.Y)
+                {
+                    var denominator = (long)current.Y - previous.Y;
+                    var dx = (((long)current.X - previous.X) << OpenCvXyShift) / denominator;
+                    if (previous.Y < current.Y)
+                    {
+                        edges.Add(new DbPolyEdge(
+                            previous.Y,
+                            current.Y,
+                            (long)previous.X << OpenCvXyShift,
+                            dx));
+                    }
+                    else
+                    {
+                        edges.Add(new DbPolyEdge(
+                            current.Y,
+                            previous.Y,
+                            (long)current.X << OpenCvXyShift,
+                            dx));
+                    }
+                }
+
+                previous = current;
             }
-            return inside;
+
+            if (edges.Count < 2)
+                return mask;
+
+            var minimumY = Math.Max(0, edges.Min(edge => edge.Y0));
+            var maximumYExclusive = Math.Min(height, edges.Max(edge => edge.Y1));
+            var activeX = new List<long>(edges.Count);
+            for (var y = minimumY; y < maximumYExclusive; y++)
+            {
+                activeX.Clear();
+                for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
+                {
+                    var edge = edges[edgeIndex];
+                    if (y < edge.Y0 || y >= edge.Y1)
+                        continue;
+                    activeX.Add(edge.X + ((long)y - edge.Y0) * edge.Dx);
+                }
+
+                activeX.Sort();
+                for (var crossing = 0; crossing + 1 < activeX.Count; crossing += 2)
+                {
+                    var left = activeX[crossing];
+                    var right = activeX[crossing + 1];
+                    if (left > right)
+                    {
+                        var swap = left;
+                        left = right;
+                        right = swap;
+                    }
+
+                    var x1 = (int)((left + OpenCvXyOne - 1) >> OpenCvXyShift);
+                    var x2 = (int)(right >> OpenCvXyShift);
+                    if (x2 < 0 || x1 >= width)
+                        continue;
+                    x1 = Clamp(x1, 0, width - 1);
+                    x2 = Clamp(x2, 0, width - 1);
+                    for (var x = x1; x <= x2; x++)
+                        mask[(y * width) + x] = true;
+                }
+            }
+
+            return mask;
         }
 
-        private static bool PointOnSegment(double x, double y, DbIntPoint a, DbIntPoint b)
+        private static void RasterizeOpenCvLine8(
+            DbIntPoint first,
+            DbIntPoint second,
+            int width,
+            int height,
+            bool[] mask)
         {
-            var cross = ((x - a.X) * (b.Y - a.Y)) - ((y - a.Y) * (b.X - a.X));
-            if (Math.Abs(cross) > 1e-9)
-                return false;
-            return x >= Math.Min(a.X, b.X) && x <= Math.Max(a.X, b.X) &&
-                   y >= Math.Min(a.Y, b.Y) && y <= Math.Max(a.Y, b.Y);
+            var x1 = first.X;
+            var y1 = first.Y;
+            var x2 = second.X;
+            var y2 = second.Y;
+            var deltaX = 1;
+            var deltaY = 1;
+            var dx = x2 - x1;
+            var dy = y2 - y1;
+
+            // OpenCV LineIterator(..., connectivity=8, leftToRight=true).
+            if (dx < 0)
+            {
+                dx = -dx;
+                dy = -dy;
+                x1 = second.X;
+                y1 = second.Y;
+            }
+            if (dy < 0)
+            {
+                dy = -dy;
+                deltaY = -1;
+            }
+
+            var vertical = dy > dx;
+            if (vertical)
+            {
+                var deltaSwap = dx;
+                dx = dy;
+                dy = deltaSwap;
+                deltaSwap = deltaX;
+                deltaX = deltaY;
+                deltaY = deltaSwap;
+            }
+
+            var error = dx - (dy + dy);
+            var plusDelta = dx + dx;
+            var minusDelta = -(dy + dy);
+            var minusShift = deltaX;
+            var plusShift = 0;
+            var minusStep = 0;
+            var plusStep = deltaY;
+            var count = dx + 1;
+            if (vertical)
+            {
+                var swap = plusStep;
+                plusStep = plusShift;
+                plusShift = swap;
+                swap = minusStep;
+                minusStep = minusShift;
+                minusShift = swap;
+            }
+
+            var x = x1;
+            var y = y1;
+            for (var index = 0; index < count; index++)
+            {
+                if (x >= 0 && x < width && y >= 0 && y < height)
+                    mask[(y * width) + x] = true;
+
+                var errorMask = error < 0 ? -1 : 0;
+                error += minusDelta + (plusDelta & errorMask);
+                x += minusShift + (plusShift & errorMask);
+                y += minusStep + (plusStep & errorMask);
+            }
         }
 
         private static ImageQuad ScaleQuad(
@@ -380,8 +528,26 @@ namespace PhraseLayer.Core.Inputs
                 X = x;
                 Y = y;
             }
+
             public int X { get; }
             public int Y { get; }
+        }
+
+        private readonly struct DbPolyEdge
+        {
+            public DbPolyEdge(int y0, int y1, long x, long dx)
+            {
+                if (y0 >= y1) throw new ArgumentException("Polygon edge y0 must be less than y1.");
+                Y0 = y0;
+                Y1 = y1;
+                X = x;
+                Dx = dx;
+            }
+
+            public int Y0 { get; }
+            public int Y1 { get; }
+            public long X { get; }
+            public long Dx { get; }
         }
 
         private readonly struct DbPoint : IEquatable<DbPoint>
@@ -391,6 +557,7 @@ namespace PhraseLayer.Core.Inputs
                 X = x;
                 Y = y;
             }
+
             public double X { get; }
             public double Y { get; }
 
