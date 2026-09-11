@@ -428,6 +428,13 @@ namespace PhraseLayer.Core.Inputs
             var y1 = first.Y;
             var x2 = second.X;
             var y2 = second.Y;
+
+            // OpenCV LineIterator clips integer endpoints to the image rectangle before it initializes
+            // the 8-connected Bresenham state. Running the original out-of-bounds segment and merely
+            // discarding exterior pixels is not equivalent and changes fillPoly's edge pixels.
+            if (!ClipOpenCvLine(width, height, ref x1, ref y1, ref x2, ref y2))
+                return;
+
             var deltaX = 1;
             var deltaY = 1;
             var dx = x2 - x1;
@@ -438,8 +445,12 @@ namespace PhraseLayer.Core.Inputs
             {
                 dx = -dx;
                 dy = -dy;
-                x1 = second.X;
-                y1 = second.Y;
+                var swapX = x1;
+                x1 = x2;
+                x2 = swapX;
+                var swapY = y1;
+                y1 = y2;
+                y2 = swapY;
             }
             if (dy < 0)
             {
@@ -488,6 +499,83 @@ namespace PhraseLayer.Core.Inputs
                 x += minusShift + (plusShift & errorMask);
                 y += minusStep + (plusStep & errorMask);
             }
+        }
+
+        /// <summary>
+        /// Mirrors OpenCV clipLine(Size2l) for integer LINE_8 endpoints. The casts from the floating
+        /// intersection calculation intentionally truncate toward zero, matching C++ int64 conversion.
+        /// </summary>
+        private static bool ClipOpenCvLine(
+            int width,
+            int height,
+            ref int x1,
+            ref int y1,
+            ref int x2,
+            ref int y2)
+        {
+            if (width <= 0 || height <= 0)
+                return false;
+
+            long firstX = x1;
+            long firstY = y1;
+            long secondX = x2;
+            long secondY = y2;
+            var right = (long)width - 1;
+            var bottom = (long)height - 1;
+
+            var firstCode = ComputeOpenCvClipCode(firstX, firstY, right, bottom);
+            var secondCode = ComputeOpenCvClipCode(secondX, secondY, right, bottom);
+            if ((firstCode & secondCode) == 0 && (firstCode | secondCode) != 0)
+            {
+                if ((firstCode & 12) != 0)
+                {
+                    var targetY = firstCode < 8 ? 0L : bottom;
+                    firstX += (long)((double)(targetY - firstY) * (secondX - firstX) / (secondY - firstY));
+                    firstY = targetY;
+                    firstCode = (firstX < 0 ? 1 : 0) + (firstX > right ? 2 : 0);
+                }
+                if ((secondCode & 12) != 0)
+                {
+                    var targetY = secondCode < 8 ? 0L : bottom;
+                    secondX += (long)((double)(targetY - secondY) * (secondX - firstX) / (secondY - firstY));
+                    secondY = targetY;
+                    secondCode = (secondX < 0 ? 1 : 0) + (secondX > right ? 2 : 0);
+                }
+                if ((firstCode & secondCode) == 0 && (firstCode | secondCode) != 0)
+                {
+                    if (firstCode != 0)
+                    {
+                        var targetX = firstCode == 1 ? 0L : right;
+                        firstY += (long)((double)(targetX - firstX) * (secondY - firstY) / (secondX - firstX));
+                        firstX = targetX;
+                        firstCode = 0;
+                    }
+                    if (secondCode != 0)
+                    {
+                        var targetX = secondCode == 1 ? 0L : right;
+                        secondY += (long)((double)(targetX - secondX) * (secondY - firstY) / (secondX - firstX));
+                        secondX = targetX;
+                        secondCode = 0;
+                    }
+                }
+            }
+
+            if ((firstCode | secondCode) != 0)
+                return false;
+
+            x1 = checked((int)firstX);
+            y1 = checked((int)firstY);
+            x2 = checked((int)secondX);
+            y2 = checked((int)secondY);
+            return true;
+        }
+
+        private static int ComputeOpenCvClipCode(long x, long y, long right, long bottom)
+        {
+            return (x < 0 ? 1 : 0)
+                + (x > right ? 2 : 0)
+                + (y < 0 ? 4 : 0)
+                + (y > bottom ? 8 : 0);
         }
 
         private static ImageQuad ScaleQuad(
