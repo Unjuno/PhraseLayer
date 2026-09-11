@@ -35,7 +35,11 @@ namespace PhraseLayer.Core.Pipeline
             SemanticDocument? document)
         {
             SourceText = sourceText ?? throw new ArgumentNullException(nameof(sourceText));
-            Segments = segments ?? throw new ArgumentNullException(nameof(segments));
+            if (segments == null) throw new ArgumentNullException(nameof(segments));
+            var frozenSegments = segments.ToArray();
+            if (frozenSegments.Any(segment => segment == null))
+                throw new ArgumentException("Language plan segments cannot contain null items.", nameof(segments));
+            Segments = Array.AsReadOnly(frozenSegments);
             Assistance = assistance ?? throw new ArgumentNullException(nameof(assistance));
             if (document != null && !string.Equals(document.SourceText, sourceText, StringComparison.Ordinal))
                 throw new ArgumentException("Semantic document source text must match the plan source text.", nameof(document));
@@ -52,6 +56,7 @@ namespace PhraseLayer.Core.Pipeline
     /// <summary>
     /// Builds mixed-language plans while preserving the caller synchronization context across translation awaits.
     /// Platform translation adapters may be bound to a Unity/render thread just like OCR adapters.
+    /// Cancellation is checked at the boundary even when an adapter ignores its token or no spans need translation.
     /// </summary>
     public sealed class LanguagePipeline
     {
@@ -60,16 +65,26 @@ namespace PhraseLayer.Core.Pipeline
         private readonly AssistancePlanner _planner;
         private readonly ITranslationEngine _translator;
         public LanguagePipeline(ISemanticSegmenter segmenter, ILearnerModel learner, AssistancePlanner planner, ITranslationEngine translator)
-        { _segmenter = segmenter; _learner = learner; _planner = planner; _translator = translator; }
+        {
+            _segmenter = segmenter ?? throw new ArgumentNullException(nameof(segmenter));
+            _learner = learner ?? throw new ArgumentNullException(nameof(learner));
+            _planner = planner ?? throw new ArgumentNullException(nameof(planner));
+            _translator = translator ?? throw new ArgumentNullException(nameof(translator));
+        }
 
         public async Task<MixedLanguagePlan> PlanAsync(string sourceText, AssistancePolicy policy, string? context = null, CancellationToken cancellationToken = default(CancellationToken))
         {
+            if (sourceText == null) throw new ArgumentNullException(nameof(sourceText));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+            cancellationToken.ThrowIfCancellationRequested();
             var document = _segmenter.Segment(sourceText);
+            cancellationToken.ThrowIfCancellationRequested();
             var assistance = _planner.Plan(document, _learner, policy);
             var segments = new List<MixedLanguageSegment>();
             var cursor = 0;
             foreach (var decision in assistance.Decisions.OrderBy(item => item.Unit.Start))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var unit = decision.Unit;
                 if (unit.Start < cursor) throw new InvalidOperationException("Assistance decisions overlap.");
                 if (unit.Start > cursor)
@@ -78,10 +93,12 @@ namespace PhraseLayer.Core.Pipeline
                     segments.Add(new MixedLanguageSegment(untouched, untouched, false, null));
                 }
                 var translated = await _translator.TranslateAsync(unit.Text, context ?? sourceText, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (string.IsNullOrWhiteSpace(translated)) translated = unit.Text;
                 segments.Add(new MixedLanguageSegment(unit.Text, translated, true, unit));
                 cursor = unit.End;
             }
+            cancellationToken.ThrowIfCancellationRequested();
             if (cursor < sourceText.Length)
             {
                 var rest = sourceText.Substring(cursor);
@@ -153,8 +170,9 @@ namespace PhraseLayer.Core.Pipeline
         {
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (policy == null) throw new ArgumentNullException(nameof(policy));
-
+            cancellationToken.ThrowIfCancellationRequested();
             var observation = await _ocr.RecognizeAsync(frame, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             return await _observations.ProcessSpatialAsync(frame, observation, policy, cancellationToken);
         }
 
@@ -165,8 +183,9 @@ namespace PhraseLayer.Core.Pipeline
         {
             if (frame == null) throw new ArgumentNullException(nameof(frame));
             if (policy == null) throw new ArgumentNullException(nameof(policy));
-
+            cancellationToken.ThrowIfCancellationRequested();
             var observation = await _ocr.RecognizeAsync(frame, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             return await _observations.ProcessAlignedAsync(frame, observation, policy, cancellationToken);
         }
     }
@@ -174,10 +193,18 @@ namespace PhraseLayer.Core.Pipeline
     public sealed class ListenModePipeline
     {
         private readonly IAsrEngine _asr; private readonly LanguagePipeline _language;
-        public ListenModePipeline(IAsrEngine asr, LanguagePipeline language) { _asr = asr; _language = language; }
+        public ListenModePipeline(IAsrEngine asr, LanguagePipeline language)
+        {
+            _asr = asr ?? throw new ArgumentNullException(nameof(asr));
+            _language = language ?? throw new ArgumentNullException(nameof(language));
+        }
         public async Task<MixedLanguagePlan> ProcessAsync(AudioChunk audio, AssistancePolicy policy, CancellationToken cancellationToken = default(CancellationToken))
         {
+            if (audio == null) throw new ArgumentNullException(nameof(audio));
+            if (policy == null) throw new ArgumentNullException(nameof(policy));
+            cancellationToken.ThrowIfCancellationRequested();
             var observation = await _asr.TranscribeAsync(audio, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             return await _language.PlanAsync(observation.Text, policy, observation.Text, cancellationToken);
         }
     }

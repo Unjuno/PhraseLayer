@@ -33,28 +33,10 @@ namespace UnityEngine
         public TextAreaAttribute(int minLines, int maxLines) { }
     }
 
-    public enum FontStyle
-    {
-        Normal = 0,
-        Bold = 1
-    }
-
-    public enum TextAnchor
-    {
-        MiddleCenter = 0
-    }
-
-    public enum TextAlignment
-    {
-        Center = 0
-    }
-
-    public enum QueryTriggerInteraction
-    {
-        UseGlobal = 0,
-        Ignore = 1,
-        Collide = 2
-    }
+    public enum FontStyle { Normal = 0, Bold = 1 }
+    public enum TextAnchor { MiddleCenter = 0 }
+    public enum TextAlignment { Center = 0 }
+    public enum QueryTriggerInteraction { UseGlobal = 0, Ignore = 1, Collide = 2 }
 
     public struct LayerMask
     {
@@ -82,6 +64,33 @@ namespace UnityEngine
     public struct Quaternion
     {
         public static Quaternion LookRotation(Vector3 forward, Vector3 upwards) => new Quaternion();
+    }
+
+    public struct Pose
+    {
+        public Pose(Vector3 position, Quaternion rotation)
+        {
+            this.position = position;
+            this.rotation = rotation;
+        }
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
+    public struct Color
+    {
+        public Color(float r, float g, float b, float a)
+        {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+        public float r;
+        public float g;
+        public float b;
+        public float a;
+        public static Color white => new Color(1f, 1f, 1f, 1f);
     }
 
     public struct Ray
@@ -129,7 +138,29 @@ namespace UnityEngine
         public static T Load<T>(string path) where T : Object => null;
     }
 
-    public class Material : Object { }
+    public class Shader : Object
+    {
+        public string name { get; set; }
+        public static Shader Find(string name) => new Shader { name = name };
+    }
+
+    public class Material : Object
+    {
+        public Material() { }
+        public Material(Shader shader) { this.shader = shader; }
+        public Shader shader { get; set; }
+        public Color color { get; set; }
+    }
+
+    public class Mesh : Object
+    {
+        public string name { get; set; }
+        public Vector3[] vertices { get; set; } = Array.Empty<Vector3>();
+        public Vector3[] normals { get; set; } = Array.Empty<Vector3>();
+        public Vector2[] uv { get; set; } = Array.Empty<Vector2>();
+        public int[] triangles { get; set; } = Array.Empty<int>();
+        public void RecalculateBounds() { }
+    }
 
     public class Font : Object
     {
@@ -142,6 +173,11 @@ namespace UnityEngine
     }
 
     public class MeshRenderer : Renderer { }
+
+    public class MeshFilter : Component
+    {
+        public Mesh sharedMesh { get; set; }
+    }
 
     public class TextMesh : Component
     {
@@ -162,7 +198,6 @@ namespace UnityEngine
             this.width = width;
             this.height = height;
         }
-
         public float x;
         public float y;
         public float width;
@@ -241,6 +276,7 @@ namespace UnityEngine
     public static class Debug
     {
         public static void Log(object message) { }
+        public static void Log(object message, Object context) { }
         public static void LogException(Exception exception) { }
         public static void LogException(Exception exception, Object context) { }
         public static void DrawLine(Vector3 start, Vector3 end) { }
@@ -249,30 +285,94 @@ namespace UnityEngine
     public static class Application
     {
         public static string dataPath => "Assets";
+        public static string unityVersion => "6000.0.66f2";
     }
 }
 
 namespace UnityEngine.SceneManagement
 {
     public struct Scene { }
+    public enum NewSceneMode { Single = 0 }
+}
 
-    public enum NewSceneMode
+namespace UnityEditor.Build
+{
+    public readonly struct NamedBuildTarget
     {
-        Single = 0
+        private NamedBuildTarget(string name) { Name = name; }
+        public string Name { get; }
+        public static NamedBuildTarget Android => new NamedBuildTarget("Android");
+    }
+}
+
+namespace UnityEditor.Build.Reporting
+{
+    public enum BuildResult
+    {
+        Unknown = 0,
+        Succeeded = 1,
+        Failed = 2,
+        Cancelled = 3
+    }
+
+    public struct BuildSummary
+    {
+        public BuildResult result;
+        public int totalErrors;
+        public int totalWarnings;
+        public ulong totalSize;
+        public TimeSpan totalTime;
+    }
+
+    public sealed class BuildReport
+    {
+        public BuildSummary summary { get; set; } = new BuildSummary
+        {
+            result = BuildResult.Succeeded,
+            totalTime = TimeSpan.Zero
+        };
     }
 }
 
 namespace UnityEditor
 {
+    using UnityEditor.Build;
+    using UnityEditor.Build.Reporting;
+
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class MenuItem : Attribute
     {
         public MenuItem(string itemName) { }
     }
 
+    [Flags]
+    public enum ImportAssetOptions { Default = 0, ForceUpdate = 1 }
+    public enum BuildTarget { Android = 0 }
+    public enum BuildTargetGroup { Android = 0 }
+    public enum BuildOptions { None = 0 }
+    public enum ScriptingImplementation { Mono2x = 0, IL2CPP = 1 }
+    [Flags]
+    public enum AndroidArchitecture { None = 0, ARM64 = 1 }
+    public enum AndroidBuildSystem { Gradle = 0 }
+
+    public sealed class BuildPlayerOptions
+    {
+        public string[] scenes { get; set; } = Array.Empty<string>();
+        public string locationPathName { get; set; }
+        public BuildTarget target { get; set; }
+        public BuildTargetGroup targetGroup { get; set; }
+        public BuildOptions options { get; set; }
+    }
+
     public sealed class EditorBuildSettingsScene
     {
-        public EditorBuildSettingsScene(string path, bool enabled) { }
+        public EditorBuildSettingsScene(string path, bool enabled)
+        {
+            this.path = path;
+            this.enabled = enabled;
+        }
+        public string path { get; set; }
+        public bool enabled { get; set; }
     }
 
     public static class EditorBuildSettings
@@ -280,9 +380,52 @@ namespace UnityEditor
         public static EditorBuildSettingsScene[] scenes { get; set; } = Array.Empty<EditorBuildSettingsScene>();
     }
 
+    public static class BuildPipeline
+    {
+        public static bool IsBuildTargetSupported(BuildTargetGroup group, BuildTarget target) => true;
+        public static BuildReport BuildPlayer(BuildPlayerOptions options) => new BuildReport();
+    }
+
+    public static class EditorUserBuildSettings
+    {
+        public static BuildTarget activeBuildTarget { get; set; } = BuildTarget.Android;
+        public static bool buildAppBundle { get; set; }
+        public static AndroidBuildSystem androidBuildSystem { get; set; }
+        public static bool SwitchActiveBuildTarget(BuildTargetGroup group, BuildTarget target)
+        {
+            activeBuildTarget = target;
+            return true;
+        }
+    }
+
+    public static class PlayerSettings
+    {
+        private static string applicationIdentifier = "com.unjuno.phraselayer";
+        private static ScriptingImplementation scriptingBackend = ScriptingImplementation.IL2CPP;
+
+        public static void SetApplicationIdentifier(NamedBuildTarget target, string value) => applicationIdentifier = value;
+        public static string GetApplicationIdentifier(NamedBuildTarget target) => applicationIdentifier;
+        public static void SetScriptingBackend(NamedBuildTarget target, ScriptingImplementation value) => scriptingBackend = value;
+        public static ScriptingImplementation GetScriptingBackend(NamedBuildTarget target) => scriptingBackend;
+
+        public static class Android
+        {
+            public static AndroidArchitecture targetArchitectures { get; set; } = AndroidArchitecture.ARM64;
+        }
+    }
+
     public static class AssetDatabase
     {
         public static void SaveAssets() { }
+        public static void Refresh() { }
+        public static void ImportAsset(string path, ImportAssetOptions options = ImportAssetOptions.Default) { }
+        public static T LoadAssetAtPath<T>(string path) where T : UnityEngine.Object, new() => new T();
+        public static void CreateAsset(UnityEngine.Object asset, string path) { }
+    }
+
+    public static class EditorUtility
+    {
+        public static void SetDirty(UnityEngine.Object target) { }
     }
 
     public static class EditorApplication
@@ -295,14 +438,12 @@ namespace UnityEditor.SceneManagement
 {
     using UnityEngine.SceneManagement;
 
-    public enum NewSceneSetup
-    {
-        DefaultGameObjects = 0
-    }
+    public enum NewSceneSetup { DefaultGameObjects = 0 }
 
     public static class EditorSceneManager
     {
         public static Scene NewScene(NewSceneSetup setup, NewSceneMode mode) => new Scene();
         public static bool SaveScene(Scene scene, string path) => true;
+        public static bool SaveOpenScenes() => true;
     }
 }

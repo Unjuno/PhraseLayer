@@ -86,18 +86,19 @@ namespace PhraseLayer.Core.Inputs
     /// Dependency-free DB quad postprocessor for Quest/Unity use.
     ///
     /// PaddleOCR's orchestration is preserved: prediction threshold -> candidate geometry ->
-    /// minimum-area rectangle -> fast box score -> unclip distance -> expanded rectangle ->
-    /// minimum-short-side filter -> destination scaling.
+    /// OpenCV-compatible float32 minimum-area rectangle -> fast box score -> unclip distance ->
+    /// expanded rectangle -> minimum-short-side filter -> destination scaling.
     ///
-    /// Geometry backend note: PaddleOCR uses OpenCV findContours/minAreaRect and pyclipper JT_ROUND.
-    /// This baseline uses 8-connected foreground components, a convex hull, an exact rotating-edge
-    /// minimum-area rectangle, and expands that rectangle by the same unclip distance. For quad mode,
-    /// the downstream minimum-area rectangle of a round offset of a rectangle has the same extents,
-    /// but contour enumeration and raster-score edge behavior are not claimed pixel-identical until
-    /// fixture parity is measured against OpenCV/pyclipper.
+    /// PaddleOCR scores each candidate by converting the float32 OpenCV min-area rectangle to int32 and filling it
+    /// with OpenCV fillPoly using LINE_8. BoxScoreFast mirrors the float32 boundary, edge raster and scanline fill
+    /// instead of using idealized double-precision polygon tests; these distinctions change acceptance near box_thresh.
+    /// Round-offset geometry remains dependency-free and is continuously compared with the pinned
+    /// OpenCV/pyclipper host oracle.
     /// </summary>
     public sealed class PaddleDbQuadPostprocessor
     {
+        private const int OpenCvXyShift = 16;
+        private const long OpenCvXyOne = 1L << OpenCvXyShift;
         private readonly PaddleDbPostprocessSpec spec;
 
         public PaddleDbQuadPostprocessor(PaddleDbPostprocessSpec spec)
@@ -276,30 +277,46 @@ namespace PhraseLayer.Core.Inputs
             return lower;
         }
 
-        private static double BoxScoreFast(float[] probability, int width, int height, IReadOnlyList<DbPoint> box)
+        private static double BoxScoreFast(
+            float[] probability,
+            int width,
+            int height,
+            IReadOnlyList<DbPoint> box)
         {
-            var xmin = Clamp((int)Math.Floor(box.Min(point => point.X)), 0, width - 1);
-            var xmax = Clamp((int)Math.Ceiling(box.Max(point => point.X)), 0, width - 1);
-            var ymin = Clamp((int)Math.Floor(box.Min(point => point.Y)), 0, height - 1);
-            var ymax = Clamp((int)Math.Ceiling(box.Max(point => point.Y)), 0, height - 1);
-
-            var integerBox = new DbIntPoint[box.Count];
+            // cv2.boxPoints returns float32. Preserve that numerical boundary before PaddleOCR's
+            // floor/ceil ROI selection and astype(int32); carrying mathematically identical corners in
+            // double can put an edge on the other side of an integer pixel and change box_thresh acceptance.
+            var scoringBox = new DbPoint[box.Count];
             for (var index = 0; index < box.Count; index++)
+                scoringBox[index] = new DbPoint((float)box[index].X, (float)box[index].Y);
+
+            var xmin = Clamp((int)Math.Floor(scoringBox.Min(point => point.X)), 0, width - 1);
+            var xmax = Clamp((int)Math.Ceiling(scoringBox.Max(point => point.X)), 0, width - 1);
+            var ymin = Clamp((int)Math.Floor(scoringBox.Min(point => point.Y)), 0, height - 1);
+            var ymax = Clamp((int)Math.Ceiling(scoringBox.Max(point => point.Y)), 0, height - 1);
+            var localWidth = checked(xmax - xmin + 1);
+            var localHeight = checked(ymax - ymin + 1);
+
+            var integerBox = new DbIntPoint[scoringBox.Length];
+            for (var index = 0; index < scoringBox.Length; index++)
             {
+                // Matches NumPy astype(int32) in PaddleOCR box_score_fast: truncate toward zero
+                // after shifting the float32 rectangle into the local bounding rectangle.
                 integerBox[index] = new DbIntPoint(
-                    (int)(box[index].X - xmin),
-                    (int)(box[index].Y - ymin));
+                    (int)(scoringBox[index].X - xmin),
+                    (int)(scoringBox[index].Y - ymin));
             }
 
+            var mask = BuildOpenCvFillPolyMask(integerBox, localWidth, localHeight);
             double sum = 0.0;
             var count = 0;
-            for (var y = ymin; y <= ymax; y++)
+            for (var localY = 0; localY < localHeight; localY++)
             {
-                for (var x = xmin; x <= xmax; x++)
+                for (var localX = 0; localX < localWidth; localX++)
                 {
-                    if (!PointInPolygonInclusive(x - xmin, y - ymin, integerBox))
+                    if (!mask[(localY * localWidth) + localX])
                         continue;
-                    sum += probability[(y * width) + x];
+                    sum += probability[((ymin + localY) * width) + xmin + localX];
                     count++;
                 }
             }
@@ -307,32 +324,258 @@ namespace PhraseLayer.Core.Inputs
             return count == 0 ? 0.0 : sum / count;
         }
 
-        private static bool PointInPolygonInclusive(double x, double y, IReadOnlyList<DbIntPoint> polygon)
+        /// <summary>
+        /// Mirrors the subset of OpenCV fillPoly used by PaddleOCR box_score_fast:
+        /// one integer polygon, LINE_8, shift=0, no offset. OpenCV first paints each edge with its
+        /// 8-connected LineIterator and then fills inclusive scanline spans between active edges.
+        /// The score polygon is a convex min-area rectangle, so sorting active crossings per row is
+        /// equivalent to OpenCV's active-edge list while avoiding platform dependencies in Core.
+        /// </summary>
+        private static bool[] BuildOpenCvFillPolyMask(
+            IReadOnlyList<DbIntPoint> polygon,
+            int width,
+            int height)
         {
-            var inside = false;
-            for (var i = 0; i < polygon.Count; i++)
-            {
-                var j = (i + polygon.Count - 1) % polygon.Count;
-                var a = polygon[j];
-                var b = polygon[i];
-                if (PointOnSegment(x, y, a, b))
-                    return true;
+            if (polygon == null) throw new ArgumentNullException(nameof(polygon));
+            if (polygon.Count < 3) throw new ArgumentException("A fill polygon needs at least three points.", nameof(polygon));
+            if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
 
-                var intersects = ((a.Y > y) != (b.Y > y)) &&
-                                 (x < ((double)(b.X - a.X) * (y - a.Y) / (b.Y - a.Y)) + a.X);
-                if (intersects)
-                    inside = !inside;
+            var mask = new bool[checked(width * height)];
+            var edges = new List<DbPolyEdge>(polygon.Count);
+            var previous = polygon[polygon.Count - 1];
+            for (var index = 0; index < polygon.Count; index++)
+            {
+                var current = polygon[index];
+                RasterizeOpenCvLine8(previous, current, width, height, mask);
+
+                if (previous.Y != current.Y)
+                {
+                    var denominator = (long)current.Y - previous.Y;
+                    var dx = (((long)current.X - previous.X) << OpenCvXyShift) / denominator;
+                    if (previous.Y < current.Y)
+                    {
+                        edges.Add(new DbPolyEdge(
+                            previous.Y,
+                            current.Y,
+                            (long)previous.X << OpenCvXyShift,
+                            dx));
+                    }
+                    else
+                    {
+                        edges.Add(new DbPolyEdge(
+                            current.Y,
+                            previous.Y,
+                            (long)current.X << OpenCvXyShift,
+                            dx));
+                    }
+                }
+
+                previous = current;
             }
-            return inside;
+
+            if (edges.Count < 2)
+                return mask;
+
+            var minimumY = Math.Max(0, edges.Min(edge => edge.Y0));
+            var maximumYExclusive = Math.Min(height, edges.Max(edge => edge.Y1));
+            var activeX = new List<long>(edges.Count);
+            for (var y = minimumY; y < maximumYExclusive; y++)
+            {
+                activeX.Clear();
+                for (var edgeIndex = 0; edgeIndex < edges.Count; edgeIndex++)
+                {
+                    var edge = edges[edgeIndex];
+                    if (y < edge.Y0 || y >= edge.Y1)
+                        continue;
+                    activeX.Add(edge.X + ((long)y - edge.Y0) * edge.Dx);
+                }
+
+                activeX.Sort();
+                for (var crossing = 0; crossing + 1 < activeX.Count; crossing += 2)
+                {
+                    var left = activeX[crossing];
+                    var right = activeX[crossing + 1];
+                    if (left > right)
+                    {
+                        var swap = left;
+                        left = right;
+                        right = swap;
+                    }
+
+                    var x1 = (int)((left + OpenCvXyOne - 1) >> OpenCvXyShift);
+                    var x2 = (int)(right >> OpenCvXyShift);
+                    if (x2 < 0 || x1 >= width)
+                        continue;
+                    x1 = Clamp(x1, 0, width - 1);
+                    x2 = Clamp(x2, 0, width - 1);
+                    for (var x = x1; x <= x2; x++)
+                        mask[(y * width) + x] = true;
+                }
+            }
+
+            return mask;
         }
 
-        private static bool PointOnSegment(double x, double y, DbIntPoint a, DbIntPoint b)
+        private static void RasterizeOpenCvLine8(
+            DbIntPoint first,
+            DbIntPoint second,
+            int width,
+            int height,
+            bool[] mask)
         {
-            var cross = ((x - a.X) * (b.Y - a.Y)) - ((y - a.Y) * (b.X - a.X));
-            if (Math.Abs(cross) > 1e-9)
+            var x1 = first.X;
+            var y1 = first.Y;
+            var x2 = second.X;
+            var y2 = second.Y;
+
+            // OpenCV LineIterator clips integer endpoints to the image rectangle before it initializes
+            // the 8-connected Bresenham state. Running the original out-of-bounds segment and merely
+            // discarding exterior pixels is not equivalent and changes fillPoly's edge pixels.
+            if (!ClipOpenCvLine(width, height, ref x1, ref y1, ref x2, ref y2))
+                return;
+
+            var deltaX = 1;
+            var deltaY = 1;
+            var dx = x2 - x1;
+            var dy = y2 - y1;
+
+            // OpenCV LineIterator(..., connectivity=8, leftToRight=true).
+            if (dx < 0)
+            {
+                dx = -dx;
+                dy = -dy;
+                var swapX = x1;
+                x1 = x2;
+                x2 = swapX;
+                var swapY = y1;
+                y1 = y2;
+                y2 = swapY;
+            }
+            if (dy < 0)
+            {
+                dy = -dy;
+                deltaY = -1;
+            }
+
+            var vertical = dy > dx;
+            if (vertical)
+            {
+                var deltaSwap = dx;
+                dx = dy;
+                dy = deltaSwap;
+                deltaSwap = deltaX;
+                deltaX = deltaY;
+                deltaY = deltaSwap;
+            }
+
+            var error = dx - (dy + dy);
+            var plusDelta = dx + dx;
+            var minusDelta = -(dy + dy);
+            var minusShift = deltaX;
+            var plusShift = 0;
+            var minusStep = 0;
+            var plusStep = deltaY;
+            var count = dx + 1;
+            if (vertical)
+            {
+                var swap = plusStep;
+                plusStep = plusShift;
+                plusShift = swap;
+                swap = minusStep;
+                minusStep = minusShift;
+                minusShift = swap;
+            }
+
+            var x = x1;
+            var y = y1;
+            for (var index = 0; index < count; index++)
+            {
+                if (x >= 0 && x < width && y >= 0 && y < height)
+                    mask[(y * width) + x] = true;
+
+                var errorMask = error < 0 ? -1 : 0;
+                error += minusDelta + (plusDelta & errorMask);
+                x += minusShift + (plusShift & errorMask);
+                y += minusStep + (plusStep & errorMask);
+            }
+        }
+
+        /// <summary>
+        /// Mirrors OpenCV clipLine(Size2l) for integer LINE_8 endpoints. The casts from the floating
+        /// intersection calculation intentionally truncate toward zero, matching C++ int64 conversion.
+        /// </summary>
+        private static bool ClipOpenCvLine(
+            int width,
+            int height,
+            ref int x1,
+            ref int y1,
+            ref int x2,
+            ref int y2)
+        {
+            if (width <= 0 || height <= 0)
                 return false;
-            return x >= Math.Min(a.X, b.X) && x <= Math.Max(a.X, b.X) &&
-                   y >= Math.Min(a.Y, b.Y) && y <= Math.Max(a.Y, b.Y);
+
+            long firstX = x1;
+            long firstY = y1;
+            long secondX = x2;
+            long secondY = y2;
+            var right = (long)width - 1;
+            var bottom = (long)height - 1;
+
+            var firstCode = ComputeOpenCvClipCode(firstX, firstY, right, bottom);
+            var secondCode = ComputeOpenCvClipCode(secondX, secondY, right, bottom);
+            if ((firstCode & secondCode) == 0 && (firstCode | secondCode) != 0)
+            {
+                if ((firstCode & 12) != 0)
+                {
+                    var targetY = firstCode < 8 ? 0L : bottom;
+                    firstX += (long)((double)(targetY - firstY) * (secondX - firstX) / (secondY - firstY));
+                    firstY = targetY;
+                    firstCode = (firstX < 0 ? 1 : 0) + (firstX > right ? 2 : 0);
+                }
+                if ((secondCode & 12) != 0)
+                {
+                    var targetY = secondCode < 8 ? 0L : bottom;
+                    secondX += (long)((double)(targetY - secondY) * (secondX - firstX) / (secondY - firstY));
+                    secondY = targetY;
+                    secondCode = (secondX < 0 ? 1 : 0) + (secondX > right ? 2 : 0);
+                }
+                if ((firstCode & secondCode) == 0 && (firstCode | secondCode) != 0)
+                {
+                    if (firstCode != 0)
+                    {
+                        var targetX = firstCode == 1 ? 0L : right;
+                        firstY += (long)((double)(targetX - firstX) * (secondY - firstY) / (secondX - firstX));
+                        firstX = targetX;
+                        firstCode = 0;
+                    }
+                    if (secondCode != 0)
+                    {
+                        var targetX = secondCode == 1 ? 0L : right;
+                        secondY += (long)((double)(targetX - secondX) * (secondY - firstY) / (secondX - firstX));
+                        secondX = targetX;
+                        secondCode = 0;
+                    }
+                }
+            }
+
+            if ((firstCode | secondCode) != 0)
+                return false;
+
+            x1 = checked((int)firstX);
+            y1 = checked((int)firstY);
+            x2 = checked((int)secondX);
+            y2 = checked((int)secondY);
+            return true;
+        }
+
+        private static int ComputeOpenCvClipCode(long x, long y, long right, long bottom)
+        {
+            return (x < 0 ? 1 : 0)
+                + (x > right ? 2 : 0)
+                + (y < 0 ? 4 : 0)
+                + (y > bottom ? 8 : 0);
         }
 
         private static ImageQuad ScaleQuad(
@@ -366,6 +609,13 @@ namespace PhraseLayer.Core.Inputs
                    ((a.Y - origin.Y) * (b.X - origin.X));
         }
 
+        private static bool FirstVectorIsRight(DbFloatPoint first, DbFloatPoint second)
+        {
+            var clockwiseX = first.Y;
+            var clockwiseY = -first.X;
+            return ((clockwiseX * second.X) + (clockwiseY * second.Y)) < 0f;
+        }
+
         private static int Clamp(int value, int minimum, int maximum)
         {
             if (value < minimum) return minimum;
@@ -380,8 +630,38 @@ namespace PhraseLayer.Core.Inputs
                 X = x;
                 Y = y;
             }
+
             public int X { get; }
             public int Y { get; }
+        }
+
+        private readonly struct DbFloatPoint
+        {
+            public DbFloatPoint(float x, float y)
+            {
+                X = x;
+                Y = y;
+            }
+
+            public float X { get; }
+            public float Y { get; }
+        }
+
+        private readonly struct DbPolyEdge
+        {
+            public DbPolyEdge(int y0, int y1, long x, long dx)
+            {
+                if (y0 >= y1) throw new ArgumentException("Polygon edge y0 must be less than y1.");
+                Y0 = y0;
+                Y1 = y1;
+                X = x;
+                Dx = dx;
+            }
+
+            public int Y0 { get; }
+            public int Y1 { get; }
+            public long X { get; }
+            public long Dx { get; }
         }
 
         private readonly struct DbPoint : IEquatable<DbPoint>
@@ -391,6 +671,7 @@ namespace PhraseLayer.Core.Inputs
                 X = x;
                 Y = y;
             }
+
             public double X { get; }
             public double Y { get; }
 
@@ -405,26 +686,46 @@ namespace PhraseLayer.Core.Inputs
             }
         }
 
+        private readonly struct OpenCvMinAreaState
+        {
+            public OpenCvMinAreaState(int leftIndex, float baseA, float width, float baseB, float height, int bottomIndex)
+            {
+                LeftIndex = leftIndex;
+                BaseA = baseA;
+                Width = width;
+                BaseB = baseB;
+                Height = height;
+                BottomIndex = bottomIndex;
+            }
+
+            public int LeftIndex { get; }
+            public float BaseA { get; }
+            public float Width { get; }
+            public float BaseB { get; }
+            public float Height { get; }
+            public int BottomIndex { get; }
+        }
+
         private sealed class MinimumAreaRectangle
         {
             private MinimumAreaRectangle(
-                double centerX,
-                double centerY,
-                double angle,
-                double width,
-                double height)
+                float centerX,
+                float centerY,
+                float angleDegrees,
+                float width,
+                float height)
             {
                 CenterX = centerX;
                 CenterY = centerY;
-                Angle = angle;
+                AngleDegrees = angleDegrees;
                 Width = width;
                 Height = height;
-                Corners = OrderLikePaddle(CreateCorners(centerX, centerY, angle, width, height));
+                Corners = OrderLikePaddle(CreateOpenCvCorners(centerX, centerY, angleDegrees, width, height));
             }
 
             public double CenterX { get; }
             public double CenterY { get; }
-            public double Angle { get; }
+            public double AngleDegrees { get; }
             public double Width { get; }
             public double Height { get; }
             public double ShortSide => Math.Min(Width, Height);
@@ -437,102 +738,180 @@ namespace PhraseLayer.Core.Inputs
                 if (double.IsNaN(distance) || double.IsInfinity(distance) || distance < 0.0)
                     throw new ArgumentOutOfRangeException(nameof(distance));
                 return new MinimumAreaRectangle(
-                    CenterX,
-                    CenterY,
-                    Angle,
-                    Width + (2.0 * distance),
-                    Height + (2.0 * distance));
+                    (float)CenterX,
+                    (float)CenterY,
+                    (float)AngleDegrees,
+                    (float)(Width + (2.0 * distance)),
+                    (float)(Height + (2.0 * distance)));
             }
 
+            /// <summary>
+            /// Mirrors OpenCV rotatingCalipers(CALIPERS_MINAREARECT) and RotatedRect/boxPoints in the
+            /// float32 domain used by cv2.minAreaRect. Keeping float arithmetic here is intentional:
+            /// sub-pixel rounding changes the later int32 scoring polygon at exact pixel boundaries.
+            /// </summary>
             public static MinimumAreaRectangle FromHull(IReadOnlyList<DbPoint> hull)
             {
                 if (hull == null) throw new ArgumentNullException(nameof(hull));
                 if (hull.Count < 3) throw new ArgumentException("At least three hull points are required.", nameof(hull));
 
-                var bestArea = double.PositiveInfinity;
-                var bestAngle = 0.0;
-                var bestMinX = 0.0;
-                var bestMaxX = 0.0;
-                var bestMinY = 0.0;
-                var bestMaxY = 0.0;
+                var count = hull.Count;
+                var points = new DbFloatPoint[count];
+                var vectors = new DbFloatPoint[count];
+                var inverseLengths = new float[count];
+                for (var index = 0; index < count; index++)
+                    points[index] = new DbFloatPoint((float)hull[index].X, (float)hull[index].Y);
 
-                for (var edgeIndex = 0; edgeIndex < hull.Count; edgeIndex++)
+                var left = 0;
+                var bottom = 0;
+                var right = 0;
+                var top = 0;
+                var point = points[0];
+                var leftX = point.X;
+                var rightX = point.X;
+                var topY = point.Y;
+                var bottomY = point.Y;
+                for (var index = 0; index < count; index++)
                 {
-                    var a = hull[edgeIndex];
-                    var b = hull[(edgeIndex + 1) % hull.Count];
-                    var angle = Math.Atan2(b.Y - a.Y, b.X - a.X);
-                    var cos = Math.Cos(angle);
-                    var sin = Math.Sin(angle);
+                    if (point.X < leftX) { leftX = point.X; left = index; }
+                    if (point.X > rightX) { rightX = point.X; right = index; }
+                    if (point.Y > topY) { topY = point.Y; top = index; }
+                    if (point.Y < bottomY) { bottomY = point.Y; bottom = index; }
 
-                    var minX = double.PositiveInfinity;
-                    var maxX = double.NegativeInfinity;
-                    var minY = double.PositiveInfinity;
-                    var maxY = double.NegativeInfinity;
-                    for (var pointIndex = 0; pointIndex < hull.Count; pointIndex++)
+                    var next = points[(index + 1) % count];
+                    var dx = (double)(next.X - point.X);
+                    var dy = (double)(next.Y - point.Y);
+                    vectors[index] = new DbFloatPoint((float)dx, (float)dy);
+                    inverseLengths[index] = (float)(1.0 / Math.Sqrt((dx * dx) + (dy * dy)));
+                    point = next;
+                }
+
+                var orientation = 0f;
+                var previousX = (double)vectors[count - 1].X;
+                var previousY = (double)vectors[count - 1].Y;
+                for (var index = 0; index < count; index++)
+                {
+                    var currentX = (double)vectors[index].X;
+                    var currentY = (double)vectors[index].Y;
+                    var convexity = (previousX * currentY) - (previousY * currentX);
+                    if (convexity != 0.0)
                     {
-                        var point = hull[pointIndex];
-                        var rotatedX = (point.X * cos) + (point.Y * sin);
-                        var rotatedY = (-point.X * sin) + (point.Y * cos);
-                        minX = Math.Min(minX, rotatedX);
-                        maxX = Math.Max(maxX, rotatedX);
-                        minY = Math.Min(minY, rotatedY);
-                        maxY = Math.Max(maxY, rotatedY);
+                        orientation = convexity > 0.0 ? 1f : -1f;
+                        break;
+                    }
+                    previousX = currentX;
+                    previousY = currentY;
+                }
+                if (orientation == 0f)
+                    throw new InvalidOperationException("Minimum-area rectangle requires a non-collinear hull.");
+
+                var baseA = orientation;
+                var baseB = 0f;
+                var sequence = new[] { bottom, right, top, left };
+                var minimumArea = float.MaxValue;
+                OpenCvMinAreaState? best = null;
+
+                for (var iteration = 0; iteration < count; iteration++)
+                {
+                    var rotationVectors = new[]
+                    {
+                        vectors[sequence[0]],
+                        new DbFloatPoint(vectors[sequence[1]].Y, -vectors[sequence[1]].X),
+                        new DbFloatPoint(-vectors[sequence[2]].X, -vectors[sequence[2]].Y),
+                        new DbFloatPoint(-vectors[sequence[3]].Y, vectors[sequence[3]].X),
+                    };
+                    var main = 0;
+                    for (var index = 1; index < 4; index++)
+                    {
+                        if (FirstVectorIsRight(rotationVectors[index], rotationVectors[main]))
+                            main = index;
                     }
 
-                    var area = (maxX - minX) * (maxY - minY);
-                    if (area >= bestArea - 1e-12)
-                        continue;
+                    var vectorIndex = sequence[main];
+                    var leadX = vectors[vectorIndex].X * inverseLengths[vectorIndex];
+                    var leadY = vectors[vectorIndex].Y * inverseLengths[vectorIndex];
+                    switch (main)
+                    {
+                        case 0: baseA = leadX; baseB = leadY; break;
+                        case 1: baseA = leadY; baseB = -leadX; break;
+                        case 2: baseA = -leadX; baseB = -leadY; break;
+                        case 3: baseA = -leadY; baseB = leadX; break;
+                        default: throw new InvalidOperationException();
+                    }
 
-                    bestArea = area;
-                    bestAngle = angle;
-                    bestMinX = minX;
-                    bestMaxX = maxX;
-                    bestMinY = minY;
-                    bestMaxY = maxY;
+                    sequence[main] = (sequence[main] + 1) % count;
+                    var dxWidth = points[sequence[1]].X - points[sequence[3]].X;
+                    var dyWidth = points[sequence[1]].Y - points[sequence[3]].Y;
+                    var rectangleWidth = (dxWidth * baseA) + (dyWidth * baseB);
+                    var dxHeight = points[sequence[2]].X - points[sequence[0]].X;
+                    var dyHeight = points[sequence[2]].Y - points[sequence[0]].Y;
+                    var rectangleHeight = (-dxHeight * baseB) + (dyHeight * baseA);
+                    var area = rectangleWidth * rectangleHeight;
+                    if (area <= minimumArea)
+                    {
+                        minimumArea = area;
+                        best = new OpenCvMinAreaState(
+                            sequence[3],
+                            baseA,
+                            rectangleWidth,
+                            baseB,
+                            rectangleHeight,
+                            sequence[0]);
+                    }
                 }
 
-                var bestCos = Math.Cos(bestAngle);
-                var bestSin = Math.Sin(bestAngle);
-                var centerRotatedX = (bestMinX + bestMaxX) * 0.5;
-                var centerRotatedY = (bestMinY + bestMaxY) * 0.5;
-                var centerX = (centerRotatedX * bestCos) - (centerRotatedY * bestSin);
-                var centerY = (centerRotatedX * bestSin) + (centerRotatedY * bestCos);
+                if (!best.HasValue)
+                    throw new InvalidOperationException("Minimum-area rectangle search produced no candidate.");
+                var state = best.Value;
+                var a1 = state.BaseA;
+                var b1 = state.BaseB;
+                var a2 = -state.BaseB;
+                var b2 = state.BaseA;
+                var c1 = (a1 * points[state.LeftIndex].X) + (points[state.LeftIndex].Y * b1);
+                var c2 = (a2 * points[state.BottomIndex].X) + (points[state.BottomIndex].Y * b2);
+                var inverseDeterminant = 1f / ((a1 * b2) - (a2 * b1));
+                var cornerX = ((c1 * b2) - (c2 * b1)) * inverseDeterminant;
+                var cornerY = ((a1 * c2) - (a2 * c1)) * inverseDeterminant;
+                var vector1X = a1 * state.Width;
+                var vector1Y = b1 * state.Width;
+                var vector2X = a2 * state.Height;
+                var vector2Y = b2 * state.Height;
 
-                return new MinimumAreaRectangle(
-                    centerX,
-                    centerY,
-                    bestAngle,
-                    bestMaxX - bestMinX,
-                    bestMaxY - bestMinY);
+                var centerX = cornerX + ((vector1X + vector2X) * 0.5f);
+                var centerY = cornerY + ((vector1Y + vector2Y) * 0.5f);
+                var width = (float)Math.Sqrt(((double)vector1X * vector1X) + ((double)vector1Y * vector1Y));
+                var height = (float)Math.Sqrt(((double)vector2X * vector2X) + ((double)vector2Y * vector2Y));
+                var angleRadians = (float)Math.Atan2((double)vector1Y, vector1X);
+                var angleDegrees = (float)(((double)(angleRadians * 180f)) / Math.PI);
+                return new MinimumAreaRectangle(centerX, centerY, angleDegrees, width, height);
             }
 
-            private static List<DbPoint> CreateCorners(
-                double centerX,
-                double centerY,
-                double angle,
-                double width,
-                double height)
+            private static List<DbPoint> CreateOpenCvCorners(
+                float centerX,
+                float centerY,
+                float angleDegrees,
+                float width,
+                float height)
             {
-                var halfWidth = width * 0.5;
-                var halfHeight = height * 0.5;
-                var cos = Math.Cos(angle);
-                var sin = Math.Sin(angle);
-                var local = new[]
-                {
-                    new DbPoint(-halfWidth, -halfHeight),
-                    new DbPoint(halfWidth, -halfHeight),
-                    new DbPoint(halfWidth, halfHeight),
-                    new DbPoint(-halfWidth, halfHeight)
-                };
-
-                var result = new List<DbPoint>(4);
-                foreach (var point in local)
-                {
-                    result.Add(new DbPoint(
-                        centerX + (point.X * cos) - (point.Y * sin),
-                        centerY + (point.X * sin) + (point.Y * cos)));
-                }
-                return result;
+                // Mirrors RotatedRect::points: angle is converted back to radians in double, then the
+                // trigonometric values are cast to float before multiplication by the float center/size.
+                var angleRadians = angleDegrees * Math.PI / 180.0;
+                var b = (float)Math.Cos(angleRadians) * 0.5f;
+                var a = (float)Math.Sin(angleRadians) * 0.5f;
+                var points = new DbFloatPoint[4];
+                points[0] = new DbFloatPoint(
+                    centerX - (a * height) - (b * width),
+                    centerY + (b * height) - (a * width));
+                points[1] = new DbFloatPoint(
+                    centerX + (a * height) - (b * width),
+                    centerY - (b * height) - (a * width));
+                points[2] = new DbFloatPoint(
+                    (2f * centerX) - points[0].X,
+                    (2f * centerY) - points[0].Y);
+                points[3] = new DbFloatPoint(
+                    (2f * centerX) - points[1].X,
+                    (2f * centerY) - points[1].Y);
+                return points.Select(item => new DbPoint(item.X, item.Y)).ToList();
             }
 
             private static IReadOnlyList<DbPoint> OrderLikePaddle(IReadOnlyList<DbPoint> corners)

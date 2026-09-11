@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "PhraseLayer.Core"
 UNITY = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Scripts"
+
+# validate_repo.py independently pins the reviewed value; this gate verifies the Core/Unity wiring
+# agrees with that lock instead of maintaining a third handwritten copy of the fingerprint.
+lock = json.loads((ROOT / "models" / "models.lock.json").read_text(encoding="utf-8"))
+recognizer = next(item for item in lock["candidates"] if item["id"] == "pp-ocrv6-tiny-rec")
+expected_sha = recognizer["recognition_dictionary"]["generated_artifact_sha256"]
 
 checks = {
     CORE / "PaddleOcrDictionaryManifest.cs": (
@@ -12,7 +19,7 @@ checks = {
         "ExpectedSourceArtifact = \"inference.yml\"",
         "ExpectedRawTokenCount = 6904",
         "ExpectedEffectiveTokenCount = 6905",
-        "ExpectedGeneratedSha256 = \"46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc\"",
+        'ExpectedGeneratedSha256 = "' + expected_sha + '"',
         "raw_token_count does not match the assigned dictionary",
         "Unity bootstrap useSpaceCharacter does not match the pinned PP-OCR dictionary contract",
         "Dictionary SHA-256 does not match the generated manifest",

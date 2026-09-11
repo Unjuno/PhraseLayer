@@ -1,0 +1,259 @@
+name: Marian Android Runtime Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      marian_source_snapshot:
+        description: "Absolute path on the self-hosted runner to the exact pinned Helsinki-NLP/opus-mt-en-jap source snapshot, including pytorch_model.bin"
+        required: true
+        type: string
+      marian_onnx_dir:
+        description: "Absolute path on the self-hosted runner to the reviewed three-graph Optimum ONNX export"
+        required: true
+        type: string
+      device_serial:
+        description: "Optional adb serial when more than one Android device is attached"
+        required: false
+        default: ""
+        type: string
+      smoke_timeout_seconds:
+        description: "Maximum seconds to wait for exact Marian semantic-span runtime PASS"
+        required: true
+        default: "180"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  marian-android-runtime-smoke:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2, adb]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Validate Marian Android runtime contracts
+        shell: bash
+        run: |
+          python tools/validate_marian_lock_evidence.py
+          python tools/validate_marian_unity_product_gate.py
+          python tools/validate_marian_android_fixture_gate.py
+          python tools/validate_marian_android_runtime_device_gate.py
+          python tools/validate_unity_host_preflight.py
+          python tools/test_run_marian_android_runtime_smoke.py
+          python tools/test_inspect_android_apk_structure.py
+          python tools/test_prepare_unity_tokenizer_runtime.py
+          python tools/test_generate_marian_reference_fixture.py
+
+      - name: Run real Unity host capability preflight
+        shell: bash
+        env:
+          PHRASELAYER_UNITY_HOST_PREFLIGHT_EVIDENCE_PATH: ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
+        run: |
+          chmod +x tools/unity/run-host-preflight.sh
+          ./tools/unity/run-host-preflight.sh
+
+      - name: Require Unity host preflight evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path=Path(os.environ["RUNNER_TEMP"])/"PhraseLayer.unity-host-preflight.json"
+          assert path.is_file() and path.stat().st_size>0
+          data=json.loads(path.read_text(encoding="utf-8"))
+          assert data["purpose"]=="phrase-layer-real-unity-host-preflight"
+          assert data["real_unity_execution"] is True
+          assert data["actual_unity_version"]=="6000.0.66f2"
+          assert data["exact_unity_version_match"] is True
+          assert data["android_build_support_available"] is True
+          assert data["inference_engine_compile_gate_active"] is True
+          assert data["local_asset_paths_serialized"] is False
+          assert data["adb_required"] is False
+          assert data["quest_device_execution_performed"] is False
+          print(json.dumps(data,sort_keys=True))
+          PY
+
+      - name: Validate local source snapshot and ONNX bundle identity
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+          MARIAN_ONNX_DIR: ${{ inputs.marian_onnx_dir }}
+        run: |
+          python tools/prepare_marian_translation.py \
+            --snapshot-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --revision a863894cdd2b80f3bc1c5966734aee9ffec207d1 \
+            --onnx-dir "$MARIAN_ONNX_DIR" \
+            --output-manifest "$RUNNER_TEMP/marian-local-inputs.manifest.json"
+          python tools/export_marian_onnx.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --output-dir "$RUNNER_TEMP/not-executed-export" \
+            --repository-root .
+          python tools/inspect_marian_onnx_bundle.py \
+            --bundle-dir "$MARIAN_ONNX_DIR" \
+            --output "$RUNNER_TEMP/marian-onnx-contract.manifest.json"
+
+      - name: Build and stage managed Marian tokenizer runtime
+        shell: bash
+        run: |
+          dotnet restore src/PhraseLayer.Tokenization.Microsoft/PhraseLayer.Tokenization.Microsoft.csproj
+          dotnet build src/PhraseLayer.Tokenization.Microsoft/PhraseLayer.Tokenization.Microsoft.csproj -c Release --no-restore
+          python tools/prepare_unity_tokenizer_runtime.py \
+            --build-output src/PhraseLayer.Tokenization.Microsoft/bin/Release/netstandard2.1 \
+            --destination unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime \
+            --manifest "$RUNNER_TEMP/unity-tokenizer-runtime.manifest.json"
+
+      - name: Generate offline Transformers greedy reference
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+        run: |
+          python tools/generate_marian_reference_fixture.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --repository-root . \
+            --output "$RUNNER_TEMP/marian-reference.json"
+
+      - name: Stage validated Marian models, tokenizer and reference into Unity
+        shell: bash
+        env:
+          MARIAN_SOURCE_SNAPSHOT: ${{ inputs.marian_source_snapshot }}
+          MARIAN_ONNX_DIR: ${{ inputs.marian_onnx_dir }}
+        run: |
+          python tools/prepare_unity_marian_assets.py \
+            --source-dir "$MARIAN_SOURCE_SNAPSHOT" \
+            --onnx-dir "$MARIAN_ONNX_DIR" \
+            --reference-fixture "$RUNNER_TEMP/marian-reference.json" \
+            --repository-root . \
+            --unity-project unity/PhraseLayer.Unity
+
+      - name: Require real Unity exact-token Marian translation parity
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_PARITY_EVIDENCE_PATH: ${{ runner.temp }}/PhraseLayer.marian-unity-parity-evidence.json
+        run: |
+          chmod +x tools/unity/verify-local-marian-translation.sh
+          ./tools/unity/verify-local-marian-translation.sh
+
+      - name: Build local-only Marian Android ARM64 IL2CPP runtime fixture
+        shell: bash
+        env:
+          PHRASELAYER_MARIAN_PRODUCT_FIXTURE_APK_PATH: ${{ runner.temp }}/PhraseLayerMarianProductFixture.apk
+        run: |
+          chmod +x tools/unity/build-marian-product-android-fixture.sh
+          ./tools/unity/build-marian-product-android-fixture.sh
+
+      - name: Require packaging contract and inspect local APK
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          temp=Path(os.environ["RUNNER_TEMP"]); apk=temp/"PhraseLayerMarianProductFixture.apk"; build_path=temp/"PhraseLayer.marian-product-fixture-build-evidence.json"
+          assert apk.is_file() and apk.stat().st_size>0; assert build_path.is_file() and build_path.stat().st_size>0
+          build=json.loads(build_path.read_text(encoding="utf-8"))
+          assert build["purpose"]=="phrase-layer-marian-product-android-fixture-build" and build["result"]=="Succeeded"
+          assert build["architecture"]=="ARM64" and build["scripting_backend"]=="IL2CPP"
+          assert build["translation_runtime"]=="MarianOpusMtEnJa" and build["generation_backend"]=="UnityMarianDeviceResidentGenerationBackend"
+          assert build["tokenizer_runtime"]=="Microsoft.ML.Tokenizers" and build["product_translation_gate"] is True
+          assert build["semantic_span_pipeline"] is True and build["android_runtime_smoke_autorun"] is True
+          assert build["android_runtime_smoke_fixture_source"]=="keep off"
+          assert build["android_runtime_smoke_exact_reference_match_required"] is True
+          assert build["android_runtime_execution_performed"] is False and build["quest_device_execution_performed"] is False
+          assert build["apk_upload_allowed"] is False and build["redistribution_review"]=="pending"
+          digest=hashlib.sha256()
+          with apk.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024*1024),b""): digest.update(chunk)
+          fp={"schema_version":1,"purpose":"phrase-layer-local-marian-product-apk-fingerprint","file_name":apk.name,"size_bytes":apk.stat().st_size,"sha256":digest.hexdigest(),"uploaded":False,"redistribution_review":"pending","runtime_executed":False}
+          (temp/"marian-product-apk-fingerprint.json").write_text(json.dumps(fp,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          print(json.dumps(build,sort_keys=True)); print(json.dumps(fp,sort_keys=True))
+          PY
+          python tools/inspect_android_apk_structure.py \
+            --apk "$RUNNER_TEMP/PhraseLayerMarianProductFixture.apk" \
+            --output "$RUNNER_TEMP/marian-product-apk-structure.json"
+
+      - name: Install, launch, and require Marian Android runtime PASS
+        shell: bash
+        env:
+          PHRASELAYER_DEVICE_SERIAL: ${{ inputs.device_serial }}
+          PHRASELAYER_SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
+        run: |
+          SERIAL_ARGS=()
+          if [[ -n "$PHRASELAYER_DEVICE_SERIAL" ]]; then
+            SERIAL_ARGS+=(--serial "$PHRASELAYER_DEVICE_SERIAL")
+          fi
+          python tools/run_marian_android_runtime_smoke.py \
+            --apk "$RUNNER_TEMP/PhraseLayerMarianProductFixture.apk" \
+            --smoke-timeout-seconds "$PHRASELAYER_SMOKE_TIMEOUT_SECONDS" \
+            --output-dir "$RUNNER_TEMP/marian-android-runtime-smoke" \
+            --uninstall-after \
+            "${SERIAL_ARGS[@]}"
+
+      - name: Require exact Android runtime product translation evidence
+        if: success()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          temp=Path(os.environ["RUNNER_TEMP"])
+          smoke_path=temp/"marian-android-runtime-smoke"/"marian-android-runtime-smoke.json"
+          diagnostics_path=temp/"marian-android-runtime-smoke"/"marian-android-runtime-diagnostics.txt"
+          fp_path=temp/"marian-product-apk-fingerprint.json"; structure_path=temp/"marian-product-apk-structure.json"; build_path=temp/"PhraseLayer.marian-product-fixture-build-evidence.json"; parity_path=temp/"PhraseLayer.marian-unity-parity-evidence.json"; preflight_path=temp/"PhraseLayer.unity-host-preflight.json"
+          for path in (smoke_path,diagnostics_path,fp_path,structure_path,build_path,parity_path,preflight_path): assert path.is_file() and path.stat().st_size>0,path
+          smoke=json.loads(smoke_path.read_text(encoding="utf-8")); fp=json.loads(fp_path.read_text(encoding="utf-8")); structure=json.loads(structure_path.read_text(encoding="utf-8")); build=json.loads(build_path.read_text(encoding="utf-8")); parity=json.loads(parity_path.read_text(encoding="utf-8")); preflight=json.loads(preflight_path.read_text(encoding="utf-8")); diagnostics=diagnostics_path.read_text(encoding="utf-8")
+          assert smoke["purpose"]=="phrase-layer-marian-android-runtime-smoke" and smoke["status"]=="pass"
+          assert smoke["readiness"]["runtime_smoke_passed"] is True and smoke["readiness"]["exact_reference_match_observed"] is True
+          assert smoke["readiness"]["product_translation_gate_observed"] is True and smoke["readiness"]["device_resident_backend_observed"] is True and smoke["readiness"]["fatal_exception"] is False
+          assert "arm64-v8a" in smoke["device"]["abis"]
+          assert smoke["translation_runtime"]=="MarianOpusMtEnJa" and smoke["generation_backend"]=="UnityMarianDeviceResidentGenerationBackend" and smoke["tokenizer_runtime"]=="Microsoft.ML.Tokenizers"
+          assert smoke["fixture_source"]=="keep off" and smoke["semantic_span_pipeline"] is True and smoke["exact_offline_reference_match_required"] is True
+          assert smoke["product_translation_gate"] is True and smoke["android_runtime_execution_performed"] is True and smoke["quest_device_execution_performed"] is False and smoke["network_required"] is False
+          assert smoke["log_privacy"]["raw_process_logcat_written_to_disk"] is False and smoke["log_privacy"]["raw_process_logcat_uploaded"] is False and smoke["log_privacy"]["diagnostic_lines_require_full_grammar_match"] is True and smoke["log_privacy"]["translated_text_allowed_in_diagnostics"] is False
+          assert "translated_text=PRIVATE" not in diagnostics
+          assert fp["uploaded"] is False and smoke["apk"]["sha256"]==fp["sha256"] and smoke["apk"]["size_bytes"]==fp["size_bytes"]
+          assert structure["sha256"]==fp["sha256"] and structure["native_abis"]==["arm64-v8a"] and structure["il2cpp_native_library_present"] is True
+          assert build["android_runtime_execution_performed"] is False and build["android_runtime_smoke_autorun"] is True
+          assert parity["real_unity_execution"] is True and parity["language_pipeline_semantic_replacement_passed"] is True
+          assert preflight["real_unity_execution"] is True and preflight["exact_unity_version_match"] is True
+          def sha256(path):
+              digest=hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024*1024),b""): digest.update(chunk)
+              return digest.hexdigest()
+          aggregate={"schema_version":1,"purpose":"phrase-layer-marian-android-runtime-product-gate","status":"pass","product_translation_gate":True,"android_runtime_execution_performed":True,"quest_device_execution_performed":False,"exact_offline_reference_match":True,"semantic_span_pipeline":True,"device_resident_backend":True,"network_required":False,"apk_uploaded":False,"model_weights_uploaded":False,"redistribution_review":"pending","files":{"runtime_smoke":{"name":smoke_path.name,"sha256":sha256(smoke_path)},"runtime_diagnostics":{"name":diagnostics_path.name,"sha256":sha256(diagnostics_path)},"apk_fingerprint":{"name":fp_path.name,"sha256":sha256(fp_path)},"apk_structure":{"name":structure_path.name,"sha256":sha256(structure_path)},"build_evidence":{"name":build_path.name,"sha256":sha256(build_path)},"unity_parity":{"name":parity_path.name,"sha256":sha256(parity_path)},"host_preflight":{"name":preflight_path.name,"sha256":sha256(preflight_path)}}}
+          (temp/"PhraseLayer.marian-android-runtime-gate.json").write_text(json.dumps(aggregate,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+          print(json.dumps(aggregate,sort_keys=True))
+          PY
+
+      - name: Remove local Marian APK before artifact phase
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/PhraseLayerMarianProductFixture.apk"
+
+      - name: Upload safe Marian Android runtime evidence only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-marian-android-runtime-evidence
+          path: |
+            ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
+            ${{ runner.temp }}/marian-local-inputs.manifest.json
+            ${{ runner.temp }}/marian-onnx-contract.manifest.json
+            ${{ runner.temp }}/unity-tokenizer-runtime.manifest.json
+            ${{ runner.temp }}/marian-reference.json
+            ${{ runner.temp }}/PhraseLayer.marian-unity-parity-evidence.json
+            ${{ runner.temp }}/PhraseLayer.marian-product-fixture-build-evidence.json
+            ${{ runner.temp }}/marian-product-apk-fingerprint.json
+            ${{ runner.temp }}/marian-product-apk-structure.json
+            ${{ runner.temp }}/marian-android-runtime-smoke/marian-android-runtime-smoke.json
+            ${{ runner.temp }}/marian-android-runtime-smoke/marian-android-runtime-diagnostics.txt
+            ${{ runner.temp }}/PhraseLayer.marian-android-runtime-gate.json
+            unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/PhraseLayerMarianAssets.manifest.json
+          if-no-files-found: warn
+          retention-days: 7

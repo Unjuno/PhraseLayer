@@ -11,8 +11,8 @@ namespace PhraseLayer.Core.Learning
     {
         public KnowledgeEstimate(SemanticUnit unit, double understanding, bool isExplicit)
         {
-            Unit = unit;
-            Understanding = Clamp01(understanding);
+            Unit = unit ?? throw new ArgumentNullException(nameof(unit));
+            Understanding = UnderstandingScore.ClampFinite(understanding, nameof(understanding));
             IsExplicit = isExplicit;
             State = Understanding >= 0.82 ? KnowledgeState.Known : Understanding >= 0.45 ? KnowledgeState.Learning : KnowledgeState.Unknown;
         }
@@ -20,7 +20,6 @@ namespace PhraseLayer.Core.Learning
         public double Understanding { get; }
         public bool IsExplicit { get; }
         public KnowledgeState State { get; }
-        private static double Clamp01(double value) => value < 0 ? 0 : value > 1 ? 1 : value;
     }
 
     public interface ILearnerModel { KnowledgeEstimate Estimate(SemanticUnit unit); }
@@ -33,7 +32,7 @@ namespace PhraseLayer.Core.Learning
 
         public InMemoryLearnerModel(double defaultUnderstanding = 0.55)
         {
-            _defaultUnderstanding = Clamp01(defaultUnderstanding);
+            _defaultUnderstanding = UnderstandingScore.ClampFinite(defaultUnderstanding, nameof(defaultUnderstanding));
         }
 
         public double DefaultUnderstanding => _defaultUnderstanding;
@@ -42,7 +41,8 @@ namespace PhraseLayer.Core.Learning
         public void SetUnderstanding(string text, double understanding)
         {
             if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Text is required.", nameof(text));
-            _understanding[Normalize(text)] = Clamp01(understanding);
+            var score = UnderstandingScore.ClampFinite(understanding, nameof(understanding));
+            _understanding[Normalize(text)] = score;
         }
 
         public KnowledgeEstimate Estimate(SemanticUnit unit)
@@ -64,7 +64,6 @@ namespace PhraseLayer.Core.Learning
         public void LoadSnapshot(LearnerProfileSnapshot snapshot)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
-
             _understanding.Clear();
             _defaultUnderstanding = snapshot.DefaultUnderstanding;
             foreach (var entry in snapshot.Entries)
@@ -84,7 +83,16 @@ namespace PhraseLayer.Core.Learning
             if (value == null) throw new ArgumentNullException(nameof(value));
             return Whitespace.Replace(value.Trim().ToLowerInvariant(), " ");
         }
+    }
 
-        private static double Clamp01(double value) => value < 0 ? 0 : value > 1 ? 1 : value;
+    internal static class UnderstandingScore
+    {
+        // Preserve finite out-of-range clamping, but never admit NaN or infinity into a learner profile.
+        internal static double ClampFinite(double value, string parameterName)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+                throw new ArgumentOutOfRangeException(parameterName, "Understanding must be finite.");
+            return value < 0 ? 0 : value > 1 ? 1 : value;
+        }
     }
 }

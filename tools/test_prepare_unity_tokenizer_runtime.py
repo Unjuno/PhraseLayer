@@ -40,12 +40,30 @@ def main() -> None:
         } <= names
         assert (destination / "System.Memory.dll").exists()
         assert manifest.exists()
+        assert result["schema_version"] == 2
         assert result["core_assembly_staged"] is False
+        assert result["il2cpp_reflection_preserve_required"] is True
+        assert result["reflection_entry_point"].endswith("MicrosoftMlMarianTokenizerFactory")
         assert all(len(item["sha256"]) == 64 for item in result["artifacts"])
 
+        link = destination / "link.xml"
+        assert link.exists() and link.stat().st_size > 0
+        link_text = link.read_text(encoding="utf-8")
+        for assembly in module.PRESERVED_ASSEMBLIES:
+            assert f'fullname="{assembly}"' in link_text
+            assert f'  <assembly fullname="{assembly}" preserve="all" />' in link_text
+        descriptor = result["linker_descriptor"]
+        assert descriptor["file"] == "link.xml"
+        assert descriptor["preserved_assemblies"] == list(module.PRESERVED_ASSEMBLIES)
+        assert descriptor["size_bytes"] == link.stat().st_size
+        assert len(descriptor["sha256"]) == 64
+
         write(destination / "stale.dll", b"stale")
-        module.stage(build, destination, manifest)
+        link.write_text("stale linker", encoding="utf-8")
+        second = module.stage(build, destination, manifest)
         assert not (destination / "stale.dll").exists()
+        assert "stale linker" not in link.read_text(encoding="utf-8")
+        assert second["linker_descriptor"]["sha256"] == result["linker_descriptor"]["sha256"]
 
         (build / "Google.Protobuf.dll").unlink()
         try:
@@ -55,7 +73,7 @@ def main() -> None:
         else:
             raise AssertionError("expected missing dependency validation failure")
 
-    print("PASS: Unity tokenizer runtime staging fixtures")
+    print("PASS: Unity tokenizer runtime staging + IL2CPP reflection preservation fixtures")
 
 
 if __name__ == "__main__":

@@ -6,11 +6,12 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Non-destructive reference renderer for stabilized in-place assistance tracks.
+    /// World-space renderer for stabilized in-place assistance tracks.
     ///
     /// A reviewed Japanese-capable Unity Font must be assigned explicitly; PhraseLayer does not silently bundle or
-    /// substitute a font asset. This component renders translated text slightly in front of the fitted physical text
-    /// plane, but deliberately does not mask/erase the source text. Source masking remains a separate hardware/UX gate.
+    /// substitute a font asset. This component only owns translated text rendering slightly in front of the fitted
+    /// physical text plane. Physical source covering is intentionally owned by UnityWorldTextSourceMaskBehaviour so
+    /// its stricter current-observation/planarity policy can fail closed independently and be validated on Quest.
     /// </summary>
     public sealed class UnityWorldTextRendererBehaviour : MonoBehaviour
     {

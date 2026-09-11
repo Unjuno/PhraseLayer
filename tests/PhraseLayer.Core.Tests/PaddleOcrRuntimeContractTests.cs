@@ -40,6 +40,66 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void ReducedRecognizerContractAcceptsOneWinnerPerTimestep()
+        {
+            var shape = new[] { 1, 4, 5 };
+            var indices = new[] { 0, 2, 2, 4 };
+            var scores = new[] { 0.90f, 0.75f, 0.80f, 0.60f };
+
+            var contract = PaddleOcrRuntimeContract.ValidateRecognizerReduced(
+                shape,
+                indices,
+                scores,
+                dictionaryTokenCount: 4);
+
+            Assert.Equal(4, contract.TimeSteps);
+            Assert.Equal(5, contract.ClassCount);
+            Assert.Equal(4, contract.DictionaryTokenCount);
+            Assert.Equal(20, contract.ValueCount);
+            Assert.Equal(shape, contract.OutputShape);
+            Assert.NotSame(shape, contract.OutputShape);
+        }
+
+        [Fact]
+        public void ReducedRecognizerContractRejectsTimestepLengthMismatch()
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrRuntimeContract.ValidateRecognizerReduced(
+                    new[] { 1, 4, 5 },
+                    new[] { 0, 1, 2 },
+                    new[] { 0.9f, 0.8f, 0.7f, 0.6f },
+                    dictionaryTokenCount: 4));
+
+            Assert.Contains("one class index and maximum score per timestep", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ReducedRecognizerContractRejectsClassIndexOutsideModelRange()
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrRuntimeContract.ValidateRecognizerReduced(
+                    new[] { 1, 2, 5 },
+                    new[] { 0, 5 },
+                    new[] { 0.9f, 0.8f },
+                    dictionaryTokenCount: 4));
+
+            Assert.Contains("outside the reviewed class range", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ReducedRecognizerContractRejectsNonFiniteMaxScore()
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                PaddleOcrRuntimeContract.ValidateRecognizerReduced(
+                    new[] { 1, 2, 5 },
+                    new[] { 0, 1 },
+                    new[] { 0.9f, float.NaN },
+                    dictionaryTokenCount: 4));
+
+            Assert.Contains("non-finite", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public void RecognizerContractRejectsWrongRank()
         {
             var exception = Assert.Throws<InvalidOperationException>(() =>

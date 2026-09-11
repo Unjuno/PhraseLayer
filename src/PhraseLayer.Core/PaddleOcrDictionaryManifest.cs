@@ -65,7 +65,8 @@ namespace PhraseLayer.Core.Inputs
         public const bool ExpectedUseSpaceChar = true;
         public const int ExpectedEffectiveTokenCount = 6905;
         public const string ExpectedGeneratedArtifact = "ppocr_keys.txt";
-        public const string ExpectedGeneratedSha256 = "46e1b34ef45684cb46d75ac76d355341fe7f0a2c38d6ee02e63ae6b3878019fc";
+        // Preserve all dictionary symbols, including Unicode whitespace; see PPOCR_DICTIONARY_LOCK_CORRECTION.md.
+        public const string ExpectedGeneratedSha256 = "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd";
 
         public static string ValidateAndBuildReport(
             PaddleOcrDictionaryManifest manifest,

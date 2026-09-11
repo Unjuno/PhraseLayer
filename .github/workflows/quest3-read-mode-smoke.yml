@@ -1,0 +1,294 @@
+name: Quest 3 Read Mode Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      japanese_font_source:
+        description: "Absolute path on the self-hosted runner to a license-reviewed Japanese-capable .ttf or .otf"
+        required: true
+        type: string
+      device_serial:
+        description: "Optional adb serial when more than one device is attached"
+        required: false
+        default: ""
+        type: string
+      expected_device_model:
+        description: "Required ro.product.model for the attached headset"
+        required: true
+        default: "Quest 3"
+        type: string
+      smoke_timeout_seconds:
+        description: "Maximum seconds to wait for real OCR + captured-pose MRUK fit + source mask + Japanese world text PASS"
+        required: true
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quest-read-mode-smoke:
+    runs-on: [self-hosted, unity, unity-6000-0-66f2, quest3, adb]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate host-side Read Mode gate contracts
+        shell: bash
+        run: |
+          python tools/validate_read_mode_mask_gate.py
+          python tools/validate_mruk_environment_raycast_gate.py
+          python tools/validate_quest_project_setup_gate.py
+          python tools/validate_passthrough_camera_frame_sync.py
+          python tools/validate_ppocr_gpu_preprocess_gate.py
+          python tools/validate_quest_read_mode_smoke_harness.py
+          python tools/validate_read_mode_visual_asset_staging.py
+          python tools/validate_unity_host_preflight.py
+          python tools/validate_quest_read_mode_device_gate.py
+          python tools/test_run_quest_read_mode_smoke.py
+          python tools/test_inspect_android_apk_structure.py
+
+      - name: Run real Unity host capability preflight
+        shell: bash
+        env:
+          PHRASELAYER_UNITY_HOST_PREFLIGHT_EVIDENCE_PATH: ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
+        run: |
+          chmod +x tools/unity/run-host-preflight.sh
+          ./tools/unity/run-host-preflight.sh
+
+      - name: Require Unity host preflight evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "PhraseLayer.unity-host-preflight.json"
+          assert path.is_file() and path.stat().st_size > 0
+          data = json.loads(path.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-real-unity-host-preflight"
+          assert data["real_unity_execution"] is True
+          assert data["expected_unity_version"] == "6000.0.66f2"
+          assert data["actual_unity_version"] == "6000.0.66f2"
+          assert data["exact_unity_version_match"] is True
+          assert data["android_build_support_available"] is True
+          assert data["inference_engine_compile_gate_active"] is True
+          assert data["local_asset_paths_serialized"] is False
+          assert data["adb_required"] is False
+          assert data["quest_device_execution_performed"] is False
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+      - name: Download exact pinned PP-OCR assets
+        shell: bash
+        run: |
+          python tools/stage_models.py --purpose-prefix ocr- --include-support
+
+      - name: Verify and stage PP-OCR into Unity
+        shell: bash
+        run: |
+          python tools/prepare_unity_ocr_assets.py
+
+      - name: Require real Unity pinned PP-OCR synthetic inference
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-local-ocr-inference.sh
+          ./tools/unity/verify-local-ocr-inference.sh
+
+      - name: Require real Unity PP-OCR detector GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-ppocr-gpu-preprocess.sh
+          ./tools/unity/verify-ppocr-gpu-preprocess.sh
+
+      - name: Require real Unity PP-OCR recognizer GPU preprocess parity
+        shell: bash
+        run: |
+          chmod +x tools/unity/verify-recognizer-gpu-preprocess.sh
+          ./tools/unity/verify-recognizer-gpu-preprocess.sh
+
+      - name: Build instrumented Read Mode Android ARM64 IL2CPP fixture
+        shell: bash
+        env:
+          PHRASELAYER_JAPANESE_FONT_SOURCE: ${{ inputs.japanese_font_source }}
+          PHRASELAYER_READ_MODE_FIXTURE_APK_PATH: ${{ runner.temp }}/PhraseLayerReadModeFixture.apk
+        run: |
+          chmod +x tools/unity/build-android-read-mode-fixture.sh
+          ./tools/unity/build-android-read-mode-fixture.sh
+
+      - name: Verify Read Mode fixture build evidence and inspect local APK before device install
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          evidence = root / "PhraseLayer.read-mode-fixture-build-evidence.json"
+          apk = root / "PhraseLayerReadModeFixture.apk"
+          visual = Path("unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json")
+          assert apk.is_file() and apk.stat().st_size > 0
+          assert evidence.is_file() and evidence.stat().st_size > 0
+          assert visual.is_file() and visual.stat().st_size > 0
+
+          data = json.loads(evidence.read_text(encoding="utf-8"))
+          assert data["purpose"] == "phrase-layer-read-mode-quest-fixture-build"
+          assert data["result"] == "Succeeded"
+          assert data["target"] == "Android"
+          assert data["architecture"] == "ARM64"
+          assert data["scripting_backend"] == "IL2CPP"
+          assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
+          assert data["translation_runtime"] == "DemoDictionaryFixture"
+          assert data["product_translation_gate"] is False
+          assert data["camera_timestamp_source"] == "MetaPassthroughCameraAccess.Timestamp"
+          assert data["camera_pose_source"] == "MetaPassthroughCameraAccess.GetCameraPose"
+          assert data["captured_pose_projection_required"] is True
+          assert data["camera_timestamp_pose_binding_implemented"] is True
+          assert data["camera_pixel_pose_sync_verified"] is False
+          assert data["quest_read_mode_smoke_autorun"] is True
+          assert data["deterministic_single_scene_build"] is True
+          assert data["project_paths_anchored_to_application_data_path"] is True
+          assert data["source_mask_shader"] == "PhraseLayer/SourceMask"
+          assert data["apk_size_bytes"] == apk.stat().st_size
+          assert data["scenes"] == ["Assets/Scenes/PhraseLayerDemo.unity"]
+
+          visual_data = json.loads(visual.read_text(encoding="utf-8"))
+          assert visual_data["purpose"] == "phrase-layer-read-mode-visual-assets"
+          assert visual_data["font_staged_bytes_verified"] is True
+          assert visual_data["mask_shader"] == "PhraseLayer/SourceMask"
+          assert visual_data["mask_shader_reasserted"] is True
+          assert visual_data["quest_read_mode_smoke_autorun"] is True
+
+          digest = hashlib.sha256()
+          with apk.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          fingerprint = {
+              "schema_version": 1,
+              "purpose": "phrase-layer-local-read-mode-apk-fingerprint",
+              "file_name": apk.name,
+              "size_bytes": apk.stat().st_size,
+              "sha256": digest.hexdigest(),
+              "uploaded": False,
+              "ocr_model_redistribution_review": "pending",
+              "runtime_executed": False,
+          }
+          path = root / "read-mode-apk-fingerprint.json"
+          path.write_text(json.dumps(fingerprint, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(data, sort_keys=True))
+          print(json.dumps(visual_data, sort_keys=True))
+          print(json.dumps(fingerprint, sort_keys=True))
+          PY
+          python tools/inspect_android_apk_structure.py \
+            --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            --output "$RUNNER_TEMP/read-mode-apk-structure.json"
+
+      - name: Install, launch, and require end-to-end Quest Read Mode PASS
+        shell: bash
+        env:
+          PHRASELAYER_DEVICE_SERIAL: ${{ inputs.device_serial }}
+          PHRASELAYER_EXPECTED_DEVICE_MODEL: ${{ inputs.expected_device_model }}
+          PHRASELAYER_SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
+        run: |
+          SERIAL_ARGS=()
+          if [[ -n "$PHRASELAYER_DEVICE_SERIAL" ]]; then
+            SERIAL_ARGS+=(--serial "$PHRASELAYER_DEVICE_SERIAL")
+          fi
+          python tools/run_quest_read_mode_smoke.py \
+            --apk "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            --expected-device-model "$PHRASELAYER_EXPECTED_DEVICE_MODEL" \
+            --smoke-timeout-seconds "$PHRASELAYER_SMOKE_TIMEOUT_SECONDS" \
+            --output-dir "$RUNNER_TEMP/quest-read-mode-smoke" \
+            "${SERIAL_ARGS[@]}"
+
+      - name: Require complete Quest Read Mode success evidence
+        if: success()
+        shell: bash
+        run: |
+          for file in \
+            "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk" \
+            "$RUNNER_TEMP/PhraseLayer.read-mode-fixture-build-evidence.json" \
+            "$RUNNER_TEMP/read-mode-apk-fingerprint.json" \
+            "$RUNNER_TEMP/read-mode-apk-structure.json" \
+            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-smoke.json" \
+            "$RUNNER_TEMP/quest-read-mode-smoke/quest-read-mode-diagnostics.txt"; do
+            test -s "$file" || { echo "Missing required Read Mode evidence: $file" >&2; exit 1; }
+          done
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          evidence = root / "quest-read-mode-smoke" / "quest-read-mode-smoke.json"
+          diagnostics_path = root / "quest-read-mode-smoke" / "quest-read-mode-diagnostics.txt"
+          fingerprint = json.loads((root / "read-mode-apk-fingerprint.json").read_text(encoding="utf-8"))
+          structure = json.loads((root / "read-mode-apk-structure.json").read_text(encoding="utf-8"))
+          data = json.loads(evidence.read_text(encoding="utf-8"))
+          diagnostics = diagnostics_path.read_text(encoding="utf-8")
+          assert data["purpose"] == "phrase-layer-quest-read-mode-hardware-visual-smoke"
+          assert data["readiness"]["ocr_smoke_passed"] is True
+          assert data["readiness"]["read_mode_smoke_passed"] is True
+          assert data["readiness"]["mruk_environment_raycast_observed"] is True
+          assert data["readiness"]["captured_pose_projection_observed"] is True
+          assert data["readiness"]["fatal_exception"] is False
+          assert data["permissions"]["android.permission.CAMERA"]["declared"] is True
+          assert data["permissions"]["horizonos.permission.HEADSET_CAMERA"]["declared"] is True
+          assert data["ocr_runtime"] == "PaddleOCR"
+          assert data["detector_input_preprocess"] == "GPUTextureConverter+FunctionalNormalization"
+          assert data["detector_input_layout"] == "NCHW/BGR/TopLeft"
+          assert data["detector_input_cpu_image_readback"] is False
+          assert data["surface_runtime"] == "MRUKEnvironmentRaycast"
+          assert data["translation_runtime"] == "DemoDictionaryFixture"
+          assert data["product_translation_gate"] is False
+          assert data["camera_timestamp_source"] == "MetaPassthroughCameraAccess.Timestamp"
+          assert data["camera_pose_source"] == "MetaPassthroughCameraAccess.GetCameraPose"
+          assert data["captured_pose_projection_required"] is True
+          assert data["camera_timestamp_pose_binding_implemented"] is True
+          assert data["camera_pixel_pose_sync_verified"] is False
+          assert data["log_privacy"]["raw_process_logcat_written_to_disk"] is False
+          assert data["log_privacy"]["raw_process_logcat_uploaded"] is False
+          assert data["log_privacy"]["sanitized_diagnostics_allowlist"] is True
+          assert data["log_privacy"]["diagnostic_lines_require_full_grammar_match"] is True
+          assert data["log_privacy"]["recognized_text_allowed_in_diagnostics"] is False
+          assert data["log_privacy"]["display_text_allowed_in_diagnostics"] is False
+          assert data["files"]["sanitized_diagnostics"] == "quest-read-mode-diagnostics.txt"
+          assert "recognized_text=" not in diagnostics
+          assert "display_text=" not in diagnostics
+          assert fingerprint["uploaded"] is False
+          assert fingerprint["ocr_model_redistribution_review"] == "pending"
+          assert data["apk"]["sha256"] == fingerprint["sha256"]
+          assert data["apk"]["size_bytes"] == fingerprint["size_bytes"]
+          assert structure["sha256"] == fingerprint["sha256"]
+          assert structure["native_abis"] == ["arm64-v8a"]
+          assert structure["il2cpp_native_library_present"] is True
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+      - name: Remove local Read Mode APK before artifact phase
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/PhraseLayerReadModeFixture.apk"
+
+      - name: Upload safe Quest 3 Read Mode evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phraselayer-quest3-read-mode-evidence
+          path: |
+            ${{ runner.temp }}/PhraseLayer.unity-host-preflight.json
+            ${{ runner.temp }}/PhraseLayer.read-mode-fixture-build-evidence.json
+            ${{ runner.temp }}/read-mode-apk-fingerprint.json
+            ${{ runner.temp }}/read-mode-apk-structure.json
+            unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/read-mode-visual-assets.json
+            unity/PhraseLayer.Unity/Assets/LocalOcrAssets/PaddleOCR/PhraseLayerOcrAssets.manifest.json
+            ${{ runner.temp }}/quest-read-mode-smoke/quest-read-mode-smoke.json
+            ${{ runner.temp }}/quest-read-mode-smoke/quest-read-mode-diagnostics.txt
+          if-no-files-found: warn
+          retention-days: 7

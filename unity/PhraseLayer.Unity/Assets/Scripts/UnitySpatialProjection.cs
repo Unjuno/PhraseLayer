@@ -6,9 +6,9 @@ using UnityEngine;
 namespace PhraseLayer.Unity
 {
     /// <summary>
-    /// Thin ISurfaceRaycaster adapter over Unity Physics. PhraseLayer does not assume where the colliders come from:
-    /// they may be scene meshes, MRUK-provided environment colliders, or controlled test geometry. Missing colliders
-    /// remain a normal projection failure and never cause PhraseLayer to guess a physical text surface.
+    /// Thin ISurfaceRaycaster adapter over Unity Physics. This remains useful for controlled editor/test geometry and
+    /// as an explicit fallback, but the Quest Read Mode fixture uses UnityEnvironmentSurfaceRaycaster so it does not
+    /// require a prior Scene scan or generated environment colliders.
     /// </summary>
     public sealed class UnityPhysicsSurfaceRaycaster : MonoBehaviour, ISurfaceRaycaster
     {
@@ -87,41 +87,58 @@ namespace PhraseLayer.Unity
     }
 
     /// <summary>
-    /// Scene-facing bridge from aligned Read Mode output to the platform-neutral projection and physical text-plane policies.
-    /// Center projection is followed by an independent four-corner surface fit before an in-place target is considered layout-ready.
+    /// Scene-facing bridge from aligned Read Mode output to platform-neutral projection and physical text-plane policy.
+    /// Quest uses MRUK live environment depth by default; Unity Physics remains an explicit controlled-geometry path.
+    /// For a real camera frame, planners are rebound to an IViewportRayProvider carrying that frame's cached Meta
+    /// camera pose before center projection or four-corner fitting occurs.
     /// </summary>
     public sealed class UnitySpatialProjectionBehaviour : MonoBehaviour
     {
         [SerializeField] private MetaPassthroughCameraBridge rayProvider = default(MetaPassthroughCameraBridge);
-        [SerializeField] private UnityPhysicsSurfaceRaycaster surfaceRaycaster = default(UnityPhysicsSurfaceRaycaster);
+        [SerializeField] private UnityEnvironmentSurfaceRaycaster environmentSurfaceRaycaster = default(UnityEnvironmentSurfaceRaycaster);
+        [SerializeField] private UnityPhysicsSurfaceRaycaster physicsSurfaceRaycaster = default(UnityPhysicsSurfaceRaycaster);
         [SerializeField] private float maximumPlanarityErrorMeters = 0.03f;
         [SerializeField] private float minimumTextExtentMeters = 0.005f;
         [SerializeField] private float minimumSurfaceNormalDot = 0.80f;
 
+        private IViewportRayProvider activeViewportRayProvider;
+        private ISurfaceRaycaster activeSurfaceRaycaster;
         private SpatialProjectionPlanner projectionPlanner;
         private WorldTextLayoutPlanner layoutPlanner;
 
         public SpatialProjectionPlan LastPlan { get; private set; }
         public WorldTextLayoutPlan LastWorldTextLayout { get; private set; }
         public MetaPassthroughCameraBridge RayProvider => rayProvider;
-        public UnityPhysicsSurfaceRaycaster SurfaceRaycaster => surfaceRaycaster;
+        public UnityEnvironmentSurfaceRaycaster EnvironmentSurfaceRaycaster => environmentSurfaceRaycaster;
+        public UnityPhysicsSurfaceRaycaster SurfaceRaycaster => physicsSurfaceRaycaster;
+        public bool UsesEnvironmentRaycast => activeSurfaceRaycaster != null && ReferenceEquals(activeSurfaceRaycaster, environmentSurfaceRaycaster);
+        public bool UsesCapturedCameraPose { get; private set; }
+        public long? LastProjectionFrameTimestampMicroseconds { get; private set; }
+
+        public void SetSceneReferences(
+            MetaPassthroughCameraBridge viewportRayProvider,
+            UnityEnvironmentSurfaceRaycaster worldSurfaceRaycaster)
+        {
+            rayProvider = viewportRayProvider ?? throw new ArgumentNullException(nameof(viewportRayProvider));
+            environmentSurfaceRaycaster = worldSurfaceRaycaster ?? throw new ArgumentNullException(nameof(worldSurfaceRaycaster));
+            physicsSurfaceRaycaster = null;
+            ResetPlanners();
+        }
 
         public void SetSceneReferences(
             MetaPassthroughCameraBridge viewportRayProvider,
             UnityPhysicsSurfaceRaycaster worldSurfaceRaycaster)
         {
             rayProvider = viewportRayProvider ?? throw new ArgumentNullException(nameof(viewportRayProvider));
-            surfaceRaycaster = worldSurfaceRaycaster ?? throw new ArgumentNullException(nameof(worldSurfaceRaycaster));
-            projectionPlanner = null;
-            layoutPlanner = null;
-            LastPlan = null;
-            LastWorldTextLayout = null;
+            physicsSurfaceRaycaster = worldSurfaceRaycaster ?? throw new ArgumentNullException(nameof(worldSurfaceRaycaster));
+            environmentSurfaceRaycaster = null;
+            ResetPlanners();
         }
 
         public SpatialProjectionPlan Project(ReadModeAlignedResult aligned)
         {
             if (aligned == null) throw new ArgumentNullException(nameof(aligned));
-            EnsurePlanners();
+            BindFrameRayProvider(aligned.Spatial.Frame);
             LastPlan = projectionPlanner.Project(aligned.SpatialAssistance);
             LastWorldTextLayout = null;
             return LastPlan;
@@ -146,8 +163,19 @@ namespace PhraseLayer.Unity
         private void OnValidate()
         {
             ValidateLayoutConfiguration();
-            projectionPlanner = null;
-            layoutPlanner = null;
+            ResetPlanners();
+        }
+
+        private void BindFrameRayProvider(PhraseLayer.Core.Inputs.ImageFrame frame)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            if (rayProvider == null)
+                throw new InvalidOperationException("Assign MetaPassthroughCameraBridge before projecting Read Mode assistance.");
+
+            UsesCapturedCameraPose = rayProvider.TryCreateFrameRayProvider(frame, out activeViewportRayProvider);
+            LastProjectionFrameTimestampMicroseconds = frame.TimestampMicroseconds;
+            activeSurfaceRaycaster = SelectSurfaceRaycaster();
+            BuildPlanners(activeViewportRayProvider, activeSurfaceRaycaster);
         }
 
         private void EnsurePlanners()
@@ -155,17 +183,46 @@ namespace PhraseLayer.Unity
             if (projectionPlanner != null && layoutPlanner != null) return;
             if (rayProvider == null)
                 throw new InvalidOperationException("Assign MetaPassthroughCameraBridge before projecting Read Mode assistance.");
-            if (surfaceRaycaster == null)
-                throw new InvalidOperationException("Assign UnityPhysicsSurfaceRaycaster before projecting Read Mode assistance.");
 
+            activeViewportRayProvider = rayProvider;
+            UsesCapturedCameraPose = false;
+            LastProjectionFrameTimestampMicroseconds = null;
+            activeSurfaceRaycaster = SelectSurfaceRaycaster();
+            BuildPlanners(activeViewportRayProvider, activeSurfaceRaycaster);
+        }
+
+        private void BuildPlanners(IViewportRayProvider viewportRayProvider, ISurfaceRaycaster surfaceRaycaster)
+        {
             ValidateLayoutConfiguration();
-            projectionPlanner = new SpatialProjectionPlanner(rayProvider, surfaceRaycaster);
+            projectionPlanner = new SpatialProjectionPlanner(viewportRayProvider, surfaceRaycaster);
             layoutPlanner = new WorldTextLayoutPlanner(
-                rayProvider,
+                viewportRayProvider,
                 surfaceRaycaster,
                 maximumPlanarityErrorMeters,
                 minimumTextExtentMeters,
                 minimumSurfaceNormalDot);
+        }
+
+        private ISurfaceRaycaster SelectSurfaceRaycaster()
+        {
+            if (environmentSurfaceRaycaster != null)
+                return environmentSurfaceRaycaster;
+            if (physicsSurfaceRaycaster != null)
+                return physicsSurfaceRaycaster;
+            throw new InvalidOperationException(
+                "Assign UnityEnvironmentSurfaceRaycaster for Quest depth projection or UnityPhysicsSurfaceRaycaster for controlled geometry.");
+        }
+
+        private void ResetPlanners()
+        {
+            activeViewportRayProvider = null;
+            activeSurfaceRaycaster = null;
+            projectionPlanner = null;
+            layoutPlanner = null;
+            LastPlan = null;
+            LastWorldTextLayout = null;
+            UsesCapturedCameraPose = false;
+            LastProjectionFrameTimestampMicroseconds = null;
         }
 
         private void ValidateLayoutConfiguration()

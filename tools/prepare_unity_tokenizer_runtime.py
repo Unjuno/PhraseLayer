@@ -6,6 +6,10 @@ NuGet lock first, then point --build-output at that project's output directory. 
 dependency closure present beside the adapter is copied except PhraseLayer.Core.dll, because Core is
 already supplied to Unity as the local com.unjuno.phraselayer.core package.
 
+The Unity bridge resolves PhraseLayer.Tokenization.Microsoft by reflection, so IL2CPP/linker stripping
+must not be allowed to erase that entry point. Staging therefore also writes a narrow link.xml preserving
+the reflection entry assembly plus its reviewed tokenizer/protobuf runtime dependencies.
+
 Real Unity import and Quest execution remain separate gates.
 """
 
@@ -23,6 +27,12 @@ REQUIRED = {
 EXCLUDED = {
     "PhraseLayer.Core.dll",
 }
+PRESERVED_ASSEMBLIES = (
+    "PhraseLayer.Tokenization.Microsoft",
+    "Microsoft.ML.Tokenizers",
+    "Google.Protobuf",
+)
+LINK_XML_NAME = "link.xml"
 
 
 def sha256(path: Path) -> str:
@@ -31,6 +41,21 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _write_linker_descriptor(destination: Path) -> dict:
+    lines = ["<linker>"]
+    for assembly in PRESERVED_ASSEMBLIES:
+        lines.append(f'  <assembly fullname="{assembly}" preserve="all" />')
+    lines.append("</linker>")
+    path = destination / LINK_XML_NAME
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {
+        "file": LINK_XML_NAME,
+        "size_bytes": path.stat().st_size,
+        "sha256": sha256(path),
+        "preserved_assemblies": list(PRESERVED_ASSEMBLIES),
+    }
 
 
 def stage(build_output: Path, destination: Path, manifest_path: Path) -> dict:
@@ -51,6 +76,9 @@ def stage(build_output: Path, destination: Path, manifest_path: Path) -> dict:
     destination.mkdir(parents=True, exist_ok=True)
     for previous in destination.glob("*.dll"):
         previous.unlink()
+    linker_path = destination / LINK_XML_NAME
+    if linker_path.exists():
+        linker_path.unlink()
 
     artifacts = []
     for source in dlls:
@@ -64,13 +92,17 @@ def stage(build_output: Path, destination: Path, manifest_path: Path) -> dict:
             }
         )
 
+    linker_descriptor = _write_linker_descriptor(destination)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": str(build_output),
         "destination": str(destination),
         "runtime": "Microsoft.ML.Tokenizers",
         "artifacts": artifacts,
         "core_assembly_staged": False,
+        "reflection_entry_point": "PhraseLayer.Tokenization.Microsoft.MicrosoftMlMarianTokenizerFactory",
+        "il2cpp_reflection_preserve_required": True,
+        "linker_descriptor": linker_descriptor,
         "unity_compatibility": "unverified-real-unity-import-required",
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -99,7 +131,7 @@ def main() -> None:
     manifest = stage(args.build_output, args.destination, args.manifest)
     print(
         "PASS: staged "
-        f"{len(manifest['artifacts'])} managed tokenizer assemblies; manifest={args.manifest}"
+        f"{len(manifest['artifacts'])} managed tokenizer assemblies + IL2CPP linker descriptor; manifest={args.manifest}"
     )
 
 

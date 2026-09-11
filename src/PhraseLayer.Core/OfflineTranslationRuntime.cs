@@ -167,6 +167,7 @@ namespace PhraseLayer.Core.Translation
                 throw new InvalidOperationException("Offline translation model returned no generation result.");
 
             var translated = tokenizer.DecodeTarget(generated.TokenIds);
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(translated))
                 throw new InvalidOperationException("Offline translation tokenizer decoded an empty translation.");
 
@@ -205,6 +206,7 @@ namespace PhraseLayer.Core.Translation
             var result = await runtime.TranslateAsync(
                 new OfflineTranslationRequest(sourceText, context),
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (result == null)
                 throw new InvalidOperationException("Offline translation runtime returned no result.");
             return result.TranslatedText;

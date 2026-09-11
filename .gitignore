@@ -15,7 +15,9 @@ TestResults/
 models/cache/
 models/weights/
 unity/PhraseLayer.Unity/Assets/LocalOcrAssets/
+unity/PhraseLayer.Unity/Assets/LocalReadModeAssets/
 unity/PhraseLayer.Unity/Assets/LocalTokenizerRuntime/
+unity/PhraseLayer.Unity/Assets/LocalTranslationAssets/
 unity/PhraseLayer.Unity/Assets/Resources/LocalTranslationAssets/
 *.onnx
 *.gguf
