@@ -3,7 +3,7 @@
 
 Host-only experiment:
   rendered synthetic text -> pinned detector ONNX -> Paddle/OpenCV reference DB boxes
-                                    \-> production Core DB boxes
+                                    -> production Core DB boxes
   same source image + each matched quad -> Paddle-compatible crop/resize -> pinned recognizer ONNX -> CTC decode
 
 The experiment compares the two geometry paths, not human OCR accuracy. No image, model, dictionary, or tensor
@@ -28,7 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REC_WIDTH = 320
 REC_HEIGHT = 48
 TEXT_TOLERANCE = 0
-CONFIDENCE_TOLERANCE = 0.02
+# PhraseLayer/PaddleOCR production contract: recognizer candidates are retained at score >= 0.5.
+# A raw confidence delta is diagnostic; only a change in this real product decision is a correctness failure.
+RECOGNITION_DROP_SCORE = 0.5
 
 
 def check(condition: bool, message: str) -> None:
@@ -219,6 +221,7 @@ def main() -> int:
 
     rows = []
     text_mismatches = 0
+    drop_decision_mismatches = 0
     reference_ground_truth_matches = 0
     core_ground_truth_matches = 0
     compared = 0
@@ -243,6 +246,10 @@ def main() -> int:
             same_text = ref_text == core_text
             if not same_text:
                 text_mismatches += 1
+            reference_retained = ref_conf >= RECOGNITION_DROP_SCORE
+            core_retained = core_conf >= RECOGNITION_DROP_SCORE
+            if reference_retained != core_retained:
+                drop_decision_mismatches += 1
             max_confidence_delta = max(max_confidence_delta, abs(ref_conf - core_conf))
             max_crop_width_delta = max(max_crop_width_delta, abs(ref_crop.shape[1] - core_crop.shape[1]))
             max_crop_height_delta = max(max_crop_height_delta, abs(ref_crop.shape[0] - core_crop.shape[0]))
@@ -262,7 +269,11 @@ def main() -> int:
                 "core_crop_width": int(core_crop.shape[1]),
                 "core_crop_height": int(core_crop.shape[0]),
                 "text_exact": same_text,
+                "reference_confidence": ref_conf,
+                "core_confidence": core_conf,
                 "confidence_absolute_delta": abs(ref_conf - core_conf),
+                "reference_retained_at_product_threshold": reference_retained,
+                "core_retained_at_product_threshold": core_retained,
                 "reference_token_count": len(ref_indices),
                 "core_token_count": len(core_indices),
                 "reference_text_sha256": text_hash(ref_text),
@@ -271,7 +282,12 @@ def main() -> int:
                 "core_matches_fixture_line": core_gt,
             })
 
-    safety = text_mismatches == TEXT_TOLERANCE and max_confidence_delta <= CONFIDENCE_TOLERANCE
+    safety = (
+        text_mismatches == TEXT_TOLERANCE
+        and drop_decision_mismatches == 0
+        and reference_ground_truth_matches == compared
+        and core_ground_truth_matches == compared
+    )
     report = {
         "experiment": "ppocr-real-model-quad-impact-differential",
         "status": "completed",
@@ -279,8 +295,10 @@ def main() -> int:
         "fixtures": len(fixtures()),
         "compared_boxes": compared,
         "text_mismatches": text_mismatches,
+        "recognition_drop_score": RECOGNITION_DROP_SCORE,
+        "drop_decision_mismatches": drop_decision_mismatches,
         "maximum_confidence_absolute_delta": max_confidence_delta,
-        "confidence_tolerance": CONFIDENCE_TOLERANCE,
+        "confidence_delta_is_diagnostic_not_acceptance_criterion": True,
         "minimum_quad_iou": min_iou,
         "maximum_crop_width_delta_pixels": max_crop_width_delta,
         "maximum_crop_height_delta_pixels": max_crop_height_delta,
