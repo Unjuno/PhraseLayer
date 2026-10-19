@@ -1,0 +1,3 @@
+# Optional host-only experiment, not a PhraseLayer runtime dependency.
+# Install with the reviewed Marian exporter environment (tools/requirements-marian-export.txt).
+ctranslate2==4.8.3
