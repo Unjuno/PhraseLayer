@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dependency-free policy tests. Never stages or downloads real model weights."""
 import json
+import hashlib
 import pathlib
 import sys
 import tempfile
@@ -25,13 +26,16 @@ class LightweightMarianTests(unittest.TestCase):
             audit.verify_local_snapshot(pathlib.Path("/missing-locked-marian"), source)
 
     def test_rejects_tampered_weight_even_when_size_matches(self):
-        source, _ = audit.load_policy_and_lock()
-        # Need not create a 274MB file: a tiny substitution fails the locked size.
+        # Equal byte counts but different content must fail the SHA check.
         with tempfile.TemporaryDirectory() as temp:
-            p = pathlib.Path(temp)
-            (p / "pytorch_model.bin").write_bytes(b"not-the-locked-weights")
-            with self.assertRaises(audit.CandidateRejected):
-                audit.verify_local_snapshot(p, source)
+            p = pathlib.Path(temp) / "pytorch_model.bin"
+            expected = b"original"
+            actual = b"tampered"
+            self.assertEqual(len(expected), len(actual))
+            p.write_bytes(actual)
+            expected_hash = hashlib.sha256(expected).hexdigest()
+            with self.assertRaisesRegex(audit.CandidateRejected, "SHA-256 mismatch"):
+                audit.verify_locked_file(p, p.name, len(expected), expected_hash)
 
     def test_compact_agreement_can_qualify_for_device_trial_only(self):
         base = ["禁止", "非常口"] + ["日本語"] * 22
