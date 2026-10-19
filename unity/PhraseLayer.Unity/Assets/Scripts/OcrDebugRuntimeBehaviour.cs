@@ -31,6 +31,15 @@ namespace PhraseLayer.Unity
         public float TargetOcrHz => targetOcrHz;
         public MetaPassthroughCameraBridge CameraBridge => cameraBridge;
         public OcrViewportDebugBehaviour Presenter => presenter;
+        public bool AutoRun
+        {
+            get => autoRun;
+            set
+            {
+                autoRun = value;
+                if (!autoRun) nextAttemptTime = 0.0;
+            }
+        }
 
         /// <summary>
         /// Assigns scene-level camera and presentation dependencies before an OCR engine is configured.

@@ -17,6 +17,7 @@ namespace PhraseLayer.Unity
         [SerializeField, TextArea(2, 5)] private string sourceText = DefaultSource;
         [SerializeField] private AssistanceMode assistanceMode = AssistanceMode.Balanced;
         [SerializeField] private UnityLiveReadModeBehaviour liveReadMode = default(UnityLiveReadModeBehaviour);
+        [SerializeField] private bool autoRunOnStart = true;
 
         private InMemoryLearnerModel learner;
         private LanguagePipeline pipeline;
@@ -32,11 +33,51 @@ namespace PhraseLayer.Unity
         public MixedLanguagePlan CurrentPlan => currentPlan;
         public LanguagePipeline Pipeline => pipeline;
         public bool UsesTranslationEngineOverride => translationEngineOverride != null;
+        public bool AutoRunOnStart => autoRunOnStart;
 
         private async void Start()
         {
+            if (!autoRunOnStart)
+                return;
             BuildPipeline();
             await ReplanAsync();
+        }
+
+        public void SetAutoRunOnStart(bool enabled)
+        {
+            autoRunOnStart = enabled;
+        }
+
+        public void SetSourceText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentException("PhraseLayer demo source text must not be empty.", nameof(text));
+            sourceText = text;
+        }
+
+        /// <summary>
+        /// Configures the translation-only Android product smoke deterministically instead of relying on mutable demo
+        /// defaults. The product translation engine must already be injected by the Marian bootstrap. The caller still
+        /// invokes ReplanAsync so the resulting encounter is produced through the normal LanguagePipeline.
+        /// </summary>
+        public void PrepareDeterministicTranslationSmokeFixture(string text, double understanding)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new ArgumentException("Translation smoke source text must not be empty.", nameof(text));
+            if (double.IsNaN(understanding) || double.IsInfinity(understanding) || understanding < 0.0 || understanding > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(understanding), "Understanding must be between 0 and 1.");
+            if (translationEngineOverride == null)
+            {
+                throw new InvalidOperationException(
+                    "Translation smoke fixture requires an injected product translation engine; demo dictionary fallback is not allowed.");
+            }
+
+            sourceText = text;
+            assistanceMode = AssistanceMode.Balanced;
+            BuildPipeline();
+            learner.SetUnderstanding(text, understanding);
+            currentPlan = null;
+            currentEncounter = null;
         }
 
         public void SetLiveReadMode(UnityLiveReadModeBehaviour liveRuntime)
@@ -157,7 +198,9 @@ namespace PhraseLayer.Unity
             {
                 "was tired",
                 "went home",
-                "fell asleep"
+                "fell asleep",
+                "keep off",
+                "emergency exit"
             });
 
             ITranslationEngine translationEngine = translationEngineOverride;
@@ -169,7 +212,9 @@ namespace PhraseLayer.Unity
                     { "was tired", "疲れていた" },
                     { "went home", "家に帰った" },
                     { "fell asleep", "眠ってしまった" },
-                    { "immediately", "すぐ" }
+                    { "immediately", "すぐ" },
+                    { "keep off", "立入禁止" },
+                    { "emergency exit", "非常口" }
                 };
                 translationEngine = new DictionaryTranslationEngine(translations);
             }
@@ -199,6 +244,8 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.35);
                     learner.SetUnderstanding("fell asleep", 0.20);
                     learner.SetUnderstanding("immediately", 0.35);
+                    learner.SetUnderstanding("keep off", 0.10);
+                    learner.SetUnderstanding("emergency exit", 0.10);
                     break;
                 case DemoLearnerProfile.Advanced:
                     learner.SetUnderstanding("I was tired", 0.96);
@@ -206,6 +253,8 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.94);
                     learner.SetUnderstanding("fell asleep", 0.94);
                     learner.SetUnderstanding("immediately", 0.95);
+                    learner.SetUnderstanding("keep off", 0.90);
+                    learner.SetUnderstanding("emergency exit", 0.90);
                     break;
                 default:
                     learner.SetUnderstanding("I was tired", 0.94);
@@ -213,6 +262,10 @@ namespace PhraseLayer.Unity
                     learner.SetUnderstanding("and I fell asleep immediately", 0.91);
                     learner.SetUnderstanding("fell asleep", 0.82);
                     learner.SetUnderstanding("immediately", 0.78);
+                    // Short physical-sign fixtures used by the Quest hardware gate. Low understanding makes the
+                    // default intermediate demo reliably request an in-place replacement for these known MWEs.
+                    learner.SetUnderstanding("keep off", 0.05);
+                    learner.SetUnderstanding("emergency exit", 0.05);
                     break;
             }
         }

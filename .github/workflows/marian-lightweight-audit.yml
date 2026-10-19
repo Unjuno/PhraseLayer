@@ -1,0 +1,52 @@
+name: Marian Lightweight Candidate Audit
+
+on:
+  push:
+    branches: ["agent/**"]
+    paths:
+      - "models/models.lock.json"
+      - "models/candidates/marian-ct2-int8.json"
+      - "tools/benchmark_marian_ct2_int8.py"
+      - "tools/test_benchmark_marian_ct2_int8.py"
+      - "tools/requirements-marian-ct2-audit.txt"
+      - "docs/MODEL_SELECTION_2026_10.md"
+      - ".github/workflows/marian-lightweight-audit.yml"
+  pull_request:
+    paths:
+      - "models/models.lock.json"
+      - "models/candidates/marian-ct2-int8.json"
+      - "tools/benchmark_marian_ct2_int8.py"
+      - "tools/test_benchmark_marian_ct2_int8.py"
+      - "tools/requirements-marian-ct2-audit.txt"
+      - ".github/workflows/marian-lightweight-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate pinned source and candidate policy without model weights
+        run: python tools/test_benchmark_marian_ct2_int8.py
+      - name: Ensure source lock has not drifted
+        run: python tools/validate_marian_lock_evidence.py
+      - name: Check pinned CTranslate2 wheel and offline conversion API
+        run: |
+          python -m pip install -r tools/requirements-marian-ct2-audit.txt
+          python - <<'PY'
+          import inspect
+          import ctranslate2
+          assert ctranslate2.__version__ == "4.8.3"
+          assert hasattr(ctranslate2.converters, "TransformersConverter")
+          assert "quantization" in inspect.signature(ctranslate2.converters.TransformersConverter.convert).parameters
+          assert callable(ctranslate2.contains_model)
+          print("CTranslate2 pinned host API PASS (model and Quest execution not performed)")
+          PY
+      - name: Syntax-check offline candidate without installing heavy ML toolchain
+        run: python -m py_compile tools/benchmark_marian_ct2_int8.py

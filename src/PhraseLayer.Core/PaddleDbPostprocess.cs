@@ -91,13 +91,15 @@ namespace PhraseLayer.Core.Inputs
         }
 
         /// <summary>
-        /// Mirrors PaddleOCR: segmentation = prediction > thresh.
-        /// Equality with the bitmap threshold is background.
+        /// Mirrors PaddleOCR: segmentation = prediction > thresh. Detector probabilities are float32, and NumPy
+        /// compares the Python threshold in that array's float32 domain. Compare in the same domain here; otherwise
+        /// the float32 representation of exactly 0.2 (slightly above double 0.2) is incorrectly treated as foreground.
+        /// Equality with the float32 bitmap threshold is background.
         /// </summary>
         public bool IsForeground(double prediction)
         {
             ValidateUnitInterval(prediction, nameof(prediction));
-            return prediction > BitmapThreshold;
+            return (float)prediction > (float)BitmapThreshold;
         }
 
         /// <summary>

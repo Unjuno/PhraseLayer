@@ -1,0 +1,52 @@
+name: Experimental Audit
+
+on:
+  push:
+    branches: ["agent/**"]
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLiveReadModeBehaviour.cs", ".github/workflows/experimental-audit.yml"]
+  pull_request:
+    paths: ["src/PhraseLayer.Core/**", "experiments/**", "tests/PhraseLayer.Core.Tests/**", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLearnerProfileStore.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityWorldTextTrackingBehaviour.cs", "unity/PhraseLayer.Unity/Assets/Scripts/UnityLiveReadModeBehaviour.cs", ".github/workflows/experimental-audit.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: experimental-audit-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [SourceStableIdentity, LearningEvidenceAudit, LearningCommitAudit, UnityStoreFaultAudit, WorldPresentationAudit, PipelineBoundaryAudit, CoordinatorCancellationAudit, LiveLifecycleAudit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Record selected SDK and framework
+        run: dotnet --version
+      - name: Build audit
+        run: dotnet build experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release --verbosity quiet
+      - name: Require deterministic input, commit and recovery safety
+        env:
+          AUDIT_REPORT_PATH: audit-result.json
+        run: dotnet run --no-build --project experiments/PhraseLayer.${{ matrix.project }}/PhraseLayer.${{ matrix.project }}.csproj -c Release -- --require-safe --require-transaction --require-filesystem
+      - name: Preserve synthetic audit results even when a safety hypothesis fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ matrix.project }}-${{ github.run_id }}
+          path: audit-result.json
+          if-no-files-found: ignore
+          retention-days: 14
+  core-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Run all Core regressions including 2048-case batch parity
+        run: dotnet test tests/PhraseLayer.Core.Tests/PhraseLayer.Core.Tests.csproj -c Release --verbosity quiet

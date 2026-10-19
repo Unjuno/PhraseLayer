@@ -6,6 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
     <DefineConstants>PHRASELAYER_UNITY_AI_INFERENCE_2_2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
@@ -14,5 +15,13 @@
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianSeq2SeqGenerationBackend.cs" Link="UnityRuntime/UnityMarianSeq2SeqGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianDeviceResidentGenerationBackend.cs" Link="UnityRuntime/UnityMarianDeviceResidentGenerationBackend.cs" />
     <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityMarianTranslationBootstrapBehaviour.cs" Link="UnityRuntime/UnityMarianTranslationBootstrapBehaviour.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/MarianAndroidRuntimeSmokeTestBehaviour.cs" Link="UnityRuntime/MarianAndroidRuntimeSmokeTestBehaviour.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerLocalMarianAssets.cs" Link="UnityEditor/PhraseLayerLocalMarianAssets.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianReadModeParityProbe.cs" Link="UnityEditor/PhraseLayerMarianReadModeParityProbe.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianParityEvidence.cs" Link="UnityEditor/PhraseLayerMarianParityEvidence.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerMarianProductFixtureSetup.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerMarianProductAndroidBuild.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeMarianProductFixtureSetup.cs" Link="UnityEditor/PhraseLayerReadModeMarianProductFixtureSetup.cs" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Editor/PhraseLayerReadModeMarianProductAndroidBuild.cs" Link="UnityEditor/PhraseLayerReadModeMarianProductAndroidBuild.cs" />
   </ItemGroup>
 </Project>

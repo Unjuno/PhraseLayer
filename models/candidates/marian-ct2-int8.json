@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "opus-mt-en-jap-ct2-int8-host-candidate",
+  "purpose": "translation-en-ja",
+  "upstream": "Helsinki-NLP/opus-mt-en-jap",
+  "revision": "a863894cdd2b80f3bc1c5966734aee9ffec207d1",
+  "source_model_id": "opus-mt-en-jap",
+  "format": "ctranslate2",
+  "quantization": "int8_float32",
+  "target": "aarch64-cpu-experimental",
+  "runtime": "CTranslate2",
+  "status": "host-evaluation-only; Android JNI/ABI and Quest parity unverified",
+  "license": "Apache-2.0",
+  "redistribution_review_pending": true,
+  "production_enabled": false,
+  "bundled": false,
+  "current_unity_backend_unchanged": true,
+  "promotion_gates": [
+    "locked snapshot hashes",
+    "host fp32-vs-int8 exact agreement on critical spans",
+    "reduced converted size",
+    "Android ARM64 native library load",
+    "offline JNI integration",
+    "on-device output quality and performance",
+    "redistribution review"
+  ]
+}

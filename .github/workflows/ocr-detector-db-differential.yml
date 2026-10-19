@@ -1,0 +1,63 @@
+name: OCR Detector DB Differential
+
+on:
+  push:
+    branches: ["agent/**"]
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/PaddleDb*.cs"
+      - "src/PhraseLayer.Core/PaddleOcrDetectionPreprocess.cs"
+      - "experiments/PhraseLayer.DetectorOutputReplay/**"
+      - "tools/run_ppocr_detector_db_differential.py"
+      - "tools/requirements-ocr-db-audit.txt"
+      - ".github/workflows/ocr-detector-db-differential.yml"
+  pull_request:
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/PaddleDb*.cs"
+      - "src/PhraseLayer.Core/PaddleOcrDetectionPreprocess.cs"
+      - "experiments/PhraseLayer.DetectorOutputReplay/**"
+      - "tools/run_ppocr_detector_db_differential.py"
+      - "tools/requirements-ocr-db-audit.txt"
+      - ".github/workflows/ocr-detector-db-differential.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-detector-db-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install pinned host-only detector audit tools
+        run: python -m pip install -r tools/requirements-ocr-db-audit.txt
+      - name: Stage exact detector locally without redistribution
+        run: python tools/stage_models.py --model pp-ocrv6-tiny-det
+      - name: Compare actual detector maps and synthetic DB geometry with production Core
+        run: |
+          python tools/run_ppocr_detector_db_differential.py \
+            --model artifacts/models/pp-ocrv6-tiny-det/inference.onnx \
+            --work-dir artifacts/ocr-detector-db/work \
+            --report artifacts/ocr-detector-db/report.json
+      - name: Upload numerical summary only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-detector-db-${{ github.run_id }}
+          path: artifacts/ocr-detector-db/report.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove local model and probability maps
+        if: always()
+        run: rm -rf artifacts/models/pp-ocrv6-tiny-det artifacts/ocr-detector-db/work

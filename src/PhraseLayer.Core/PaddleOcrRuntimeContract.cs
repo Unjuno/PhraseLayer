@@ -85,6 +85,68 @@ namespace PhraseLayer.Core.Inputs
         {
             if (outputShape == null) throw new ArgumentNullException(nameof(outputShape));
             if (outputValues == null) throw new ArgumentNullException(nameof(outputValues));
+
+            var contract = ValidateRecognizerShape(outputShape, dictionaryTokenCount);
+            if (outputValues.Length != contract.ValueCount)
+            {
+                throw new InvalidOperationException(
+                    "Recognizer value count does not match timeSteps * classCount. Observed shape " +
+                    FormatShape(outputShape) + ", values=" + outputValues.Length + ".");
+            }
+
+            return contract;
+        }
+
+        /// <summary>
+        /// Validates a GPU-reduced recognizer result without requiring the full [time,class] probability matrix on CPU.
+        /// The original output shape is still observed from GPU tensor metadata, while CPU data contains only one
+        /// winning class index and maximum score per timestep. A real-runtime parity gate must separately prove that
+        /// the reduction is equivalent to the full-matrix CTC path for the pinned model.
+        /// </summary>
+        public static PaddleRecognizerRuntimeContract ValidateRecognizerReduced(
+            int[] outputShape,
+            int[] classIndices,
+            float[] maxScores,
+            int dictionaryTokenCount)
+        {
+            if (outputShape == null) throw new ArgumentNullException(nameof(outputShape));
+            if (classIndices == null) throw new ArgumentNullException(nameof(classIndices));
+            if (maxScores == null) throw new ArgumentNullException(nameof(maxScores));
+
+            var contract = ValidateRecognizerShape(outputShape, dictionaryTokenCount);
+            if (classIndices.Length != contract.TimeSteps || maxScores.Length != contract.TimeSteps)
+            {
+                throw new InvalidOperationException(
+                    "Reduced recognizer outputs must contain exactly one class index and maximum score per timestep. " +
+                    "Observed time=" + contract.TimeSteps + ", indices=" + classIndices.Length +
+                    ", scores=" + maxScores.Length + ".");
+            }
+
+            for (var time = 0; time < contract.TimeSteps; time++)
+            {
+                var classIndex = classIndices[time];
+                if (classIndex < 0 || classIndex >= contract.ClassCount)
+                {
+                    throw new InvalidOperationException(
+                        "Reduced recognizer class index is outside the reviewed class range at timestep " + time +
+                        ": index=" + classIndex + ", classes=" + contract.ClassCount + ".");
+                }
+
+                var score = maxScores[time];
+                if (float.IsNaN(score) || float.IsInfinity(score))
+                {
+                    throw new InvalidOperationException(
+                        "Reduced recognizer maximum score is non-finite at timestep " + time + ".");
+                }
+            }
+
+            return contract;
+        }
+
+        private static PaddleRecognizerRuntimeContract ValidateRecognizerShape(
+            int[] outputShape,
+            int dictionaryTokenCount)
+        {
             if (dictionaryTokenCount < 0) throw new ArgumentOutOfRangeException(nameof(dictionaryTokenCount));
 
             if (outputShape.Length != 3 || outputShape[0] != 1)
@@ -101,14 +163,6 @@ namespace PhraseLayer.Core.Inputs
                     "Recognizer time/class dimensions must be positive. Observed " + FormatShape(outputShape) + ".");
             }
 
-            var expectedValues = checked(timeSteps * classCount);
-            if (outputValues.Length != expectedValues)
-            {
-                throw new InvalidOperationException(
-                    "Recognizer value count does not match timeSteps * classCount. Observed shape " +
-                    FormatShape(outputShape) + ", values=" + outputValues.Length + ".");
-            }
-
             var expectedClassCount = checked(dictionaryTokenCount + 1);
             if (classCount != expectedClassCount)
             {
@@ -123,7 +177,7 @@ namespace PhraseLayer.Core.Inputs
                 timeSteps,
                 classCount,
                 dictionaryTokenCount,
-                outputValues.Length);
+                checked(timeSteps * classCount));
         }
 
         public static string BuildReport(

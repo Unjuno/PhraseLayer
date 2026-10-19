@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GITIGNORE = ROOT / ".gitignore"
 TOOLS = ROOT / "tools"
 EDITOR = ROOT / "unity" / "PhraseLayer.Unity" / "Assets" / "Editor"
+EDITOR_ASMDEF = EDITOR / "PhraseLayer.Unity.Editor.asmdef"
 
 violations = []
 
@@ -45,6 +47,25 @@ for marker in (
     if marker not in fixture:
         violations.append(f"local Unity OCR staging fixture missing reviewed test: {marker}")
 
+editor_asmdef_text = require_file(EDITOR_ASMDEF)
+if editor_asmdef_text:
+    try:
+        editor_asmdef = json.loads(editor_asmdef_text)
+    except json.JSONDecodeError as exception:
+        violations.append(f"Unity Editor asmdef is invalid JSON: {exception}")
+    else:
+        if "Unity.InferenceEngine" not in editor_asmdef.get("references", []):
+            violations.append("Unity Editor asmdef must reference Unity.InferenceEngine for local OCR probes")
+        expected_version_define = {
+            "name": "com.unity.ai.inference",
+            "expression": "[2.2.1,2.3.0)",
+            "define": "PHRASELAYER_UNITY_AI_INFERENCE_2_2",
+        }
+        if expected_version_define not in editor_asmdef.get("versionDefines", []):
+            violations.append(
+                "Unity Editor asmdef must mirror the runtime com.unity.ai.inference 2.2.x version define"
+            )
+
 editor = require_file(EDITOR / "PhraseLayerLocalOcrAssets.cs")
 for marker in (
     'Root = "Assets/LocalOcrAssets/PaddleOCR"',
@@ -81,4 +102,7 @@ for marker in (
 if violations:
     raise SystemExit("\n".join(violations))
 
-print("PASS: local PP-OCR assets are git-ignored, offline-verified, batch-importable, synthetic-inference-probeable, and wired to idempotent Unity bootstrap assignment")
+print(
+    "PASS: local PP-OCR assets are git-ignored, offline-verified, batch-importable, synthetic-inference-probeable, "
+    "and the Editor assembly mirrors the reviewed Inference Engine 2.2.x gate"
+)

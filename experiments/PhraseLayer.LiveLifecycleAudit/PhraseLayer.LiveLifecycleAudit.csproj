@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><LangVersion>latest</LangVersion><Nullable>disable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PhraseLayer.Core/PhraseLayer.Core.csproj" />
+    <Compile Include="../../unity/PhraseLayer.Unity/Assets/Scripts/UnityLiveReadModeBehaviour.cs" Link="ProductionLiveReadMode.cs" />
+  </ItemGroup>
+</Project>

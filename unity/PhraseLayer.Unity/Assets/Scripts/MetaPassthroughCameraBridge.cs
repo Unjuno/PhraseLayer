@@ -94,19 +94,30 @@ namespace PhraseLayer.Unity
 
     /// <summary>
     /// Thin Unity bridge around a Meta PassthroughCameraAccess component.
-    /// It resolves the public IsPlaying, GetTexture and ViewportPointToRay APIs once and then exposes Core interfaces.
-    /// Keeping Meta types behind reflection prevents them from leaking into PhraseLayer.Core and makes SDK drift fail loudly at the bridge boundary.
+    ///
+    /// The reviewed v85 contract is resolved through reflection so Meta types stay behind this adapter boundary:
+    /// IsPlaying, GetTexture(), Timestamp, GetCameraPose(), and ViewportPointToRay(Vector2, Pose?). Capture retains
+    /// a stable Timestamp/GetCameraPose pair in UnityTextureFramePayload. Downstream Read Mode can then generate
+    /// center and corner rays from the camera pose that accompanied the OCR frame instead of the headset pose after
+    /// language processing finishes.
     /// </summary>
     public sealed class MetaPassthroughCameraBridge : MonoBehaviour, ICameraStreamBackend, IViewportRayProvider
     {
+        private const int CaptureMetadataAttempts = 3;
+
         [SerializeField] private Component passthroughCameraAccess;
         [SerializeField] private float startupTimeoutSeconds = 8f;
 
         private Behaviour cameraBehaviour;
         private PropertyInfo isPlayingProperty;
+        private PropertyInfo timestampProperty;
         private MethodInfo getTextureMethod;
+        private MethodInfo getCameraPoseMethod;
         private MethodInfo viewportPointToRayMethod;
         private bool apiResolved;
+        private long stableCaptureMetadataCount;
+        private long unstableCaptureMetadataCount;
+        private long capturedPoseRayCount;
 
         public bool IsPlaying
         {
@@ -119,11 +130,17 @@ namespace PhraseLayer.Unity
         }
 
         public Component PassthroughCameraAccess => passthroughCameraAccess;
+        public long StableCaptureMetadataCount => stableCaptureMetadataCount;
+        public long UnstableCaptureMetadataCount => unstableCaptureMetadataCount;
+        public long CapturedPoseRayCount => capturedPoseRayCount;
+        public bool LastCaptureMetadataStable { get; private set; }
+        public DateTime? LastCameraTimestamp { get; private set; }
 
         public void SetPassthroughCameraAccess(Component component)
         {
             passthroughCameraAccess = component;
             apiResolved = false;
+            ResetApi();
             EnsureApi();
         }
 
@@ -157,30 +174,88 @@ namespace PhraseLayer.Unity
             EnsureApi();
             if (!IsPlaying) return Task.FromResult<ImageFrame>(null);
 
-            var texture = getTextureMethod.Invoke(passthroughCameraAccess, null) as Texture;
-            if (texture == null) return Task.FromResult<ImageFrame>(null);
+            Texture lastTexture = null;
+            var lastTimestamp = default(DateTime);
+            for (var attempt = 0; attempt < CaptureMetadataAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            // This is the local observation time, not yet the camera hardware timestamp.
-            // Hardware timestamp alignment will be added only after the exact PCA timestamp contract is verified in a real Unity/Quest build.
-            var localTimestampMicroseconds = checked((long)(Time.realtimeSinceStartupAsDouble * 1_000_000.0));
-            var frame = new ImageFrame(
-                new UnityTextureFramePayload(texture),
-                texture.width,
-                texture.height,
-                localTimestampMicroseconds,
-                ImagePixelFormat.Unknown);
-            return Task.FromResult(frame);
+                var timestampBefore = ReadTimestamp();
+                var cameraPose = ReadCameraPose();
+                var texture = getTextureMethod.Invoke(passthroughCameraAccess, null) as Texture;
+                var timestampAfter = ReadTimestamp();
+                if (texture == null) return Task.FromResult<ImageFrame>(null);
+
+                lastTexture = texture;
+                lastTimestamp = timestampAfter;
+                if (timestampBefore == timestampAfter)
+                {
+                    LastCaptureMetadataStable = true;
+                    LastCameraTimestamp = timestampBefore;
+                    stableCaptureMetadataCount++;
+                    return Task.FromResult(new ImageFrame(
+                        new UnityTextureFramePayload(texture, timestampBefore, cameraPose),
+                        texture.width,
+                        texture.height,
+                        ToTimestampMicroseconds(timestampBefore),
+                        ImagePixelFormat.Unknown));
+                }
+            }
+
+            // A frame boundary raced all bounded attempts. The texture may still be used for OCR, but its pose is
+            // deliberately not trusted for world registration. Quest Read Mode smoke therefore cannot pass from it.
+            LastCaptureMetadataStable = false;
+            LastCameraTimestamp = lastTimestamp.Ticks > 0 ? lastTimestamp : (DateTime?)null;
+            unstableCaptureMetadataCount++;
+            if (lastTexture == null || lastTimestamp.Ticks <= 0)
+                return Task.FromResult<ImageFrame>(null);
+
+            return Task.FromResult(new ImageFrame(
+                new UnityTextureFramePayload(lastTexture),
+                lastTexture.width,
+                lastTexture.height,
+                ToTimestampMicroseconds(lastTimestamp),
+                ImagePixelFormat.Unknown));
+        }
+
+        public bool TryCreateFrameRayProvider(ImageFrame frame, out IViewportRayProvider provider)
+        {
+            if (frame == null) throw new ArgumentNullException(nameof(frame));
+            EnsureApi();
+
+            var payload = frame.NativePayload as UnityTextureFramePayload;
+            if (payload != null && payload.HasCameraCaptureMetadata)
+            {
+                var expectedTimestamp = ToTimestampMicroseconds(payload.CameraTimestamp);
+                if (frame.TimestampMicroseconds != expectedTimestamp)
+                {
+                    throw new InvalidOperationException(
+                        "ImageFrame timestamp does not match its retained PassthroughCameraAccess.Timestamp metadata.");
+                }
+
+                provider = new CapturedPoseRayProvider(this, payload.CameraPose);
+                return true;
+            }
+
+            provider = this;
+            return false;
         }
 
         public bool TryCreateRay(ViewportPoint point, out SpatialRay ray)
         {
+            return TryCreateRay(point, null, out ray);
+        }
+
+        private bool TryCreateRay(ViewportPoint point, Pose? cameraPose, out SpatialRay ray)
+        {
             EnsureApi();
             var value = viewportPointToRayMethod.Invoke(
                 passthroughCameraAccess,
-                new object[] { new Vector2((float)point.U, (float)point.V) });
+                new object[] { new Vector2((float)point.U, (float)point.V), cameraPose });
 
             if (value is Ray unityRay)
             {
+                if (cameraPose.HasValue) capturedPoseRayCount++;
                 ray = new SpatialRay(ToSpatial(unityRay.origin), ToSpatial(unityRay.direction));
                 return true;
             }
@@ -206,22 +281,61 @@ namespace PhraseLayer.Unity
 
             var type = passthroughCameraAccess.GetType();
             isPlayingProperty = type.GetProperty("IsPlaying", BindingFlags.Instance | BindingFlags.Public);
+            timestampProperty = type.GetProperty("Timestamp", BindingFlags.Instance | BindingFlags.Public);
             getTextureMethod = type.GetMethod("GetTexture", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+            getCameraPoseMethod = type.GetMethod("GetCameraPose", BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
             viewportPointToRayMethod = type.GetMethod(
                 "ViewportPointToRay",
                 BindingFlags.Instance | BindingFlags.Public,
                 null,
-                new[] { typeof(Vector2) },
+                new[] { typeof(Vector2), typeof(Pose?) },
                 null);
 
             if (isPlayingProperty == null || isPlayingProperty.PropertyType != typeof(bool))
                 throw MissingApi(type, "bool IsPlaying");
+            if (timestampProperty == null || timestampProperty.PropertyType != typeof(DateTime))
+                throw MissingApi(type, "DateTime Timestamp");
             if (getTextureMethod == null || !typeof(Texture).IsAssignableFrom(getTextureMethod.ReturnType))
                 throw MissingApi(type, "Texture GetTexture()");
+            if (getCameraPoseMethod == null || getCameraPoseMethod.ReturnType != typeof(Pose))
+                throw MissingApi(type, "Pose GetCameraPose()");
             if (viewportPointToRayMethod == null || viewportPointToRayMethod.ReturnType != typeof(Ray))
-                throw MissingApi(type, "Ray ViewportPointToRay(Vector2)");
+                throw MissingApi(type, "Ray ViewportPointToRay(Vector2, Pose?)");
 
             apiResolved = true;
+        }
+
+        private DateTime ReadTimestamp()
+        {
+            var value = timestampProperty.GetValue(passthroughCameraAccess, null);
+            if (!(value is DateTime timestamp) || timestamp.Ticks <= 0)
+                throw new InvalidOperationException("PassthroughCameraAccess.Timestamp returned an uninitialized value.");
+            return timestamp;
+        }
+
+        private Pose ReadCameraPose()
+        {
+            var value = getCameraPoseMethod.Invoke(passthroughCameraAccess, null);
+            if (!(value is Pose pose))
+                throw new InvalidOperationException("PassthroughCameraAccess.GetCameraPose() did not return UnityEngine.Pose.");
+            return pose;
+        }
+
+        private void ResetApi()
+        {
+            cameraBehaviour = null;
+            isPlayingProperty = null;
+            timestampProperty = null;
+            getTextureMethod = null;
+            getCameraPoseMethod = null;
+            viewportPointToRayMethod = null;
+        }
+
+        private static long ToTimestampMicroseconds(DateTime timestamp)
+        {
+            // DateTime ticks are 100 ns. The resulting value is an opaque camera-source timestamp used for ordering
+            // and frame identity; it is not presented as Unix time.
+            return checked(timestamp.Ticks / 10L);
         }
 
         private static InvalidOperationException MissingApi(Type type, string expected)
@@ -233,6 +347,23 @@ namespace PhraseLayer.Unity
         private static SpatialVector3 ToSpatial(Vector3 value)
         {
             return new SpatialVector3(value.x, value.y, value.z);
+        }
+
+        private sealed class CapturedPoseRayProvider : IViewportRayProvider
+        {
+            private readonly MetaPassthroughCameraBridge owner;
+            private readonly Pose cameraPose;
+
+            public CapturedPoseRayProvider(MetaPassthroughCameraBridge owner, Pose cameraPose)
+            {
+                this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
+                this.cameraPose = cameraPose;
+            }
+
+            public bool TryCreateRay(ViewportPoint point, out SpatialRay ray)
+            {
+                return owner.TryCreateRay(point, cameraPose, out ray);
+            }
         }
     }
 }

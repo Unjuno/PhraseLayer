@@ -1,0 +1,74 @@
+name: OCR Real-Model Topology Incidence
+
+on:
+  push:
+    branches: ["agent/**", main]
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/Paddle*.cs"
+      - "tools/run_ppocr_detector_db_differential.py"
+      - "tools/run_ppocr_e2e_quad_impact.py"
+      - "tools/run_ppocr_real_model_topology_incidence.py"
+      - "tools/requirements-ocr-db-audit.txt"
+      - "tools/extract_ppocr_dictionary.py"
+      - "experiments/PhraseLayer.DetectorOutputReplay/**"
+      - ".github/workflows/ocr-real-model-topology-incidence.yml"
+  pull_request:
+    paths:
+      - "models/models.lock.json"
+      - "src/PhraseLayer.Core/Paddle*.cs"
+      - "tools/run_ppocr_detector_db_differential.py"
+      - "tools/run_ppocr_e2e_quad_impact.py"
+      - "tools/run_ppocr_real_model_topology_incidence.py"
+      - "tools/requirements-ocr-db-audit.txt"
+      - "tools/extract_ppocr_dictionary.py"
+      - "experiments/PhraseLayer.DetectorOutputReplay/**"
+      - ".github/workflows/ocr-real-model-topology-incidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-real-model-topology-incidence-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  incidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install pinned host-only OCR tools
+        run: python -m pip install -r tools/requirements-ocr-db-audit.txt PyYAML==6.0.2
+      - name: Stage exact detector locally without redistribution
+        run: python tools/stage_models.py --model pp-ocrv6-tiny-det
+      - name: Stage exact recognizer metadata locally without redistribution
+        run: python tools/stage_models.py --model pp-ocrv6-tiny-rec --include-support
+      - name: Export locked untrimmed recognition dictionary
+        run: python tools/extract_ppocr_dictionary.py --metadata artifacts/models/pp-ocrv6-tiny-rec/inference.yml --output-dir artifacts/models/pp-ocrv6-tiny-rec
+      - name: Measure accepted child contours through real detector and recognizer
+        run: |
+          python tools/run_ppocr_real_model_topology_incidence.py \
+            --detector artifacts/models/pp-ocrv6-tiny-det/inference.onnx \
+            --recognizer artifacts/models/pp-ocrv6-tiny-rec/inference.onnx \
+            --dictionary artifacts/models/pp-ocrv6-tiny-rec/ppocr_keys.txt \
+            --work-dir artifacts/ocr-real-model-topology/work \
+            --report artifacts/ocr-real-model-topology/report.json
+      - name: Upload numerical summary only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-real-model-topology-${{ github.run_id }}
+          path: artifacts/ocr-real-model-topology/report.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove local models, dictionary, images, maps and tensors
+        if: always()
+        run: rm -rf artifacts/models/pp-ocrv6-tiny-det artifacts/models/pp-ocrv6-tiny-rec artifacts/ocr-real-model-topology/work

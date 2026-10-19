@@ -26,76 +26,36 @@ store = require_file(UNITY / "UnityLearnerProfileStore.cs")
 service = require_file(UNITY / "UnityLearnerProfileBehaviour.cs")
 demo = require_file(UNITY / "PhraseLayerDemoBehaviour.cs")
 tests = require_file(ROOT / "tests" / "PhraseLayer.Core.Tests" / "LearnerProfilePersistenceTests.cs")
+batch = require_file(CORE / "LearnerUpdateBatch.cs")
+session = require_file(CORE / "LearningEncounterSession.cs")
+commit_tests = require_file(ROOT / "tests" / "PhraseLayer.Core.Tests" / "LearnerCommitSafetyTests.cs")
 
-require_markers(
-    core,
-    "learner persistence Core",
-    (
-        "CurrentSchemaVersion = 1",
-        "interface IMutableLearnerModel : ILearnerModel",
-        "interface ILearnerProfileStore",
-        "sealed class PersistentLearnerModel",
-        "store.Save(inner.CreateSnapshot())",
-        "duplicate normalized key",
-    ),
-)
-require_markers(
-    learning,
-    "in-memory learner model",
-    (
-        "InMemoryLearnerModel : IMutableLearnerModel",
-        "LearnerProfileSnapshot CreateSnapshot()",
-        "void LoadSnapshot(LearnerProfileSnapshot snapshot)",
-        "FromSnapshot(LearnerProfileSnapshot snapshot)",
-    ),
-)
-require_markers(
-    store,
-    "Unity learner profile store",
-    (
-        "Application.persistentDataPath",
-        "learner-profile-v1.json",
-        "JsonUtility.ToJson",
-        "JsonUtility.FromJson<ProfileDto>",
-        "File.Move(FilePath, BackupPath)",
-        "File.Move(TemporaryPath, FilePath)",
-        "ILearnerProfileStore",
-    ),
-)
-require_markers(
-    service,
-    "Unity persistent learner service",
-    (
-        "new UnityLearnerProfileStore()",
-        "new PersistentLearnerModel(store, fallbackDefaultUnderstanding)",
-        "IMutableLearnerModel Model",
-        "SetUnderstanding(string text, double understanding)",
-    ),
-)
-require_markers(
-    tests,
-    "learner persistence tests",
-    (
-        "SnapshotRejectsDuplicateNormalizedKeys",
-        "InMemoryModelRoundTripsSnapshotAndReplacesOldState",
-        "PersistentModelLoadsExistingProfileWithoutWritingItBack",
-        "PersistentMutationSavesOneNormalizedSnapshot",
-    ),
-)
-
-# Demo controls are synthetic developer tooling; keep them away from the persisted production profile.
+require_markers(core, "learner persistence Core", (
+    "CurrentSchemaVersion = 1", "interface IMutableLearnerModel : ILearnerModel", "interface ILearnerProfileStore",
+    "sealed class PersistentLearnerModel", "PersistThenPublish", "store.Save(snapshot);", "inner.LoadSnapshot(snapshot);",
+    "Array.AsReadOnly", "duplicate normalized key"))
+# A structural guard, not proof of transactional runtime behavior; executable fault-injection tests are required.
+if "store.Save(snapshot);" in core and "inner.LoadSnapshot(snapshot);" in core:
+    if core.index("store.Save(snapshot);") > core.index("inner.LoadSnapshot(snapshot);"):
+        violations.append("persistent learner must save before publishing in-memory state")
+require_markers(batch, "frozen batch", ("BeforeSnapshot", "AfterSnapshot", "learner.LoadSnapshot(AfterSnapshot)", "state changed after batch preparation"))
+require_markers(session, "encounter commit", ("adaptation.PrepareBatch", "preparedBatch.Commit()", "IsCommitPending"))
+require_markers(commit_tests, "fault injection tests", ("FailedSaveRetryUsesOneFrozenSnapshotWithoutDoubleLearning", "InterveningEvidenceCannotBeOverwrittenByAnOldPreparedBatch"))
+require_markers(learning, "in-memory learner model", ("InMemoryLearnerModel : IMutableLearnerModel", "LearnerProfileSnapshot CreateSnapshot()",
+    "void LoadSnapshot(LearnerProfileSnapshot snapshot)", "FromSnapshot(LearnerProfileSnapshot snapshot)"))
+require_markers(store, "Unity learner profile store", ("Application.persistentDataPath", "learner-profile-v1.json", "JsonUtility.ToJson",
+    "JsonUtility.FromJson<ProfileDto>", "File.Move(FilePath, BackupPath)", "File.Move(TemporaryPath, FilePath)", "ILearnerProfileStore"))
+require_markers(service, "Unity persistent learner service", ("new UnityLearnerProfileStore()", "new PersistentLearnerModel(store, fallbackDefaultUnderstanding)",
+    "IMutableLearnerModel Model", "SetUnderstanding(string text, double understanding)"))
+require_markers(tests, "learner persistence tests", ("SnapshotRejectsDuplicateNormalizedKeys", "InMemoryModelRoundTripsSnapshotAndReplacesOldState",
+    "PersistentModelLoadsExistingProfileWithoutWritingItBack", "PersistentMutationSavesOneNormalizedSnapshot"))
 if "private InMemoryLearnerModel learner;" not in demo:
     violations.append("PhraseLayerDemoBehaviour must remain explicitly ephemeral and use InMemoryLearnerModel")
 if "UnityLearnerProfileStore" in demo or "PersistentLearnerModel" in demo:
     violations.append("PhraseLayerDemoBehaviour must not write production learner persistence")
-
-# Persistence-format and filesystem API calls must stay outside Core. Comments may discuss the
-# platform boundary, so validate concrete API/type references instead of English substrings.
 for forbidden in ("using UnityEngine", "UnityEngine.", "JsonUtility.", "Application.persistentDataPath", "using System.IO"):
     if forbidden in core:
         violations.append(f"LearnerProfilePersistence.cs must remain platform-neutral; found {forbidden}")
-
 if violations:
     raise SystemExit("\n".join(violations))
-
-print("PASS: learner snapshot, persistent model, Unity file store, production service, and ephemeral demo boundaries validated")
+print("PASS: persistence boundaries, save-before-publish wiring and frozen retry batch markers; runtime fault-injection tests are separate")

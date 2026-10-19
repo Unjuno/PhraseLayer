@@ -40,6 +40,24 @@ namespace PhraseLayer.Core.Tests
         }
 
         [Fact]
+        public void EqualClauseDifficultyUsesReviewedSourceOrderInsteadOfFloatingPointNoise()
+        {
+            var document = new RuleBasedSemanticSegmenter().Segment(
+                "I was tired, so I went home, and I fell asleep immediately.");
+            var learner = new InMemoryLearnerModel(0.20);
+
+            var plan = new AssistancePlanner().Plan(
+                document,
+                learner,
+                AssistancePolicy.ForMode(AssistanceMode.Immersion));
+
+            var decision = Assert.Single(plan.Decisions);
+            Assert.Equal(SemanticUnitKind.Clause, decision.Unit.Kind);
+            Assert.Equal("I was tired", decision.Unit.Text);
+            Assert.Equal(0.25, plan.SelectedRatio, 12);
+        }
+
+        [Fact]
         public void AutoModeRaisesTargetSupportForLowerUnderstanding()
         {
             var document = new RuleBasedSemanticSegmenter().Segment("One two three four.");
