@@ -4,6 +4,8 @@ PhraseLayer's product path requires arbitrary English → Japanese translation w
 
 This document distinguishes host-tested contracts from real Unity/Quest execution. No statement below should be read as a Quest 3 performance claim.
 
+**October 2026 lightweight review:** `docs/MODEL_SELECTION_2026_10.md` records the unchanged production Marian baseline and the opt-in CTranslate2 INT8 AArch64 CPU experiment. A host comparison is not Unity/Quest compatibility evidence and never automatically selects the alternate backend.
+
 ## Runtime boundary
 
 `LanguagePipeline` continues to depend only on `ITranslationEngine`.
