@@ -16,7 +16,7 @@ The detector artifact has an upstream Git-LFS object record of:
 - size: `1,780,590` bytes
 - SHA-256: `193bab7a04fca699a6c82e6abb5b81bdb28177f0abd4062552b04908dafb19f8`
 
-The recognizer artifact hash/byte count is deliberately left unresolved in `models.lock.json` until it can be verified directly rather than inferred from a converted copy.
+The recognizer artifact is now identity-locked as **4,462,639 bytes**, SHA-256 `9ef676d6ed3c88256a2d92c640c44f25b0c40947e111b14b8be8f594091563e6`. The CTC dictionary and its embedded U+3000 token are also SHA-256-locked; see `docs/PPOCR_DICTIONARY_LOCK_CORRECTION.md`.
 
 ## Runtime target
 
@@ -41,7 +41,7 @@ The upstream PP-OCRv6 tiny detector inference configuration specifies:
 - unclip ratio `1.4`
 - maximum candidates `3000`
 
-PhraseLayer should reproduce this preprocessing/post-processing only after the ONNX graph input/output contract is inspected. `OcrLetterboxTransform` already owns the source/model geometry mapping; the production preprocessor must use the exact same resize/padding geometry that it reports to that transform.
+The production detector now uses `PaddleOcrV6TinyDetectionPreprocess` and its `PaddleDetResizeTransform` rather than generic letterboxing. GPU input preprocessing and CPU DB postprocessing are implemented, and real ONNX/Core differential experiments are available. Real Unity import/parity and Quest performance still require execution, not just hosted compilation.
 
 ## Recognition evidence
 
@@ -63,3 +63,7 @@ The upstream tiny recognizer is described as the smallest PP-OCRv6 recognition t
 - https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec_onnx
 - https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det/blob/main/inference.yml
 - https://arxiv.org/abs/2606.13108
+
+## October 2026 lightweight-model decision
+
+PP-OCRv6 tiny remains the preferred English-source OCR pair for Quest 3 pending device measurement. The two pinned ONNX files total 6,243,229 bytes. Do not downgrade to an older `mobile`-named model without measured gains. The more material model-size optimization candidate is offline English→Japanese translation; see `docs/MODEL_SELECTION_2026_10.md`.
