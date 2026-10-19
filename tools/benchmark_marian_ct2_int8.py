@@ -78,6 +78,12 @@ def load_policy_and_lock(lock_path: pathlib.Path = LOCK,
     return source, policy
 
 
+def verify_locked_file(path: pathlib.Path, name: str, size: int, digest: str) -> None:
+    require(path.is_file(), "missing required local snapshot file: " + name)
+    require(path.stat().st_size == size, "locked size mismatch: " + name)
+    require(file_hash(path) == digest, "locked SHA-256 mismatch: " + name)
+
+
 def verify_local_snapshot(snapshot: pathlib.Path, source: dict) -> dict:
     require(snapshot.is_dir(), "local snapshot directory not found")
     expected = {
@@ -89,10 +95,7 @@ def verify_local_snapshot(snapshot: pathlib.Path, source: dict) -> dict:
         weight["artifact_size_bytes"], weight["artifact_sha256"])
     require(set(expected) == SOURCE_FILES, "reviewed source file list changed")
     for name, (size, digest) in expected.items():
-        path = snapshot / name
-        require(path.is_file(), "missing required local snapshot file: " + name)
-        require(path.stat().st_size == size, "locked size mismatch: " + name)
-        require(file_hash(path) == digest, "locked SHA-256 mismatch: " + name)
+        verify_locked_file(snapshot / name, name, size, digest)
     # No remote access, potentially untrusted transformers code or new source files.
     require(not (snapshot / "trust_remote_code.py").exists(),
             "unexpected executable model code in snapshot")
